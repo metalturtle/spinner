@@ -1,6 +1,7 @@
 import { Editor } from '../editor/Editor';
 import { EditPropertyCmd } from '../commands/EditPropertyCmd';
 import type { PolygonLayer } from '../data/Polygon';
+import { TEXTURE_LIBRARY } from '../data/TextureLibrary';
 
 const LAYERS: PolygonLayer[] = ['floor', 'wall', 'trigger', 'decoration'];
 
@@ -24,6 +25,15 @@ export class PropertiesPanel {
 
   private layerOptions(current: PolygonLayer): string {
     return LAYERS.map((l) => `<option value="${l}"${l === current ? ' selected' : ''}>${l}</option>`).join('');
+  }
+
+  private textureOptions(current?: string): string {
+    const options = ['<option value="">None</option>'];
+    for (const texture of TEXTURE_LIBRARY) {
+      const selected = texture.id === current ? ' selected' : '';
+      options.push(`<option value="${texture.id}"${selected}>${texture.name}</option>`);
+    }
+    return options.join('');
   }
 
   refresh(): void {
@@ -51,6 +61,14 @@ export class PropertiesPanel {
           <input type="color" data-field="color" value="${poly.color}" />
         </div>
         <div class="prop-row">
+          <label>Texture</label>
+          <select data-field="textureId">${this.textureOptions(poly.textureId)}</select>
+        </div>
+        <div class="prop-row">
+          <label>Tex Size</label>
+          <input type="number" data-field="textureScale" value="${(poly.textureScale ?? 1).toFixed(2)}" step="0.25" min="0.25" />
+        </div>
+        <div class="prop-row">
           <label>Vertices</label>
           <span>${poly.vertices.length}</span>
         </div>
@@ -75,6 +93,14 @@ export class PropertiesPanel {
         <div class="prop-row">
           <label>Color</label>
           <input type="color" data-field="color" value="${circle.color}" />
+        </div>
+        <div class="prop-row">
+          <label>Texture</label>
+          <select data-field="textureId">${this.textureOptions(circle.textureId)}</select>
+        </div>
+        <div class="prop-row">
+          <label>Tex Size</label>
+          <input type="number" data-field="textureScale" value="${(circle.textureScale ?? 1).toFixed(2)}" step="0.25" min="0.25" />
         </div>
         <div class="prop-row">
           <label>Center</label>
@@ -147,12 +173,16 @@ export class PropertiesPanel {
           if (field === 'name') oldValue = poly.name;
           else if (field === 'layer') oldValue = poly.layer;
           else if (field === 'color') oldValue = poly.color;
+          else if (field === 'textureId') oldValue = poly.textureId ?? '';
+          else if (field === 'textureScale') oldValue = String(poly.textureScale ?? 1);
         } else if (type === 'circle') {
           const circle = this.editor.levelData.getCircle(id);
           if (!circle) return;
           if (field === 'name') oldValue = circle.name;
           else if (field === 'layer') oldValue = circle.layer;
           else if (field === 'color') oldValue = circle.color;
+          else if (field === 'textureId') oldValue = circle.textureId ?? '';
+          else if (field === 'textureScale') oldValue = String(circle.textureScale ?? 1);
           else if (field === 'radius') oldValue = String(circle.radius);
         } else {
           const entity = this.editor.levelData.getEntity(id);

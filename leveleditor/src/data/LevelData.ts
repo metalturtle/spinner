@@ -3,7 +3,7 @@ import type { EntityData } from './Entity';
 import type { CircleData } from './Circle';
 
 export interface LevelDataSnapshot {
-  version: 2;
+  version: 2 | 3 | 4;
   unit: string;
   gridSize: number;
   polygons: PolygonData[];
@@ -119,7 +119,7 @@ export class LevelData {
   // Serialization
   toSnapshot(): LevelDataSnapshot {
     return {
-      version: 2,
+      version: 4,
       unit: this.unit,
       gridSize: this.gridSize,
       polygons: JSON.parse(JSON.stringify(this.polygons)),
@@ -140,6 +140,14 @@ export class LevelData {
       if (!poly.layer) {
         poly.layer = poly.properties.type === 'floor' ? 'floor' : 'wall';
       }
+      if (!poly.textureId) delete poly.textureId;
+      if (!poly.textureScale || poly.textureScale === 1) delete poly.textureScale;
+      if (!poly.holes || poly.holes.length === 0) delete poly.holes;
+    }
+
+    for (const circle of this.circles) {
+      if (!circle.textureId) delete circle.textureId;
+      if (!circle.textureScale || circle.textureScale === 1) delete circle.textureScale;
     }
 
     this.emit('level-loaded');

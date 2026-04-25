@@ -9,7 +9,7 @@ const MAX_LAG      = 7.0;   // max distance camera can fall behind spinner
 
 // Camera height and depth offset — mirrors the original fixed position
 const CAM_Y        = 30;
-const CAM_Z_OFFSET = 20;
+const CAM_Z_OFFSET = 10;
 
 // ─── Internal State ──────────────────────────────────────────────────────────
 

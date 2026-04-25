@@ -7,8 +7,15 @@ import { generateId } from './ids';
 export type BooleanOp = 'union' | 'difference' | 'intersection';
 
 function toClipperPolygon(poly: PolygonData): Polygon {
-  const exterior: [number, number][] = poly.vertices.map((v) => [v.x, v.y]);
-  return [exterior];
+  const rings: [number, number][][] = [
+    poly.vertices.map((v) => [v.x, v.y]),
+  ];
+
+  for (const hole of poly.holes ?? []) {
+    rings.push(hole.map((v) => [v.x, v.y]));
+  }
+
+  return rings;
 }
 
 function fromClipperResult(
@@ -16,17 +23,20 @@ function fromClipperResult(
   baseName: string,
   layer: PolygonLayer,
   color: string,
-  properties: Record<string, string>
+  properties: Record<string, string>,
+  textureId?: string
 ): PolygonData[] {
   return multiPoly.map((polygon, i) => {
-    const exterior = polygon[0];
+    const [exterior, ...holes] = polygon;
     return {
       id: generateId('poly'),
       name: multiPoly.length === 1 ? baseName : `${baseName} ${i + 1}`,
       layer,
       vertices: exterior.map(([x, y]) => ({ x, y })),
+      holes: holes.length > 0 ? holes.map((hole) => hole.map(([x, y]) => ({ x, y }))) : undefined,
       properties: { ...properties },
       color,
+      textureId,
     };
   });
 }
@@ -55,5 +65,5 @@ export function performBooleanOp(
   const opLabel = op === 'union' ? '+' : op === 'difference' ? '-' : '&';
   const baseName = `${polyA.name} ${opLabel} ${polyB.name}`;
 
-  return fromClipperResult(result, baseName, polyA.layer, polyA.color, { ...polyA.properties });
+  return fromClipperResult(result, baseName, polyA.layer, polyA.color, { ...polyA.properties }, polyA.textureId);
 }

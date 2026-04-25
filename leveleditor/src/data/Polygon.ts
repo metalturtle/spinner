@@ -1,5 +1,10 @@
 export type PolygonLayer = 'floor' | 'wall' | 'trigger' | 'decoration';
 
+export interface PolygonPoint {
+  x: number;
+  y: number;
+}
+
 export const LAYER_Z: Record<PolygonLayer, number> = {
   floor: 0.5,
   wall: 1,
@@ -11,7 +16,10 @@ export interface PolygonData {
   id: string;
   name: string;
   layer: PolygonLayer;
-  vertices: { x: number; y: number }[];
+  vertices: PolygonPoint[];
+  holes?: PolygonPoint[][];
   properties: Record<string, string>;
   color: string;
+  textureId?: string;
+  textureScale?: number;
 }

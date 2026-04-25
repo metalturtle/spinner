@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { LevelData } from '../data/LevelData';
 import type { CircleData } from '../data/Circle';
 import { LAYER_Z } from '../data/Polygon';
+import { applyWorldUVs, getTextureScale, TextureManager } from './TextureManager';
 
 const CIRCLE_SEGMENTS = 48;
 
@@ -42,8 +43,13 @@ export class CircleRenderer {
 
     // Fill
     const fillGeo = new THREE.CircleGeometry(circle.radius, CIRCLE_SEGMENTS);
+    const textureScale = getTextureScale(circle.textureId, circle.textureScale);
+    if (textureScale) {
+      applyWorldUVs(fillGeo, textureScale, circle.center.x, circle.center.y);
+    }
     const fillMat = new THREE.MeshBasicMaterial({
       color,
+      map: TextureManager.get(circle.textureId),
       transparent: true,
       opacity: fillOpacity,
       side: THREE.DoubleSide,

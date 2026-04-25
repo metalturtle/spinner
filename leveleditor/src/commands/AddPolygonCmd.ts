@@ -14,7 +14,12 @@ export class AddPolygonCmd implements Command {
   }
 
   execute(): void {
-    this.levelData.addPolygon({ ...this.polygon, vertices: this.polygon.vertices.map((v) => ({ ...v })) });
+    this.levelData.addPolygon({
+      ...this.polygon,
+      vertices: this.polygon.vertices.map((v) => ({ ...v })),
+      holes: this.polygon.holes?.map((hole) => hole.map((v) => ({ ...v }))),
+      properties: { ...this.polygon.properties },
+    });
   }
 
   undo(): void {

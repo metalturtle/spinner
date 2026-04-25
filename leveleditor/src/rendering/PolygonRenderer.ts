@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { LevelData } from '../data/LevelData';
 import type { PolygonData } from '../data/Polygon';
 import { LAYER_Z } from '../data/Polygon';
+import { applyWorldUVs, getTextureScale, TextureManager } from './TextureManager';
 
 export class PolygonRenderer {
   private scene: THREE.Scene;
@@ -49,11 +50,28 @@ export class PolygonRenderer {
     for (let i = 1; i < poly.vertices.length; i++) {
       shape.lineTo(poly.vertices[i].x, poly.vertices[i].y);
     }
+    shape.closePath();
+
+    for (const hole of poly.holes ?? []) {
+      if (hole.length < 3) continue;
+      const holePath = new THREE.Path();
+      holePath.moveTo(hole[0].x, hole[0].y);
+      for (let i = 1; i < hole.length; i++) {
+        holePath.lineTo(hole[i].x, hole[i].y);
+      }
+      holePath.closePath();
+      shape.holes.push(holePath);
+    }
 
     const fillGeo = new THREE.ShapeGeometry(shape);
+    const textureScale = getTextureScale(poly.textureId, poly.textureScale);
+    if (textureScale) {
+      applyWorldUVs(fillGeo, textureScale);
+    }
     const fillOpacity = poly.layer === 'floor' ? 0.35 : 0.2;
     const fillMat = new THREE.MeshBasicMaterial({
       color,
+      map: TextureManager.get(poly.textureId),
       transparent: true,
       opacity: fillOpacity,
       side: THREE.DoubleSide,
@@ -71,6 +89,16 @@ export class PolygonRenderer {
     const line = new THREE.LineLoop(lineGeo, lineMat);
     line.userData = { type: 'polygon', id: poly.id };
     group.add(line);
+
+    for (const hole of poly.holes ?? []) {
+      if (hole.length < 3) continue;
+      const holePoints = hole.map((v) => new THREE.Vector3(v.x, v.y, 0));
+      holePoints.push(holePoints[0].clone());
+      const holeGeo = new THREE.BufferGeometry().setFromPoints(holePoints);
+      const holeLine = new THREE.LineLoop(holeGeo, new THREE.LineBasicMaterial({ color, depthTest: false }));
+      holeLine.userData = { type: 'polygon', id: poly.id };
+      group.add(holeLine);
+    }
   }
 
   private removePolygonMesh(id: string): void {

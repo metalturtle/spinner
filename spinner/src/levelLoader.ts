@@ -14,8 +14,11 @@ export interface LevelPolygon {
   name?:       string;
   layer?:      'floor' | 'wall' | 'trigger' | 'decoration';
   vertices:    { x: number; y: number }[];
+  holes?:      { x: number; y: number }[][];
   properties?: Record<string, unknown>;
   color?:      string;
+  textureId?:  string;
+  textureScale?: number;
 }
 
 export interface LevelCircle {
@@ -26,6 +29,8 @@ export interface LevelCircle {
   radius:      number;
   properties?: Record<string, unknown>;
   color?:      string;
+  textureId?:  string;
+  textureScale?: number;
 }
 
 export interface LevelData {

@@ -4,6 +4,12 @@ import { LevelData } from '../data/LevelData';
 
 type ObjType = 'polygon' | 'entity' | 'circle';
 
+function parseTextureScale(value: string): number | undefined {
+  const parsed = parseFloat(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 1;
+  return parsed === 1 ? undefined : parsed;
+}
+
 export class EditPropertyCmd implements Command {
   description: string;
   private levelData: LevelData;
@@ -45,6 +51,8 @@ export class EditPropertyCmd implements Command {
       if (this.field === 'name') poly.name = value;
       else if (this.field === 'layer') poly.layer = value as PolygonLayer;
       else if (this.field === 'color') poly.color = value;
+      else if (this.field === 'textureId') poly.textureId = value || undefined;
+      else if (this.field === 'textureScale') poly.textureScale = parseTextureScale(value);
       else poly.properties[this.field] = value;
       this.levelData.notifyPolygonChanged(this.objectId);
     } else if (this.objectType === 'circle') {
@@ -53,6 +61,8 @@ export class EditPropertyCmd implements Command {
       if (this.field === 'name') circle.name = value;
       else if (this.field === 'layer') circle.layer = value as PolygonLayer;
       else if (this.field === 'color') circle.color = value;
+      else if (this.field === 'textureId') circle.textureId = value || undefined;
+      else if (this.field === 'textureScale') circle.textureScale = parseTextureScale(value);
       else if (this.field === 'radius') circle.radius = parseFloat(value) || 1;
       else circle.properties[this.field] = value;
       this.levelData.notifyCircleChanged(this.objectId);

@@ -6,7 +6,7 @@ priority:
 pickups that are revolving balls
 creation of levels
 Better models for robots, slugs
-lighting 
+lighting
 
 
 refinement:
@@ -29,3 +29,5 @@ space station level
     glossy tiles
 temple level
     granite textures
+sound system
+platforming, lava, high rise

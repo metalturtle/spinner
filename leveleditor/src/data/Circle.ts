@@ -8,4 +8,6 @@ export interface CircleData {
   radius: number;
   properties: Record<string, string>;
   color: string;
+  textureId?: string;
+  textureScale?: number;
 }

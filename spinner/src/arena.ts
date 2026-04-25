@@ -1,24 +1,38 @@
 import * as THREE from 'three';
-import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { WALL_HEIGHT } from './constants';
 import { walls, zones } from './physics';
-import type { LevelData } from './levelLoader';
-
-const diffuseUrl = new URL('../textures/rock_wall_16_diff_1k.jpg', import.meta.url).href;
-const normalUrl  = new URL('../textures/rock_wall_16_nor_gl_1k.exr', import.meta.url).href;
-const roughUrl   = new URL('../textures/rock_wall_16_rough_1k.exr', import.meta.url).href;
+import type { LevelData, LevelPolygon } from './levelLoader';
+import { applyWorldUVs, getTextureScale, TextureManager } from './textureUtils';
 
 const WALL_COLOR    = 0x0f3460;
 const WALL_EMISSIVE = 0x051030;
 const FLOOR_COLOR   = 0x445566;
-const TILE          = 3;
 
-function extrudeWallPoly(vertices: { x: number; y: number }[], mat: THREE.MeshStandardMaterial): THREE.Mesh {
+function makeShapeFromPolygon(poly: LevelPolygon): THREE.Shape {
   const shape = new THREE.Shape();
-  shape.moveTo(vertices[0].x, -vertices[0].y);
-  for (let i = 1; i < vertices.length; i++) shape.lineTo(vertices[i].x, -vertices[i].y);
+  shape.moveTo(poly.vertices[0].x, -poly.vertices[0].y);
+  for (let i = 1; i < poly.vertices.length; i++) shape.lineTo(poly.vertices[i].x, -poly.vertices[i].y);
   shape.closePath();
+
+  for (const hole of poly.holes ?? []) {
+    if (hole.length < 3) continue;
+    const holePath = new THREE.Path();
+    holePath.moveTo(hole[0].x, -hole[0].y);
+    for (let i = 1; i < hole.length; i++) holePath.lineTo(hole[i].x, -hole[i].y);
+    holePath.closePath();
+    shape.holes.push(holePath);
+  }
+
+  return shape;
+}
+
+function extrudeWallPoly(poly: LevelPolygon, mat: THREE.MeshStandardMaterial): THREE.Mesh {
+  const shape = makeShapeFromPolygon(poly);
   const geo = new THREE.ExtrudeGeometry(shape, { depth: WALL_HEIGHT, bevelEnabled: false });
+  const textureScale = getTextureScale(poly.textureId, poly.textureScale);
+  if (textureScale) {
+    applyWorldUVs(geo, textureScale);
+  }
   const mesh = new THREE.Mesh(geo, mat);
   // ExtrudeGeometry extrudes along +Z; rotate so it stands upright in XZ world
   mesh.rotation.x = -Math.PI / 2;
@@ -37,68 +51,52 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
   const floorPolys   = polys.filter(p => p.layer === 'floor');
   const floorCircles = circs.filter(c => !c.layer || c.layer === 'floor');
 
-  // ─── Async texture loading — applied to all floor materials once loaded ───
-  const floorMats: THREE.MeshStandardMaterial[] = [];
-  const texLoader = new THREE.TextureLoader();
-  const exrLoader = new EXRLoader();
-
-  const applyRepeat = (tex: THREE.Texture) => {
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(TILE, TILE);
-    return tex;
-  };
-
-  texLoader.load(diffuseUrl, tex => {
-    applyRepeat(tex);
-    for (const m of floorMats) { m.map = tex; m.needsUpdate = true; }
-  });
-  exrLoader.load(normalUrl, tex => {
-    applyRepeat(tex);
-    for (const m of floorMats) { m.normalMap = tex; m.normalScale.set(0.8, 0.8); m.needsUpdate = true; }
-  });
-  exrLoader.load(roughUrl, tex => {
-    applyRepeat(tex);
-    for (const m of floorMats) { m.roughnessMap = tex; m.needsUpdate = true; }
-  });
-
-  function makeFloorMat(color?: string): THREE.MeshStandardMaterial {
-    const mat = new THREE.MeshStandardMaterial({
+  function makeSurfaceMat(color?: string, textureId?: string): THREE.MeshStandardMaterial {
+    return new THREE.MeshStandardMaterial({
       color: color ? new THREE.Color(color) : FLOOR_COLOR,
+      map: TextureManager.get(textureId),
       roughness: 0.85,
       metalness: 0.05,
     });
-    floorMats.push(mat);
-    return mat;
   }
 
   // ─── Floor geometry ───────────────────────────────────────────────────────
   if (floorPolys.length > 0) {
     // Polygon floor: ShapeGeometry in XY plane, rotated flat into XZ
     for (const poly of floorPolys) {
-      const shape = new THREE.Shape();
-      shape.moveTo(poly.vertices[0].x, -poly.vertices[0].y);
-      for (let i = 1; i < poly.vertices.length; i++) {
-        shape.lineTo(poly.vertices[i].x, -poly.vertices[i].y);
+      const shape = makeShapeFromPolygon(poly);
+      const floorGeo = new THREE.ShapeGeometry(shape);
+      const textureScale = getTextureScale(poly.textureId, poly.textureScale);
+      if (textureScale) {
+        applyWorldUVs(floorGeo, textureScale);
       }
-      shape.closePath();
-      const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), makeFloorMat(poly.color));
+      const mesh = new THREE.Mesh(floorGeo, makeSurfaceMat(poly.color, poly.textureId));
       mesh.rotation.x = -Math.PI / 2;
       mesh.receiveShadow = true;
       scene.add(mesh);
     }
-  } else if (floorCircles.length > 0) {
+  }
+
+  if (floorCircles.length > 0) {
     // Circle floor: CircleGeometry centered at circle.center
     for (const c of floorCircles) {
+      const floorGeo = new THREE.CircleGeometry(c.radius, 64);
+      const textureScale = getTextureScale(c.textureId, c.textureScale);
+      if (textureScale) {
+        applyWorldUVs(floorGeo, textureScale, c.center.x, -c.center.y);
+      }
       const mesh = new THREE.Mesh(
-        new THREE.CircleGeometry(c.radius, 64),
-        makeFloorMat(c.color),
+        floorGeo,
+        makeSurfaceMat(c.color, c.textureId),
       );
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.set(c.center.x, 0, c.center.y);
       mesh.receiveShadow = true;
       scene.add(mesh);
     }
-  } else {
+  }
+
+  if (floorPolys.length === 0 && floorCircles.length === 0) {
     // v1 fallback: bounding-box rectangle floor from all polygon vertices
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     for (const p of polys) for (const v of p.vertices) {
@@ -108,7 +106,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
     if (!isFinite(minX)) { minX = -20; maxX = 20; minZ = -20; maxZ = 20; }
     const mesh = new THREE.Mesh(
       new THREE.PlaneGeometry(maxX - minX, maxZ - minZ),
-      makeFloorMat(),
+      makeSurfaceMat(),
     );
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
@@ -120,6 +118,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
   for (const poly of wallPolys) {
     const wallMat = new THREE.MeshStandardMaterial({
       color: poly.color ? new THREE.Color(poly.color) : WALL_COLOR,
+      map: TextureManager.get(poly.textureId),
       emissive: new THREE.Color(WALL_EMISSIVE),
       roughness: 0.4,
       metalness: 0.6,
@@ -131,7 +130,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
       walls.push({ p1: { x: p1.x, z: p1.y }, p2: { x: p2.x, z: p2.y } });
     }
     // Visual: extrude the whole polygon shape upward (one solid mesh per polygon)
-    scene.add(extrudeWallPoly(poly.vertices, wallMat));
+    scene.add(extrudeWallPoly(poly, wallMat));
   }
 
   // ─── Water Zone (placed in corner of wall polygon bounds) ────────────────

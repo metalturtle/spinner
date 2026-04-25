@@ -27,6 +27,8 @@ import { type LevelData, lvPos } from './levelLoader';
 import level1 from './levels/level1.json';
 import level2 from './levels/level2.json';
 import level3 from './levels/level3.json';
+import level4 from './levels/level4.json';
+import level5 from './levels/level5.json';
 import { createTurret, updateTurret, applyDamageToTurret, destroyTurret, TURRET_TIER_1 } from './turret';
 import { createProjectile, updateProjectiles, type Projectile } from './projectile';
 import { createExplosion, createRobotExplosion, updateExplosions, type Explosion } from './explosion';
@@ -70,9 +72,10 @@ import { createPoisonProjectile } from './projectile';
 import { initGooDecals, spawnGooSplat, updateGooDecals, resetGooDecals } from './gooDecals';
 import { updateRicochetBubbles, resetRicochetBubbles } from './ricochetBubbles';
 
+
 // ─── Level-driven state ──────────────────────────────────────────────────────
 
-let currentLevel: LevelData = level3 as LevelData;  // Change to level2 to test octagon arena
+let currentLevel: LevelData = level5 as LevelData;  // Change to level2 to test octagon arena
 
 
 // ─── Scene Setup ─────────────────────────────────────────────────────────────
