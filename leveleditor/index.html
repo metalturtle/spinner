@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Level Editor</title>
+    <link rel="stylesheet" href="/styles/editor.css" />
+  </head>
+  <body>
+    <canvas id="editor-canvas"></canvas>
+
+    <div id="toolbar">
+      <button data-tool="select" class="tool-btn active" title="Select (1)">
+        <span>&#9754;</span>
+        <label>Select</label>
+      </button>
+      <button data-tool="polygon" class="tool-btn" title="Polygon (2)">
+        <span>&#11039;</span>
+        <label>Polygon</label>
+      </button>
+      <button data-tool="rectangle" class="tool-btn" title="Rectangle (3)">
+        <span>&#9645;</span>
+        <label>Rect</label>
+      </button>
+      <button data-tool="room" class="tool-btn" title="Room (4)">
+        <span>&#8962;</span>
+        <label>Room</label>
+      </button>
+      <button data-tool="circle" class="tool-btn" title="Circle (5)">
+        <span>&#9711;</span>
+        <label>Circle</label>
+      </button>
+      <button data-tool="entity" class="tool-btn" title="Entity (6)">
+        <span>&#9673;</span>
+        <label>Entity</label>
+      </button>
+      <button data-tool="regpoly" class="tool-btn" title="Regular Polygon (7)">
+        <span>&#11041;</span>
+        <label>RegPoly</label>
+      </button>
+      <div class="toolbar-separator"></div>
+      <button id="btn-undo" title="Undo (Ctrl+Z)">&#8630; Undo</button>
+      <button id="btn-redo" title="Redo (Ctrl+Shift+Z)">&#8631; Redo</button>
+      <div class="toolbar-separator"></div>
+      <button id="btn-save" title="Save">Save</button>
+      <button id="btn-load" title="Load">Load</button>
+      <div class="toolbar-separator"></div>
+      <label id="snap-toggle">
+        <input type="checkbox" id="snap-checkbox" checked />
+        Snap
+      </label>
+    </div>
+
+    <div id="properties-panel">
+      <h3>Properties</h3>
+      <div id="properties-content">
+        <p class="empty-msg">Nothing selected</p>
+      </div>
+    </div>
+
+    <div id="entity-type-selector" style="display:none">
+      <h3>Entity Type</h3>
+      <select id="entity-type-dropdown">
+        <option value="spawn">Spawn</option>
+        <option value="trigger">Trigger</option>
+        <option value="waypoint">Waypoint</option>
+      </select>
+    </div>
+
+    <div id="regpoly-config" style="display:none">
+      <h3>Regular Polygon</h3>
+      <div class="prop-row">
+        <label>Sides</label>
+        <input type="number" id="regpoly-sides" value="6" min="3" max="32" step="1" />
+      </div>
+    </div>
+
+    <div id="room-config" style="display:none">
+      <h3>Room Config</h3>
+      <div class="prop-row">
+        <label>Shape</label>
+        <select id="room-shape">
+          <option value="rect">Rectangle</option>
+          <option value="circle">Circle</option>
+        </select>
+      </div>
+      <div class="prop-row">
+        <label>Wall Width</label>
+        <input type="number" id="wall-thickness" value="1" min="0.1" step="0.5" />
+      </div>
+    </div>
+
+    <div id="csg-panel" style="display:none">
+      <h3>Boolean Ops</h3>
+      <p class="csg-hint">A (yellow) = first, B (blue) = second</p>
+      <button id="btn-csg-union" class="csg-btn">Union (A + B)</button>
+      <button id="btn-csg-subtract" class="csg-btn">Subtract (A - B)</button>
+      <button id="btn-csg-intersect" class="csg-btn">Intersect (A &amp; B)</button>
+    </div>
+
+    <div id="status-bar">
+      <span id="status-tool">Tool: Select</span>
+      <span id="status-pos">X: 0 Y: 0</span>
+      <span id="status-zoom">Zoom: 100%</span>
+    </div>
+
+    <input type="file" id="file-input" accept=".json" style="display:none" />
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

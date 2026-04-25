@@ -1,0 +1,50 @@
+{
+  "version": 2,
+  "unit": "m",
+  "gridSize": 1,
+  "polygons": [
+    {
+      "id": "arena_l2_wall",
+      "name": "Level 2 - Arena Wall",
+      "layer": "wall",
+      "vertices": [
+        {"x": 25, "y": 0},
+        {"x": 20, "y": 15},
+        {"x": 0, "y": 22},
+        {"x": -20, "y": 15},
+        {"x": -25, "y": 0},
+        {"x": -20, "y": -15},
+        {"x": 0, "y": -22},
+        {"x": 20, "y": -15}
+      ],
+      "properties": {},
+      "color": "#0f3460"
+    }
+  ],
+  "circles": [
+    {
+      "id": "circ_l2_floor",
+      "name": "Level 2 - Floor",
+      "layer": "floor",
+      "center": {"x": 0, "y": 0},
+      "radius": 27,
+      "properties": {},
+      "color": "#445566"
+    }
+  ],
+  "entities": [
+    { "id": "player_spawn", "type": "player_spawn", "position": { "x": 0, "y": 0 } },
+
+    { "id": "pickup_0",  "type": "pickup",       "position": { "x":  15, "y":  10 } },
+    { "id": "pickup_1",  "type": "pickup",       "position": { "x": -15, "y":  10 } },
+    { "id": "pickup_2",  "type": "pickup",       "position": { "x":  15, "y": -10 } },
+    { "id": "pickup_3",  "type": "pickup",       "position": { "x": -15, "y": -10 } },
+    { "id": "hyper_0",   "type": "pickup_hyper", "position": { "x":   0, "y": -18 } },
+
+    { "id": "robot_0",      "type": "robot",     "position": { "x":  12, "y":  12 } },
+    { "id": "robot_1",      "type": "robot",     "position": { "x": -12, "y":  12 } },
+    { "id": "slug_big_0",   "type": "slug_big",  "position": { "x":   0, "y":  18 } },
+    { "id": "slug_baby_0",  "type": "slug_baby", "position": { "x":  18, "y":   0 } },
+    { "id": "slug_baby_1",  "type": "slug_baby", "position": { "x": -18, "y":   0 } }
+  ]
+}

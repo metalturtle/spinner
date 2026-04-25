@@ -1,0 +1,359 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  overflow: hidden;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  color: #e0e0e0;
+  background: #1a1a2e;
+}
+
+#editor-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+/* Toolbar */
+#toolbar {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(20, 20, 40, 0.92);
+  border: 1px solid rgba(100, 100, 140, 0.3);
+  border-radius: 8px;
+  padding: 8px;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+}
+
+#toolbar button {
+  background: rgba(50, 50, 80, 0.6);
+  border: 1px solid rgba(100, 100, 140, 0.2);
+  color: #c0c0d0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+#toolbar button:hover {
+  background: rgba(70, 70, 110, 0.8);
+}
+
+.tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tool-btn span {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+.tool-btn.active {
+  background: rgba(80, 80, 160, 0.7) !important;
+  border-color: rgba(130, 130, 200, 0.5) !important;
+  color: #fff;
+}
+
+.toolbar-separator {
+  height: 1px;
+  background: rgba(100, 100, 140, 0.3);
+  margin: 4px 0;
+}
+
+#snap-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+#snap-toggle input {
+  cursor: pointer;
+}
+
+/* Properties Panel */
+#properties-panel {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  width: 260px;
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+  background: rgba(20, 20, 40, 0.92);
+  border: 1px solid rgba(100, 100, 140, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+}
+
+#properties-panel h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #a0a0c0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.empty-msg {
+  color: #606080;
+  font-style: italic;
+}
+
+.prop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.prop-row label {
+  width: 70px;
+  font-size: 11px;
+  color: #8888aa;
+  flex-shrink: 0;
+}
+
+.prop-row input,
+.prop-row select {
+  flex: 1;
+  background: rgba(30, 30, 55, 0.8);
+  border: 1px solid rgba(80, 80, 120, 0.3);
+  border-radius: 3px;
+  color: #d0d0e0;
+  padding: 3px 6px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.prop-row input:focus,
+.prop-row select:focus {
+  outline: none;
+  border-color: rgba(120, 120, 200, 0.6);
+}
+
+.prop-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(100, 100, 140, 0.2);
+}
+
+.prop-section h4 {
+  font-size: 11px;
+  color: #8888aa;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.kv-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.kv-row input {
+  flex: 1;
+  background: rgba(30, 30, 55, 0.8);
+  border: 1px solid rgba(80, 80, 120, 0.3);
+  border-radius: 3px;
+  color: #d0d0e0;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.kv-row button {
+  background: rgba(120, 40, 40, 0.6);
+  border: 1px solid rgba(160, 60, 60, 0.3);
+  color: #e09090;
+  border-radius: 3px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.btn-add-prop {
+  background: rgba(40, 80, 40, 0.5);
+  border: 1px solid rgba(60, 120, 60, 0.3);
+  color: #90c090;
+  border-radius: 3px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+/* Entity Type Selector */
+#entity-type-selector {
+  position: fixed;
+  top: 320px;
+  left: 10px;
+  background: rgba(20, 20, 40, 0.92);
+  border: 1px solid rgba(100, 100, 140, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+}
+
+#entity-type-selector h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #a0a0c0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#entity-type-dropdown {
+  background: rgba(30, 30, 55, 0.8);
+  border: 1px solid rgba(80, 80, 120, 0.3);
+  border-radius: 3px;
+  color: #d0d0e0;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  width: 100%;
+}
+
+/* Regular Polygon Config */
+#regpoly-config {
+  position: fixed;
+  top: 320px;
+  left: 10px;
+  background: rgba(20, 20, 40, 0.92);
+  border: 1px solid rgba(100, 100, 140, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+}
+
+#regpoly-config h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #a0a0c0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#regpoly-config input {
+  width: 60px;
+}
+
+/* Room Config */
+#room-config {
+  position: fixed;
+  top: 360px;
+  left: 10px;
+  background: rgba(20, 20, 40, 0.92);
+  border: 1px solid rgba(100, 100, 140, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+}
+
+#room-config h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #a0a0c0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#room-config input {
+  width: 60px;
+}
+
+/* CSG Panel */
+#csg-panel {
+  position: fixed;
+  top: 10px;
+  left: 170px;
+  background: rgba(20, 20, 40, 0.92);
+  border: 1px solid rgba(100, 100, 140, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+  min-width: 170px;
+}
+
+#csg-panel h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #a0a0c0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.csg-hint {
+  font-size: 10px;
+  color: #606080;
+  margin-bottom: 8px;
+}
+
+.csg-btn {
+  display: block;
+  width: 100%;
+  background: rgba(50, 50, 80, 0.6);
+  border: 1px solid rgba(100, 100, 140, 0.2);
+  color: #c0c0d0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  margin-bottom: 4px;
+  transition: background 0.15s;
+}
+
+.csg-btn:hover {
+  background: rgba(70, 70, 110, 0.8);
+}
+
+/* Status Bar */
+#status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 24px;
+  background: rgba(15, 15, 30, 0.95);
+  border-top: 1px solid rgba(80, 80, 120, 0.3);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 20px;
+  z-index: 10;
+  font-size: 11px;
+  color: #707090;
+}
+
+#status-bar span {
+  white-space: nowrap;
+}
