@@ -90,6 +90,19 @@ body {
   cursor: pointer;
 }
 
+#lighting-preview-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+#lighting-preview-toggle input {
+  cursor: pointer;
+}
+
 /* Properties Panel */
 #properties-panel {
   position: fixed;

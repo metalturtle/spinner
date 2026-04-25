@@ -29,6 +29,7 @@ import level2 from './levels/level2.json';
 import level3 from './levels/level3.json';
 import level4 from './levels/level4.json';
 import level5 from './levels/level5.json';
+import levelActive from './levels/level-active.json';
 import { createTurret, updateTurret, applyDamageToTurret, destroyTurret, TURRET_TIER_1 } from './turret';
 import { createProjectile, updateProjectiles, type Projectile } from './projectile';
 import { createExplosion, createRobotExplosion, updateExplosions, type Explosion } from './explosion';
@@ -71,16 +72,19 @@ import {
 import { createPoisonProjectile } from './projectile';
 import { initGooDecals, spawnGooSplat, updateGooDecals, resetGooDecals } from './gooDecals';
 import { updateRicochetBubbles, resetRicochetBubbles } from './ricochetBubbles';
+import { setupLevelLights, clearLevelLights } from './levelLights';
+import { updateLavaSurfaces } from './lavaSurface';
 
 
 // ─── Level-driven state ──────────────────────────────────────────────────────
 
-let currentLevel: LevelData = level5 as LevelData;  // Change to level2 to test octagon arena
+let currentLevel: LevelData = levelActive as LevelData;
 
 
 // ─── Scene Setup ─────────────────────────────────────────────────────────────
 
 createArena(scene, currentLevel);
+setupLevelLights(scene, currentLevel);
 initHud();
 initCamera();
 initSparks(scene);
@@ -331,6 +335,7 @@ function spawnAll(level: LevelData): void {
       case 'hive_boss':      HiveEntities.spawn(pos, HIVE_TIER_1); break;
       case 'slug_big':       BigSlugEntities.spawn(pos, BIG_SLUGWORM); break;
       case 'slug_baby':      BabySlugEntities.spawn(pos, BABY_SLUGWORM); break;
+      case 'light_point':    break;
     }
   }
 }
@@ -391,6 +396,8 @@ function resetGame(): void {
   resetTrails();
   resetGooDecals();
   resetRicochetBubbles();
+  clearLevelLights(scene);
+  setupLevelLights(scene, currentLevel);
   spawnAll(currentLevel);
 }
 
@@ -724,6 +731,7 @@ function animate(): void {
   updateGooDecals(time);
   updateRicochetBubbles(delta);
   updateTrails(playerBody.pos, playerBody.vel);
+  updateLavaSurfaces(time);
   renderer.render(scene, camera);
 }
 

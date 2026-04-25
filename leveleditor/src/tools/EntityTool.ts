@@ -27,13 +27,14 @@ export class EntityTool implements Tool {
 
   onPointerDown(event: EditorPointerEvent): void {
     const id = generateId('ent');
+    const properties = this.defaultPropertiesForType(this.entityType);
     const cmd = new AddEntityCmd(this.editor.levelData, {
       id,
       name: `${this.entityType.charAt(0).toUpperCase() + this.entityType.slice(1)} ${this.editor.levelData.entities.length + 1}`,
       type: this.entityType,
       position: { x: event.worldPos.x, y: event.worldPos.y },
       rotation: 0,
-      properties: {},
+      properties,
     });
     this.editor.commandHistory.execute(cmd);
   }
@@ -42,4 +43,18 @@ export class EntityTool implements Tool {
   onPointerUp(_event: EditorPointerEvent): void {}
   onKeyDown(_event: KeyboardEvent): void {}
   onKeyUp(_event: KeyboardEvent): void {}
+
+  private defaultPropertiesForType(type: string): Record<string, string> {
+    if (type === 'light_point') {
+      return {
+        color: '#ffd080',
+        intensity: '2.0',
+        range: '8',
+        decay: '1.5',
+        height: '1.5',
+      };
+    }
+
+    return {};
+  }
 }

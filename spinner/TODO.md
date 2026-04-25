@@ -31,3 +31,13 @@ temple level
     granite textures
 sound system
 platforming, lava, high rise
+
+
+v1:
+focus on dungeon level
+entities:
+    robots
+    opposite spinners
+    hive spinner
+    zombies
+    slugs

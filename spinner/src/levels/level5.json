@@ -138,6 +138,23 @@
   "circles": [],
   "entities": [
     { "id": "player_spawn", "type": "player_spawn", "position": { "x": 0, "y": 0 } },
-    { "id": "robot_0", "type": "robot", "position": { "x": 12, "y": 12 } }
+    { "id": "robot_0", "type": "robot", "position": { "x": 12, "y": 12 } },
+    {
+      "id": "ent_moe9jj1bxfe93x",
+      "name": "Light_point 2",
+      "type": "light_point",
+      "position": {
+        "x": 10,
+        "y": 4
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#ffd080",
+        "intensity": "20.0",
+        "range": "8",
+        "decay": "1.5",
+        "height": "1.5"
+      }
+    }
   ]
 }

@@ -114,13 +114,15 @@ export class RoomTool implements Tool {
     const cy = this.origin.y;
     const roomName = `Room ${this.editor.levelData.polygons.length + 1}`;
 
-    // Wall: polygon outer boundary
+    // Wall: polygon ring (outer boundary with inner hole)
     const outerVerts = this.circleVertices(cx, cy, outerR);
+    const innerVerts = this.circleVertices(cx, cy, innerR).reverse();
     const wallCmd = new AddPolygonCmd(this.editor.levelData, {
       id: generateId('poly'),
       name: `${roomName} - Wall`,
       layer: 'wall',
       vertices: outerVerts,
+      holes: [innerVerts],
       properties: {},
       color: WALL_COLOR,
     });

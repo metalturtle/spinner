@@ -1,16 +1,49 @@
 import { LevelData } from './LevelData';
 import type { LevelDataSnapshot } from './LevelData';
 
-export function saveLevel(levelData: LevelData): void {
+export async function saveLevel(levelData: LevelData): Promise<void> {
   const snapshot = levelData.toSnapshot();
   const json = JSON.stringify(snapshot, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'level.json';
-  a.click();
-  URL.revokeObjectURL(url);
+
+  try {
+    const response = await fetch('/api/active-level', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: json,
+    });
+
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    return;
+  } catch (error) {
+    console.warn('Falling back to download save:', error);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'level-active.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+}
+
+export async function loadActiveLevel(levelData: LevelData): Promise<boolean> {
+  try {
+    const response = await fetch('/api/active-level');
+    if (!response.ok) {
+      if (response.status === 404) return false;
+      throw new Error(await response.text());
+    }
+
+    const snapshot = await response.json() as LevelDataSnapshot;
+    levelData.fromSnapshot(snapshot);
+    return true;
+  } catch (error) {
+    console.warn('Failed to load active level:', error);
+    return false;
+  }
 }
 
 export function loadLevel(levelData: LevelData): void {

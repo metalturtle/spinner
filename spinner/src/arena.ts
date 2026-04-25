@@ -2,11 +2,20 @@ import * as THREE from 'three';
 import { WALL_HEIGHT } from './constants';
 import { walls, zones } from './physics';
 import type { LevelData, LevelPolygon } from './levelLoader';
-import { applyWorldUVs, getTextureScale, TextureManager } from './textureUtils';
+import { createLavaMaterial } from './lavaSurface';
+import { applyWallExtrusionUVs, applyWorldUVs, getTextureScale, TextureManager } from './textureUtils';
 
 const WALL_COLOR    = 0x0f3460;
 const WALL_EMISSIVE = 0x051030;
 const FLOOR_COLOR   = 0x445566;
+const CIRCLE_FLOOR_SEGMENTS = 48;
+const CIRCLE_FLOOR_INSET = 0.05;
+
+function getSurfaceColor(color: string | undefined, fallback: THREE.ColorRepresentation, hasTexture: boolean): THREE.ColorRepresentation {
+  if (!color) return hasTexture ? 0xffffff : fallback;
+  if (!hasTexture) return new THREE.Color(color);
+  return new THREE.Color(0xffffff).lerp(new THREE.Color(color), 0.18);
+}
 
 function makeShapeFromPolygon(poly: LevelPolygon): THREE.Shape {
   const shape = new THREE.Shape();
@@ -26,12 +35,27 @@ function makeShapeFromPolygon(poly: LevelPolygon): THREE.Shape {
   return shape;
 }
 
+function isLavaSurface(poly: LevelPolygon): boolean {
+  const surfaceType = poly.properties?.surfaceType;
+  return poly.layer === 'floor' && (surfaceType === 'lava' || surfaceType === 'water');
+}
+
+function getDrainRate(poly: LevelPolygon): number {
+  const raw = poly.properties?.drainRate;
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
+  if (typeof raw === 'string') {
+    const parsed = parseFloat(raw);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 8;
+}
+
 function extrudeWallPoly(poly: LevelPolygon, mat: THREE.MeshStandardMaterial): THREE.Mesh {
   const shape = makeShapeFromPolygon(poly);
   const geo = new THREE.ExtrudeGeometry(shape, { depth: WALL_HEIGHT, bevelEnabled: false });
   const textureScale = getTextureScale(poly.textureId, poly.textureScale);
   if (textureScale) {
-    applyWorldUVs(geo, textureScale);
+    applyWallExtrusionUVs(geo, textureScale);
   }
   const mesh = new THREE.Mesh(geo, mat);
   // ExtrudeGeometry extrudes along +Z; rotate so it stands upright in XZ world
@@ -52,8 +76,9 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
   const floorCircles = circs.filter(c => !c.layer || c.layer === 'floor');
 
   function makeSurfaceMat(color?: string, textureId?: string): THREE.MeshStandardMaterial {
+    const hasTexture = Boolean(textureId);
     return new THREE.MeshStandardMaterial({
-      color: color ? new THREE.Color(color) : FLOOR_COLOR,
+      color: getSurfaceColor(color, FLOOR_COLOR, hasTexture),
       map: TextureManager.get(textureId),
       roughness: 0.85,
       metalness: 0.05,
@@ -66,21 +91,35 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
     for (const poly of floorPolys) {
       const shape = makeShapeFromPolygon(poly);
       const floorGeo = new THREE.ShapeGeometry(shape);
-      const textureScale = getTextureScale(poly.textureId, poly.textureScale);
-      if (textureScale) {
+      const isLava = isLavaSurface(poly);
+      const textureScale = !isLava ? getTextureScale(poly.textureId, poly.textureScale) : null;
+      if (textureScale && !isLava) {
         applyWorldUVs(floorGeo, textureScale);
       }
-      const mesh = new THREE.Mesh(floorGeo, makeSurfaceMat(poly.color, poly.textureId));
+      const mesh = new THREE.Mesh(
+        floorGeo,
+        isLava ? createLavaMaterial() : makeSurfaceMat(poly.color, poly.textureId),
+      );
       mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = isLava ? 0.02 : 0;
       mesh.receiveShadow = true;
       scene.add(mesh);
+
+      if (isLava) {
+        zones.push({
+          vertices: poly.vertices.map((v) => ({ x: v.x, z: v.y })),
+          holes: (poly.holes ?? []).map((hole) => hole.map((v) => ({ x: v.x, z: v.y }))),
+          drainRate: getDrainRate(poly),
+        });
+      }
     }
   }
 
   if (floorCircles.length > 0) {
     // Circle floor: CircleGeometry centered at circle.center
     for (const c of floorCircles) {
-      const floorGeo = new THREE.CircleGeometry(c.radius, 64);
+      const radius = Math.max(0.01, c.radius - CIRCLE_FLOOR_INSET);
+      const floorGeo = new THREE.CircleGeometry(radius, CIRCLE_FLOOR_SEGMENTS);
       const textureScale = getTextureScale(c.textureId, c.textureScale);
       if (textureScale) {
         applyWorldUVs(floorGeo, textureScale, c.center.x, -c.center.y);
@@ -116,10 +155,11 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
 
   // ─── Walls from layer='wall' polygons ────────────────────────────────────
   for (const poly of wallPolys) {
+    const hasTexture = Boolean(poly.textureId);
     const wallMat = new THREE.MeshStandardMaterial({
-      color: poly.color ? new THREE.Color(poly.color) : WALL_COLOR,
+      color: hasTexture ? 0xffffff : getSurfaceColor(poly.color, WALL_COLOR, hasTexture),
       map: TextureManager.get(poly.textureId),
-      emissive: new THREE.Color(WALL_EMISSIVE),
+      emissive: hasTexture ? 0x000000 : new THREE.Color(WALL_EMISSIVE),
       roughness: 0.4,
       metalness: 0.6,
     });
@@ -133,29 +173,4 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
     scene.add(extrudeWallPoly(poly, wallMat));
   }
 
-  // ─── Water Zone (placed in corner of wall polygon bounds) ────────────────
-  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-  for (const p of wallPolys) for (const v of p.vertices) {
-    minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
-    minZ = Math.min(minZ, v.y); maxZ = Math.max(maxZ, v.y);
-  }
-  if (!isFinite(minX)) { minX = -20; maxX = 20; minZ = -20; maxZ = 20; }
-
-  const waterW = 12, waterH = 12;
-  const waterCX = maxX - waterW / 2 - 2;
-  const waterCZ = minZ + waterH / 2 + 2;
-
-  const water = new THREE.Mesh(
-    new THREE.PlaneGeometry(waterW, waterH),
-    new THREE.MeshStandardMaterial({ color: 0x0055cc, transparent: true, opacity: 0.45, roughness: 0.1 }),
-  );
-  water.rotation.x = -Math.PI / 2;
-  water.position.set(waterCX, 0.02, waterCZ);
-  scene.add(water);
-
-  zones.push({
-    minX: waterCX - waterW / 2, maxX: waterCX + waterW / 2,
-    minZ: waterCZ - waterH / 2, maxZ: waterCZ + waterH / 2,
-    drainRate: 8.0,
-  });
 }

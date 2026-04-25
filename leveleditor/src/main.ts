@@ -11,8 +11,9 @@ import { CircleRenderer } from './rendering/CircleRenderer';
 import { EntityRenderer } from './rendering/EntityRenderer';
 import { GizmoRenderer } from './rendering/GizmoRenderer';
 import { SnapCursor } from './rendering/SnapCursor';
+import { LightingPreviewManager } from './rendering/LightingPreviewManager';
 import { PropertiesPanel } from './ui/PropertiesPanel';
-import { saveLevel, loadLevel } from './data/Serializer';
+import { saveLevel, loadLevel, loadActiveLevel } from './data/Serializer';
 import { BooleanOpCmd } from './commands/BooleanOpCmd';
 import type { BooleanOp } from './utils/csg';
 
@@ -24,6 +25,7 @@ const polygonRenderer = new PolygonRenderer(editor.scene, editor.levelData);
 const circleRenderer = new CircleRenderer(editor.scene, editor.levelData);
 const entityRenderer = new EntityRenderer(editor.scene, editor.levelData);
 const gizmoRenderer = new GizmoRenderer(editor.scene, editor.levelData, editor.selection);
+const lightingPreview = new LightingPreviewManager(editor.scene, editor.levelData);
 const snapCursor = new SnapCursor(editor.scene);
 editor.input.setSnapCursor(snapCursor);
 
@@ -49,6 +51,8 @@ editor.setActiveTool('select');
 
 // Properties panel
 new PropertiesPanel(editor);
+
+void loadActiveLevel(editor.levelData);
 
 // Start render loop
 editor.start();
@@ -145,12 +149,23 @@ snapCheckbox.addEventListener('change', () => {
   editor.input.setSnapEnabled(snapCheckbox.checked);
 });
 
+const lightingPreviewCheckbox = document.getElementById('lighting-preview-checkbox') as HTMLInputElement;
+lightingPreviewCheckbox.addEventListener('change', () => {
+  const enabled = lightingPreviewCheckbox.checked;
+  lightingPreview.setEnabled(enabled);
+  polygonRenderer.setLightingPreviewEnabled(enabled);
+  circleRenderer.setLightingPreviewEnabled(enabled);
+  entityRenderer.setLightingPreviewEnabled(enabled);
+});
+
 // Undo/Redo buttons
 document.getElementById('btn-undo')!.addEventListener('click', () => editor.commandHistory.undo());
 document.getElementById('btn-redo')!.addEventListener('click', () => editor.commandHistory.redo());
 
 // Save/Load
-document.getElementById('btn-save')!.addEventListener('click', () => saveLevel(editor.levelData));
+document.getElementById('btn-save')!.addEventListener('click', async () => {
+  await saveLevel(editor.levelData);
+});
 document.getElementById('btn-load')!.addEventListener('click', () => loadLevel(editor.levelData));
 
 // Status bar updates

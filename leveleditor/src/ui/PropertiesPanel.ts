@@ -36,6 +36,18 @@ export class PropertiesPanel {
     return options.join('');
   }
 
+  private entityTypeOptions(current: string): string {
+    const options = [
+      ['spawn', 'Spawn'],
+      ['trigger', 'Trigger'],
+      ['waypoint', 'Waypoint'],
+      ['light_point', 'Point Light'],
+    ];
+    return options
+      .map(([value, label]) => `<option value="${value}"${value === current ? ' selected' : ''}>${label}</option>`)
+      .join('');
+  }
+
   refresh(): void {
     const sel = this.editor.selection.selected;
     if (!sel) {
@@ -72,6 +84,7 @@ export class PropertiesPanel {
           <label>Vertices</label>
           <span>${poly.vertices.length}</span>
         </div>
+        ${poly.layer === 'floor' ? this.surfaceSection(poly.properties) : ''}
         ${this.kvSection(poly.properties)}
       `;
 
@@ -126,7 +139,7 @@ export class PropertiesPanel {
         </div>
         <div class="prop-row">
           <label>Type</label>
-          <input type="text" data-field="type" value="${this.esc(entity.type)}" />
+          <select data-field="type">${this.entityTypeOptions(entity.type)}</select>
         </div>
         <div class="prop-row">
           <label>Position</label>
@@ -136,6 +149,7 @@ export class PropertiesPanel {
           <label>Rotation</label>
           <input type="number" data-field="rotation" value="${entity.rotation}" step="15" />
         </div>
+        ${entity.type === 'light_point' ? this.lightSection(entity.properties) : ''}
         ${this.kvSection(entity.properties)}
       `;
 
@@ -162,6 +176,56 @@ export class PropertiesPanel {
     `;
   }
 
+  private lightSection(properties: Record<string, string>): string {
+    return `
+      <div class="prop-section">
+        <h4>Light</h4>
+        <div class="prop-row">
+          <label>Color</label>
+          <input type="color" data-field="light:color" value="${this.esc(properties.color ?? '#ffd080')}" />
+        </div>
+        <div class="prop-row">
+          <label>Intensity</label>
+          <input type="number" data-field="light:intensity" value="${this.esc(properties.intensity ?? '2.0')}" step="0.1" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Range</label>
+          <input type="number" data-field="light:range" value="${this.esc(properties.range ?? '8')}" step="0.5" min="0.5" />
+        </div>
+        <div class="prop-row">
+          <label>Decay</label>
+          <input type="number" data-field="light:decay" value="${this.esc(properties.decay ?? '1.5')}" step="0.1" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Height</label>
+          <input type="number" data-field="light:height" value="${this.esc(properties.height ?? '1.5')}" step="0.1" min="0" />
+        </div>
+      </div>
+    `;
+  }
+
+  private surfaceSection(properties: Record<string, string>): string {
+    const rawSurfaceType = properties.surfaceType ?? 'normal';
+    const surfaceType = rawSurfaceType === 'water' ? 'lava' : rawSurfaceType;
+    const drainRate = properties.drainRate ?? '8';
+    return `
+      <div class="prop-section">
+        <h4>Surface</h4>
+        <div class="prop-row">
+          <label>Type</label>
+          <select data-field="surfaceType">
+            <option value="normal"${surfaceType === 'normal' ? ' selected' : ''}>Normal</option>
+            <option value="lava"${surfaceType === 'lava' ? ' selected' : ''}>Lava</option>
+          </select>
+        </div>
+        <div class="prop-row">
+          <label>Drain</label>
+          <input type="number" data-field="drainRate" value="${this.esc(drainRate)}" step="0.5" min="0" />
+        </div>
+      </div>
+    `;
+  }
+
   private wireInputs(type: 'polygon' | 'entity' | 'circle', id: string): void {
     this.container.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input[data-field], select[data-field]').forEach((input) => {
       input.addEventListener('change', () => {
@@ -175,6 +239,8 @@ export class PropertiesPanel {
           else if (field === 'color') oldValue = poly.color;
           else if (field === 'textureId') oldValue = poly.textureId ?? '';
           else if (field === 'textureScale') oldValue = String(poly.textureScale ?? 1);
+          else if (field === 'surfaceType') oldValue = (poly.properties.surfaceType === 'water' ? 'lava' : (poly.properties.surfaceType ?? 'normal'));
+          else if (field === 'drainRate') oldValue = poly.properties.drainRate ?? '8';
         } else if (type === 'circle') {
           const circle = this.editor.levelData.getCircle(id);
           if (!circle) return;
@@ -190,8 +256,10 @@ export class PropertiesPanel {
           if (field === 'name') oldValue = entity.name;
           else if (field === 'type') oldValue = entity.type;
           else if (field === 'rotation') oldValue = String(entity.rotation);
+          else if (field.startsWith('light:')) oldValue = entity.properties[field.slice(6)] ?? '';
         }
-        const cmd = new EditPropertyCmd(this.editor.levelData, type, id, field, oldValue, input.value);
+        const targetField = type === 'entity' && field.startsWith('light:') ? field.slice(6) : field;
+        const cmd = new EditPropertyCmd(this.editor.levelData, type, id, targetField, oldValue, input.value);
         this.editor.commandHistory.execute(cmd);
       });
     });

@@ -5,7 +5,7 @@ import {
   COLLISION_DAMAGE_RATIO, RPM_OVERDRAIN, WALL_RPM_PENALTY,
 } from './constants';
 import { spinnerConfig } from './spinnerConfig';
-import { collidables, zones, type Collidable, type CircleHit } from './physics';
+import { collidables, isPointInFloorZone, zones, type Collidable, type CircleHit } from './physics';
 import { createTop } from './top';
 import { updateSpinnerVisuals, type SpinnerTiltState } from './spinnerVisuals';
 import {
@@ -109,10 +109,7 @@ export function playerRpmHooks(delta: number, playerWallHit: boolean, circleHits
 
   // Floor zone drain
   for (const zone of zones) {
-    if (
-      playerBody.pos.x >= zone.minX && playerBody.pos.x <= zone.maxX &&
-      playerBody.pos.z >= zone.minZ && playerBody.pos.z <= zone.maxZ
-    ) {
+    if (isPointInFloorZone(playerBody.pos, zone)) {
       playerBody.rpm -= zone.drainRate * delta;
     }
   }

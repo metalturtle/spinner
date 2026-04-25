@@ -6,10 +6,23 @@ import { applyWorldUVs, getTextureScale, TextureManager } from './TextureManager
 
 const CIRCLE_SEGMENTS = 48;
 
+function getSurfaceColor(colorHex: string, hasTexture: boolean, lightingPreviewEnabled: boolean): THREE.Color {
+  const authoredColor = new THREE.Color(colorHex);
+  if (!hasTexture) return authoredColor;
+  if (!lightingPreviewEnabled) return authoredColor;
+  return new THREE.Color(0xffffff).lerp(authoredColor, 0.18);
+}
+
+function getSurfaceOpacity(layer: string, hasTexture: boolean, lightingPreviewEnabled: boolean): number {
+  if (hasTexture && lightingPreviewEnabled) return 1;
+  return layer === 'floor' ? 0.35 : 0.2;
+}
+
 export class CircleRenderer {
   private scene: THREE.Scene;
   private levelData: LevelData;
   private groups = new Map<string, THREE.Group>();
+  private lightingPreviewEnabled = false;
 
   constructor(scene: THREE.Scene, levelData: LevelData) {
     this.scene = scene;
@@ -19,6 +32,12 @@ export class CircleRenderer {
     levelData.on('circle-removed', (c: CircleData) => this.removeCircleMesh(c.id));
     levelData.on('circle-changed', (c: CircleData) => this.updateCircleMesh(c));
     levelData.on('level-loaded', () => this.rebuildAll());
+  }
+
+  setLightingPreviewEnabled(enabled: boolean): void {
+    if (this.lightingPreviewEnabled === enabled) return;
+    this.lightingPreviewEnabled = enabled;
+    this.rebuildAll();
   }
 
   private addCircleMesh(circle: CircleData): void {
@@ -38,8 +57,9 @@ export class CircleRenderer {
       group.remove(child);
     }
 
-    const color = new THREE.Color(circle.color);
-    const fillOpacity = circle.layer === 'floor' ? 0.35 : 0.2;
+    const hasTexture = Boolean(circle.textureId);
+    const color = getSurfaceColor(circle.color, hasTexture, this.lightingPreviewEnabled);
+    const fillOpacity = getSurfaceOpacity(circle.layer, hasTexture, this.lightingPreviewEnabled);
 
     // Fill
     const fillGeo = new THREE.CircleGeometry(circle.radius, CIRCLE_SEGMENTS);
@@ -47,14 +67,25 @@ export class CircleRenderer {
     if (textureScale) {
       applyWorldUVs(fillGeo, textureScale, circle.center.x, circle.center.y);
     }
-    const fillMat = new THREE.MeshBasicMaterial({
-      color,
-      map: TextureManager.get(circle.textureId),
-      transparent: true,
-      opacity: fillOpacity,
-      side: THREE.DoubleSide,
-      depthTest: false,
-    });
+    const fillMat = this.lightingPreviewEnabled
+      ? new THREE.MeshStandardMaterial({
+          color,
+          map: TextureManager.get(circle.textureId),
+          transparent: fillOpacity < 1,
+          opacity: fillOpacity,
+          side: THREE.DoubleSide,
+          roughness: 0.82,
+          metalness: 0.04,
+          depthTest: false,
+        })
+      : new THREE.MeshBasicMaterial({
+          color,
+          map: TextureManager.get(circle.textureId),
+          transparent: true,
+          opacity: fillOpacity,
+          side: THREE.DoubleSide,
+          depthTest: false,
+        });
     const fillMesh = new THREE.Mesh(fillGeo, fillMat);
     fillMesh.position.set(circle.center.x, circle.center.y, 0);
     fillMesh.userData = { type: 'circle', id: circle.id };

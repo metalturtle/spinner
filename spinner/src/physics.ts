@@ -24,10 +24,12 @@ export interface Segment {
 }
 
 export interface FloorZone {
-  minX: number;
-  maxX: number;
-  minZ: number;
-  maxZ: number;
+  minX?: number;
+  maxX?: number;
+  minZ?: number;
+  maxZ?: number;
+  vertices?: Vec2[];
+  holes?: Vec2[][];
   drainRate: number; // RPM drained per second while inside
 }
 
@@ -203,4 +205,33 @@ export function findPlayerHit(circleHits: CircleHit[], target: Collidable): Circ
     if (collidables[enemyIdx] === target) return hit;
   }
   return null;
+}
+
+function isPointInPolygon(point: Vec2, vertices: Vec2[]): boolean {
+  let inside = false;
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+    const xi = vertices[i].x;
+    const zi = vertices[i].z;
+    const xj = vertices[j].x;
+    const zj = vertices[j].z;
+    const intersects = ((zi > point.z) !== (zj > point.z))
+      && (point.x < ((xj - xi) * (point.z - zi)) / ((zj - zi) || Number.EPSILON) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+export function isPointInFloorZone(point: Vec2, zone: FloorZone): boolean {
+  if (zone.vertices && zone.vertices.length >= 3) {
+    if (!isPointInPolygon(point, zone.vertices)) return false;
+    for (const hole of zone.holes ?? []) {
+      if (hole.length >= 3 && isPointInPolygon(point, hole)) return false;
+    }
+    return true;
+  }
+
+  return (
+    point.x >= (zone.minX ?? Infinity * -1) && point.x <= (zone.maxX ?? Infinity) &&
+    point.z >= (zone.minZ ?? Infinity * -1) && point.z <= (zone.maxZ ?? Infinity)
+  );
 }

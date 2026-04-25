@@ -4,10 +4,23 @@ import type { PolygonData } from '../data/Polygon';
 import { LAYER_Z } from '../data/Polygon';
 import { applyWorldUVs, getTextureScale, TextureManager } from './TextureManager';
 
+function getSurfaceColor(colorHex: string, hasTexture: boolean, lightingPreviewEnabled: boolean): THREE.Color {
+  const authoredColor = new THREE.Color(colorHex);
+  if (!hasTexture) return authoredColor;
+  if (!lightingPreviewEnabled) return authoredColor;
+  return new THREE.Color(0xffffff).lerp(authoredColor, 0.18);
+}
+
+function getSurfaceOpacity(layer: string, hasTexture: boolean, lightingPreviewEnabled: boolean): number {
+  if (hasTexture && lightingPreviewEnabled) return 1;
+  return layer === 'floor' ? 0.35 : 0.2;
+}
+
 export class PolygonRenderer {
   private scene: THREE.Scene;
   private levelData: LevelData;
   private groups = new Map<string, THREE.Group>();
+  private lightingPreviewEnabled = false;
 
   constructor(scene: THREE.Scene, levelData: LevelData) {
     this.scene = scene;
@@ -17,6 +30,12 @@ export class PolygonRenderer {
     levelData.on('polygon-removed', (poly: PolygonData) => this.removePolygonMesh(poly.id));
     levelData.on('polygon-changed', (poly: PolygonData) => this.updatePolygonMesh(poly));
     levelData.on('level-loaded', () => this.rebuildAll());
+  }
+
+  setLightingPreviewEnabled(enabled: boolean): void {
+    if (this.lightingPreviewEnabled === enabled) return;
+    this.lightingPreviewEnabled = enabled;
+    this.rebuildAll();
   }
 
   private addPolygonMesh(poly: PolygonData): void {
@@ -42,7 +61,8 @@ export class PolygonRenderer {
       group.remove(child);
     }
 
-    const color = new THREE.Color(poly.color);
+    const hasTexture = Boolean(poly.textureId);
+    const color = getSurfaceColor(poly.color, hasTexture, this.lightingPreviewEnabled);
 
     // Fill mesh
     const shape = new THREE.Shape();
@@ -68,15 +88,26 @@ export class PolygonRenderer {
     if (textureScale) {
       applyWorldUVs(fillGeo, textureScale);
     }
-    const fillOpacity = poly.layer === 'floor' ? 0.35 : 0.2;
-    const fillMat = new THREE.MeshBasicMaterial({
-      color,
-      map: TextureManager.get(poly.textureId),
-      transparent: true,
-      opacity: fillOpacity,
-      side: THREE.DoubleSide,
-      depthTest: false,
-    });
+    const fillOpacity = getSurfaceOpacity(poly.layer, hasTexture, this.lightingPreviewEnabled);
+    const fillMat = this.lightingPreviewEnabled
+      ? new THREE.MeshStandardMaterial({
+          color,
+          map: TextureManager.get(poly.textureId),
+          transparent: fillOpacity < 1,
+          opacity: fillOpacity,
+          side: THREE.DoubleSide,
+          roughness: 0.82,
+          metalness: 0.04,
+          depthTest: false,
+        })
+      : new THREE.MeshBasicMaterial({
+          color,
+          map: TextureManager.get(poly.textureId),
+          transparent: true,
+          opacity: fillOpacity,
+          side: THREE.DoubleSide,
+          depthTest: false,
+        });
     const fillMesh = new THREE.Mesh(fillGeo, fillMat);
     fillMesh.userData = { type: 'polygon', id: poly.id };
     group.add(fillMesh);

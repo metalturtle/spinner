@@ -140,6 +140,9 @@ export class LevelData {
       if (!poly.layer) {
         poly.layer = poly.properties.type === 'floor' ? 'floor' : 'wall';
       }
+      if (poly.properties.surfaceType === 'water') {
+        poly.properties.surfaceType = 'lava';
+      }
       if (!poly.textureId) delete poly.textureId;
       if (!poly.textureScale || poly.textureScale === 1) delete poly.textureScale;
       if (!poly.holes || poly.holes.length === 0) delete poly.holes;

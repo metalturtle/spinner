@@ -28,6 +28,42 @@ export function applyWorldUVs(
   geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
 }
 
+export function applyWallExtrusionUVs(
+  geometry: THREE.BufferGeometry,
+  scale: number
+): void {
+  const position = geometry.getAttribute('position');
+  const normal = geometry.getAttribute('normal');
+  const uvs = new Float32Array(position.count * 2);
+
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const z = position.getZ(i);
+
+    const nx = Math.abs(normal.getX(i));
+    const ny = Math.abs(normal.getY(i));
+    const nz = Math.abs(normal.getZ(i));
+
+    if (nz >= nx && nz >= ny) {
+      uvs[i * 2] = x / scale;
+      uvs[i * 2 + 1] = y / scale;
+      continue;
+    }
+
+    if (nx >= ny) {
+      uvs[i * 2] = y / scale;
+      uvs[i * 2 + 1] = z / scale;
+      continue;
+    }
+
+    uvs[i * 2] = x / scale;
+    uvs[i * 2 + 1] = z / scale;
+  }
+
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+}
+
 export class TextureManager {
   private static cache = new Map<string, THREE.Texture>();
   private static loader = new THREE.TextureLoader();
