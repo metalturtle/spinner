@@ -41,3 +41,5 @@ entities:
     hive spinner
     zombies
     slugs
+normap maps
+glare effects

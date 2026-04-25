@@ -10,6 +10,10 @@ function parseTextureScale(value: string): number | undefined {
   return parsed === 1 ? undefined : parsed;
 }
 
+function parseBoolean(value: string): boolean {
+  return value === 'true';
+}
+
 export class EditPropertyCmd implements Command {
   description: string;
   private levelData: LevelData;
@@ -53,6 +57,7 @@ export class EditPropertyCmd implements Command {
       else if (this.field === 'color') poly.color = value;
       else if (this.field === 'textureId') poly.textureId = value || undefined;
       else if (this.field === 'textureScale') poly.textureScale = parseTextureScale(value);
+      else if (this.field === 'useReliefMap') poly.useReliefMap = parseBoolean(value) || undefined;
       else poly.properties[this.field] = value;
       this.levelData.notifyPolygonChanged(this.objectId);
     } else if (this.objectType === 'circle') {
@@ -63,6 +68,7 @@ export class EditPropertyCmd implements Command {
       else if (this.field === 'color') circle.color = value;
       else if (this.field === 'textureId') circle.textureId = value || undefined;
       else if (this.field === 'textureScale') circle.textureScale = parseTextureScale(value);
+      else if (this.field === 'useReliefMap') circle.useReliefMap = parseBoolean(value) || undefined;
       else if (this.field === 'radius') circle.radius = parseFloat(value) || 1;
       else circle.properties[this.field] = value;
       this.levelData.notifyCircleChanged(this.objectId);

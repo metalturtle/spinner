@@ -238,6 +238,14 @@ body {
   letter-spacing: 0.5px;
 }
 
+#entity-type-selector .prop-row {
+  margin-bottom: 8px;
+}
+
+#entity-type-selector .prop-row label {
+  width: 44px;
+}
+
 #entity-type-dropdown {
   background: rgba(30, 30, 55, 0.8);
   border: 1px solid rgba(80, 80, 120, 0.3);

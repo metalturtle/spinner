@@ -10,4 +10,5 @@ export interface CircleData {
   color: string;
   textureId?: string;
   textureScale?: number;
+  useReliefMap?: boolean;
 }

@@ -2,13 +2,14 @@ import type { Tool, EditorPointerEvent } from './Tool';
 import { Editor } from '../editor/Editor';
 import { AddEntityCmd } from '../commands/AddEntityCmd';
 import { generateId } from '../utils/ids';
+import { getEntityTypeLabel } from '../data/entityTypes';
 
 export class EntityTool implements Tool {
   name = 'entity';
   cursor = 'crosshair';
 
   private editor: Editor;
-  private entityType = 'spawn';
+  private entityType = 'player_spawn';
 
   constructor(editor: Editor) {
     this.editor = editor;
@@ -28,9 +29,10 @@ export class EntityTool implements Tool {
   onPointerDown(event: EditorPointerEvent): void {
     const id = generateId('ent');
     const properties = this.defaultPropertiesForType(this.entityType);
+    const label = getEntityTypeLabel(this.entityType);
     const cmd = new AddEntityCmd(this.editor.levelData, {
       id,
-      name: `${this.entityType.charAt(0).toUpperCase() + this.entityType.slice(1)} ${this.editor.levelData.entities.length + 1}`,
+      name: `${label} ${this.editor.levelData.entities.length + 1}`,
       type: this.entityType,
       position: { x: event.worldPos.x, y: event.worldPos.y },
       rotation: 0,

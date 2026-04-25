@@ -2,6 +2,11 @@ import { Editor } from '../editor/Editor';
 import { EditPropertyCmd } from '../commands/EditPropertyCmd';
 import type { PolygonLayer } from '../data/Polygon';
 import { TEXTURE_LIBRARY } from '../data/TextureLibrary';
+import {
+  CUSTOM_ENTITY_TYPE_VALUE,
+  ENTITY_TYPE_OPTIONS,
+  isKnownEntityType,
+} from '../data/entityTypes';
 
 const LAYERS: PolygonLayer[] = ['floor', 'wall', 'trigger', 'decoration'];
 
@@ -37,14 +42,16 @@ export class PropertiesPanel {
   }
 
   private entityTypeOptions(current: string): string {
-    const options = [
-      ['spawn', 'Spawn'],
-      ['trigger', 'Trigger'],
-      ['waypoint', 'Waypoint'],
-      ['light_point', 'Point Light'],
-    ];
-    return options
-      .map(([value, label]) => `<option value="${value}"${value === current ? ' selected' : ''}>${label}</option>`)
+    return [
+      ...ENTITY_TYPE_OPTIONS.map((option) =>
+        `<option value="${option.value}"${option.value === current ? ' selected' : ''}>${option.label}</option>`),
+      `<option value="${CUSTOM_ENTITY_TYPE_VALUE}"${isKnownEntityType(current) ? '' : ' selected'}>Custom</option>`,
+    ].join('');
+  }
+
+  private entityTypeDatalistOptions(): string {
+    return ENTITY_TYPE_OPTIONS
+      .map((option) => `<option value="${option.value}">${option.label}</option>`)
       .join('');
   }
 
@@ -80,6 +87,7 @@ export class PropertiesPanel {
           <label>Tex Size</label>
           <input type="number" data-field="textureScale" value="${(poly.textureScale ?? 1).toFixed(2)}" step="0.25" min="0.25" />
         </div>
+        ${this.reliefRow(poly.textureId, poly.useReliefMap)}
         <div class="prop-row">
           <label>Vertices</label>
           <span>${poly.vertices.length}</span>
@@ -115,6 +123,7 @@ export class PropertiesPanel {
           <label>Tex Size</label>
           <input type="number" data-field="textureScale" value="${(circle.textureScale ?? 1).toFixed(2)}" step="0.25" min="0.25" />
         </div>
+        ${this.reliefRow(circle.textureId, circle.useReliefMap)}
         <div class="prop-row">
           <label>Center</label>
           <span>${circle.center.x.toFixed(1)}, ${circle.center.y.toFixed(1)}</span>
@@ -139,7 +148,18 @@ export class PropertiesPanel {
         </div>
         <div class="prop-row">
           <label>Type</label>
-          <select data-field="type">${this.entityTypeOptions(entity.type)}</select>
+          <select id="entity-type-preset">${this.entityTypeOptions(entity.type)}</select>
+        </div>
+        <div class="prop-row">
+          <label>Custom</label>
+          <input
+            type="text"
+            data-field="type"
+            value="${this.esc(entity.type)}"
+            list="entity-type-suggestions-panel"
+            placeholder="Enter entity type"
+          />
+          <datalist id="entity-type-suggestions-panel">${this.entityTypeDatalistOptions()}</datalist>
         </div>
         <div class="prop-row">
           <label>Position</label>
@@ -154,8 +174,27 @@ export class PropertiesPanel {
       `;
 
       this.wireInputs('entity', sel.id);
+      this.wireEntityTypePreset();
       this.wireKV('entity', sel.id);
     }
+  }
+
+  private wireEntityTypePreset(): void {
+    const preset = this.container.querySelector<HTMLSelectElement>('#entity-type-preset');
+    const typeInput = this.container.querySelector<HTMLInputElement>('input[data-field="type"]');
+    if (!preset || !typeInput) return;
+
+    preset.addEventListener('change', () => {
+      if (preset.value === CUSTOM_ENTITY_TYPE_VALUE) {
+        typeInput.focus();
+        typeInput.select();
+        return;
+      }
+
+      if (typeInput.value === preset.value) return;
+      typeInput.value = preset.value;
+      typeInput.dispatchEvent(new Event('change'));
+    });
   }
 
   private kvSection(properties: Record<string, string>): string {
@@ -226,10 +265,24 @@ export class PropertiesPanel {
     `;
   }
 
+  private reliefRow(textureId: string | undefined, enabled: boolean | undefined): string {
+    const texture = TEXTURE_LIBRARY.find((entry) => entry.id === textureId);
+    if (!texture?.hasRelief) return '';
+    return `
+      <div class="prop-row">
+        <label>Use Relief</label>
+        <input type="checkbox" data-field="useReliefMap"${enabled ? ' checked' : ''} />
+      </div>
+    `;
+  }
+
   private wireInputs(type: 'polygon' | 'entity' | 'circle', id: string): void {
     this.container.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input[data-field], select[data-field]').forEach((input) => {
       input.addEventListener('change', () => {
         const field = input.dataset.field!;
+        const newValue = input instanceof HTMLInputElement && input.type === 'checkbox'
+          ? String(input.checked)
+          : input.value;
         let oldValue = '';
         if (type === 'polygon') {
           const poly = this.editor.levelData.getPolygon(id);
@@ -239,6 +292,7 @@ export class PropertiesPanel {
           else if (field === 'color') oldValue = poly.color;
           else if (field === 'textureId') oldValue = poly.textureId ?? '';
           else if (field === 'textureScale') oldValue = String(poly.textureScale ?? 1);
+          else if (field === 'useReliefMap') oldValue = String(Boolean(poly.useReliefMap));
           else if (field === 'surfaceType') oldValue = (poly.properties.surfaceType === 'water' ? 'lava' : (poly.properties.surfaceType ?? 'normal'));
           else if (field === 'drainRate') oldValue = poly.properties.drainRate ?? '8';
         } else if (type === 'circle') {
@@ -249,6 +303,7 @@ export class PropertiesPanel {
           else if (field === 'color') oldValue = circle.color;
           else if (field === 'textureId') oldValue = circle.textureId ?? '';
           else if (field === 'textureScale') oldValue = String(circle.textureScale ?? 1);
+          else if (field === 'useReliefMap') oldValue = String(Boolean(circle.useReliefMap));
           else if (field === 'radius') oldValue = String(circle.radius);
         } else {
           const entity = this.editor.levelData.getEntity(id);
@@ -259,7 +314,7 @@ export class PropertiesPanel {
           else if (field.startsWith('light:')) oldValue = entity.properties[field.slice(6)] ?? '';
         }
         const targetField = type === 'entity' && field.startsWith('light:') ? field.slice(6) : field;
-        const cmd = new EditPropertyCmd(this.editor.levelData, type, id, targetField, oldValue, input.value);
+        const cmd = new EditPropertyCmd(this.editor.levelData, type, id, targetField, oldValue, newValue);
         this.editor.commandHistory.execute(cmd);
       });
     });

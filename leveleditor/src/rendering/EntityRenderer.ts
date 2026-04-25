@@ -1,15 +1,9 @@
 import * as THREE from 'three';
 import { LevelData } from '../data/LevelData';
 import type { EntityData } from '../data/Entity';
+import { ENTITY_TYPE_COLORS } from '../data/entityTypes';
 
 const ENTITY_Z = 2;
-
-const TYPE_COLORS: Record<string, number> = {
-  spawn: 0x44ff44,
-  trigger: 0xff8844,
-  waypoint: 0x4488ff,
-  light_point: 0xffd066,
-};
 
 export class EntityRenderer {
   private scene: THREE.Scene;
@@ -50,7 +44,7 @@ export class EntityRenderer {
       group.remove(child);
     }
 
-    const color = TYPE_COLORS[entity.type] ?? 0xcccccc;
+    const color = ENTITY_TYPE_COLORS[entity.type] ?? 0xcccccc;
 
     if (entity.type === 'light_point') {
       this.buildLightVisual(group, entity, color);

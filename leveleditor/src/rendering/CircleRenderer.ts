@@ -71,6 +71,10 @@ export class CircleRenderer {
       ? new THREE.MeshStandardMaterial({
           color,
           map: TextureManager.get(circle.textureId),
+          normalMap: TextureManager.getNormal(circle.textureId, circle.useReliefMap),
+          bumpMap: TextureManager.getBump(circle.textureId, circle.useReliefMap),
+          normalScale: circle.useReliefMap ? new THREE.Vector2(0.7, 0.7) : undefined,
+          bumpScale: circle.useReliefMap ? 0.12 : undefined,
           transparent: fillOpacity < 1,
           opacity: fillOpacity,
           side: THREE.DoubleSide,

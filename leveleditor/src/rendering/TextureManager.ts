@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { getTextureDefinition } from '../data/TextureLibrary';
 
 export function getTextureScale(textureId?: string, sizeMultiplier?: number): number | null {
@@ -31,23 +32,45 @@ export function applyWorldUVs(
 export class TextureManager {
   private static cache = new Map<string, THREE.Texture>();
   private static loader = new THREE.TextureLoader();
+  private static exrLoader = new EXRLoader();
+
+  private static load(src: string, isColor: boolean): THREE.Texture {
+    const cacheKey = `${isColor ? 'color' : 'data'}:${src}`;
+    const existing = this.cache.get(cacheKey);
+    if (existing) return existing;
+
+    const isExr = src.toLowerCase().endsWith('.exr');
+    const loader = isExr ? this.exrLoader : this.loader;
+    const texture = loader.load(src);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.colorSpace = isColor ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = isExr ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter;
+    texture.generateMipmaps = !isExr;
+    texture.needsUpdate = true;
+    this.cache.set(cacheKey, texture);
+    return texture;
+  }
 
   static get(textureId?: string): THREE.Texture | null {
     const definition = getTextureDefinition(textureId);
     if (!definition) return null;
+    return this.load(definition.src, true);
+  }
 
-    let texture = this.cache.get(definition.id);
-    if (!texture) {
-      texture = this.loader.load(definition.src);
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.RepeatWrapping;
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.magFilter = THREE.LinearFilter;
-      texture.minFilter = THREE.LinearMipmapLinearFilter;
-      texture.needsUpdate = true;
-      this.cache.set(definition.id, texture);
-    }
+  static getNormal(textureId?: string, enabled?: boolean): THREE.Texture | null {
+    if (!enabled) return null;
+    const definition = getTextureDefinition(textureId);
+    if (!definition?.normalSrc) return null;
+    return this.load(definition.normalSrc, false);
+  }
 
-    return texture;
+  static getBump(textureId?: string, enabled?: boolean): THREE.Texture | null {
+    if (!enabled) return null;
+    const definition = getTextureDefinition(textureId);
+    if (definition?.normalSrc) return null;
+    if (!definition?.bumpSrc) return null;
+    return this.load(definition.bumpSrc, false);
   }
 }

@@ -7,7 +7,7 @@ import type { Plugin } from 'vite';
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const sharedTextureDir = path.resolve(rootDir, '..', 'textures');
 const activeLevelPath = path.resolve(rootDir, '..', 'spinner', 'src', 'levels', 'level-active.json');
-const textureExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif', '.gif']);
+const textureExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif', '.gif', '.exr']);
 
 function sharedTexturesPlugin() {
   const virtualModuleId = 'virtual:shared-textures';

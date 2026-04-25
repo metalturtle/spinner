@@ -145,12 +145,14 @@ export class LevelData {
       }
       if (!poly.textureId) delete poly.textureId;
       if (!poly.textureScale || poly.textureScale === 1) delete poly.textureScale;
+      if (!poly.useReliefMap) delete poly.useReliefMap;
       if (!poly.holes || poly.holes.length === 0) delete poly.holes;
     }
 
     for (const circle of this.circles) {
       if (!circle.textureId) delete circle.textureId;
       if (!circle.textureScale || circle.textureScale === 1) delete circle.textureScale;
+      if (!circle.useReliefMap) delete circle.useReliefMap;
     }
 
     this.emit('level-loaded');

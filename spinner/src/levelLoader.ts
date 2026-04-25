@@ -19,6 +19,7 @@ export interface LevelPolygon {
   color?:      string;
   textureId?:  string;
   textureScale?: number;
+  useReliefMap?: boolean;
 }
 
 export interface LevelCircle {
@@ -31,6 +32,7 @@ export interface LevelCircle {
   color?:      string;
   textureId?:  string;
   textureScale?: number;
+  useReliefMap?: boolean;
 }
 
 export interface LevelData {

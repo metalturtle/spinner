@@ -64,12 +64,15 @@
 
     <div id="entity-type-selector" style="display:none">
       <h3>Entity Type</h3>
-      <select id="entity-type-dropdown">
-        <option value="spawn">Spawn</option>
-        <option value="trigger">Trigger</option>
-        <option value="waypoint">Waypoint</option>
-        <option value="light_point">Point Light</option>
-      </select>
+      <div class="prop-row">
+        <label>Preset</label>
+        <select id="entity-type-dropdown"></select>
+      </div>
+      <div class="prop-row">
+        <label>Custom</label>
+        <input type="text" id="entity-type-custom" list="entity-type-suggestions" placeholder="Enter entity type" />
+        <datalist id="entity-type-suggestions"></datalist>
+      </div>
     </div>
 
     <div id="regpoly-config" style="display:none">

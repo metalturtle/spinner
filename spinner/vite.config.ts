@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const sharedTextureDir = path.resolve(rootDir, '..', 'textures');
-const textureExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif', '.gif']);
+const textureExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif', '.gif', '.exr']);
 
 function sharedTexturesPlugin() {
   const virtualModuleId = 'virtual:shared-textures';

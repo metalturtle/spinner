@@ -100,6 +100,15 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
         floorGeo,
         isLava ? createLavaMaterial() : makeSurfaceMat(poly.color, poly.textureId),
       );
+      if (!isLava) {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        mat.normalMap = TextureManager.getNormal(poly.textureId, poly.useReliefMap);
+        mat.bumpMap = TextureManager.getBump(poly.textureId, poly.useReliefMap);
+        if (poly.useReliefMap) {
+          mat.normalScale = new THREE.Vector2(0.6, 0.6);
+          mat.bumpScale = 0.1;
+        }
+      }
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.y = isLava ? 0.02 : 0;
       mesh.receiveShadow = true;
@@ -128,6 +137,13 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
         floorGeo,
         makeSurfaceMat(c.color, c.textureId),
       );
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      mat.normalMap = TextureManager.getNormal(c.textureId, c.useReliefMap);
+      mat.bumpMap = TextureManager.getBump(c.textureId, c.useReliefMap);
+      if (c.useReliefMap) {
+        mat.normalScale = new THREE.Vector2(0.6, 0.6);
+        mat.bumpScale = 0.1;
+      }
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.set(c.center.x, 0, c.center.y);
       mesh.receiveShadow = true;
@@ -159,10 +175,16 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
     const wallMat = new THREE.MeshStandardMaterial({
       color: hasTexture ? 0xffffff : getSurfaceColor(poly.color, WALL_COLOR, hasTexture),
       map: TextureManager.get(poly.textureId),
+      normalMap: TextureManager.getNormal(poly.textureId, poly.useReliefMap),
+      bumpMap: TextureManager.getBump(poly.textureId, poly.useReliefMap),
       emissive: hasTexture ? 0x000000 : new THREE.Color(WALL_EMISSIVE),
       roughness: 0.4,
       metalness: 0.6,
     });
+    if (poly.useReliefMap) {
+      wallMat.normalScale = new THREE.Vector2(0.9, 0.9);
+      wallMat.bumpScale = 0.16;
+    }
     // Collision: one segment per edge
     const verts = poly.vertices;
     for (let i = 0; i < verts.length; i++) {

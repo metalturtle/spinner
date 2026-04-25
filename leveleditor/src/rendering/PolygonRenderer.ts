@@ -93,6 +93,10 @@ export class PolygonRenderer {
       ? new THREE.MeshStandardMaterial({
           color,
           map: TextureManager.get(poly.textureId),
+          normalMap: TextureManager.getNormal(poly.textureId, poly.useReliefMap),
+          bumpMap: TextureManager.getBump(poly.textureId, poly.useReliefMap),
+          normalScale: poly.useReliefMap ? new THREE.Vector2(0.7, 0.7) : undefined,
+          bumpScale: poly.useReliefMap ? 0.12 : undefined,
           transparent: fillOpacity < 1,
           opacity: fillOpacity,
           side: THREE.DoubleSide,

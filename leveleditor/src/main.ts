@@ -16,6 +16,11 @@ import { PropertiesPanel } from './ui/PropertiesPanel';
 import { saveLevel, loadLevel, loadActiveLevel } from './data/Serializer';
 import { BooleanOpCmd } from './commands/BooleanOpCmd';
 import type { BooleanOp } from './utils/csg';
+import {
+  CUSTOM_ENTITY_TYPE_VALUE,
+  ENTITY_TYPE_OPTIONS,
+  isKnownEntityType,
+} from './data/entityTypes';
 
 const canvas = document.getElementById('editor-canvas') as HTMLCanvasElement;
 const editor = new Editor(canvas);
@@ -62,9 +67,41 @@ const toolButtons = document.querySelectorAll<HTMLButtonElement>('.tool-btn');
 const statusTool = document.getElementById('status-tool')!;
 const entityTypeSelector = document.getElementById('entity-type-selector')!;
 const entityTypeDropdown = document.getElementById('entity-type-dropdown') as HTMLSelectElement;
+const entityTypeCustom = document.getElementById('entity-type-custom') as HTMLInputElement;
+const entityTypeSuggestions = document.getElementById('entity-type-suggestions') as HTMLDataListElement;
 const roomConfig = document.getElementById('room-config')!;
 const regpolyConfig = document.getElementById('regpoly-config')!;
 const wallThicknessInput = document.getElementById('wall-thickness') as HTMLInputElement;
+
+function renderEntityTypeControls(): void {
+  entityTypeDropdown.innerHTML = [
+    ...ENTITY_TYPE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`),
+    `<option value="${CUSTOM_ENTITY_TYPE_VALUE}">Custom</option>`,
+  ].join('');
+
+  entityTypeSuggestions.innerHTML = ENTITY_TYPE_OPTIONS
+    .map((option) => `<option value="${option.value}">${option.label}</option>`)
+    .join('');
+}
+
+function syncEntityTypeControls(type: string): void {
+  entityTypeCustom.value = type;
+  entityTypeDropdown.value = isKnownEntityType(type) ? type : CUSTOM_ENTITY_TYPE_VALUE;
+}
+
+function setToolbarEntityType(type: string): void {
+  const nextType = type.trim();
+  if (!nextType) {
+    syncEntityTypeControls(entityTool.getEntityType());
+    return;
+  }
+
+  entityTool.setEntityType(nextType);
+  syncEntityTypeControls(nextType);
+}
+
+renderEntityTypeControls();
+syncEntityTypeControls(entityTool.getEntityType());
 
 function activateTool(toolName: string) {
   editor.setActiveTool(toolName);
@@ -95,7 +132,17 @@ window.addEventListener('keydown', (e) => {
 
 // Entity type dropdown
 entityTypeDropdown.addEventListener('change', () => {
-  entityTool.setEntityType(entityTypeDropdown.value);
+  if (entityTypeDropdown.value === CUSTOM_ENTITY_TYPE_VALUE) {
+    entityTypeCustom.focus();
+    entityTypeCustom.select();
+    return;
+  }
+
+  setToolbarEntityType(entityTypeDropdown.value);
+});
+
+entityTypeCustom.addEventListener('change', () => {
+  setToolbarEntityType(entityTypeCustom.value);
 });
 
 // Room config

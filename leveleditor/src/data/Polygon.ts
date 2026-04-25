@@ -22,4 +22,5 @@ export interface PolygonData {
   color: string;
   textureId?: string;
   textureScale?: number;
+  useReliefMap?: boolean;
 }
