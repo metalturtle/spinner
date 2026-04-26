@@ -12,12 +12,27 @@ const textureExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif', '.
 function sharedTexturesPlugin() {
   const virtualModuleId = 'virtual:shared-textures';
   const resolvedVirtualModuleId = '\0' + virtualModuleId;
+  const normalizePath = (value: string) => value.split(path.sep).join(path.posix.sep);
+  const sharedTextureDirNormalized = normalizePath(sharedTextureDir) + '/';
 
   return {
     name: 'shared-textures',
     resolveId(id: string) {
       if (id === virtualModuleId) return resolvedVirtualModuleId;
       return null;
+    },
+    configureServer(server) {
+      const reloadIfSharedTexture = (file: string) => {
+        const normalizedFile = normalizePath(file);
+        if (!normalizedFile.startsWith(sharedTextureDirNormalized)) return;
+        const module = server.moduleGraph.getModuleById(resolvedVirtualModuleId);
+        if (module) server.moduleGraph.invalidateModule(module);
+        server.ws.send({ type: 'full-reload' });
+      };
+
+      server.watcher.on('add', reloadIfSharedTexture);
+      server.watcher.on('unlink', reloadIfSharedTexture);
+      server.watcher.on('change', reloadIfSharedTexture);
     },
     load(id: string) {
       if (id !== resolvedVirtualModuleId) return null;

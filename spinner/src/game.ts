@@ -44,6 +44,11 @@ import {
   ENEMY_SPINNER_TIER_1, type EnemySpinnerState,
 } from './enemySpinner';
 import {
+  createZombieEnemy, updateZombieAI, updateZombieVisuals,
+  applyDamageToZombie, isZombieDead, destroyZombieEnemy,
+  ZOMBIE_TIER_1, type ZombieState,
+} from './zombieEnemy';
+import {
   createDreadnought, updateDreadnoughtAI, updateDreadnoughtVisuals,
   checkWeakPoint, isDreadnoughtDead, destroyDreadnought,
   type DreadnoughtState,
@@ -66,7 +71,7 @@ import {
   applyDamageToHiveCore, isHiveBossDead, destroyHiveBoss, HIVE_TIER_1,
   type HiveBossState,
 } from './bossHive';
-import { initSparks, emitSparks, emitGoo, emitPlasma, updateSparks, resetSparks, computeContactInfo } from './sparks';
+import { initSparks, emitSparks, emitGoo, emitPlasma, emitBlood, updateSparks, resetSparks, computeContactInfo } from './sparks';
 import { hasPlayerWallHit } from './physics';
 import { initTrails, updateTrails, resetTrails } from './trails';
 import {
@@ -75,12 +80,14 @@ import {
   BIG_SLUGWORM, BABY_SLUGWORM, type SlugwormState,
 } from './slugworm';
 import { createPoisonProjectile } from './projectile';
-import { initGooDecals, spawnGooSplat, updateGooDecals, resetGooDecals } from './gooDecals';
+import { initGooDecals, spawnGooSplat, spawnBloodSplat, updateGooDecals, resetGooDecals } from './gooDecals';
+import { spawnZombieGibs, updateGibs, resetGibs } from './gibs';
 import { updateRicochetBubbles, resetRicochetBubbles } from './ricochetBubbles';
 import { createLevelPointLightRoot, setupLevelLights, clearLevelLights } from './levelLights';
 import { updateLavaSurfaces } from './lavaSurface';
 import { initLavaEmbers, resetLavaEmbers, updateLavaEmbers } from './lavaEmbers';
 import { createFireTorch, destroyFireTorch, type FireTorch, updateFireTorch } from './fireTorch';
+import { initSpaceBackground, updateSpaceBackground } from './spaceBackground';
 import type { LevelCircle, LevelEntity, LevelPolygon } from './levelLoader';
 
 
@@ -99,11 +106,13 @@ initSparks(scene);
 initTrails(scene);
 initGooDecals(scene);
 initLavaEmbers(scene);
+// initSpaceBackground();
 
 // ─── Entity Type Managers ─────────────────────────────────────────────────────
 
 const TurretEntities      = defineEntityType({ create: createTurret,       destroy: destroyTurret       });
 const EnemyEntities       = defineEntityType({ create: createEnemySpinner,  destroy: destroyEnemySpinner  });
+const ZombieEntities      = defineEntityType({ create: createZombieEnemy,   destroy: destroyZombieEnemy   });
 const ObstacleEntities    = defineEntityType({ create: createObstacle,      destroy: destroyObstacle      });
 const DreadnoughtEntities = defineEntityType({ create: createDreadnought,   destroy: destroyDreadnought   });
 const SiegeEntities       = defineEntityType({ create: createSiegeEngine,   destroy: destroySiegeEngine   });
@@ -149,6 +158,25 @@ registerCollisionPair('player', 'enemy', (_playerCol, enemyCol, hit) => {
   if (enemy?.alive) onEnemyCollision(enemy);
   const { point, normal } = computeContactInfo(_playerCol, enemyCol);
   emitSparks(point, normal, Math.floor(12 + hit.impactForce * 10), Math.min(1, hit.impactForce / 8));
+});
+
+registerCollisionPair('player', 'zombie', (_playerCol, zombieCol, hit) => {
+  const zombie = ZombieEntities.getAll().find((z) => z.collidable === zombieCol);
+  if (!zombie?.alive) return;
+
+  const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
+  if (hit.impactForce >= zombie.config.gibImpactThreshold || playerSpeed >= zombie.config.gibImpactThreshold + 1.5) {
+    killZombie(zombie, true);
+    return;
+  }
+
+  const hpDamage = hit.impactForce * zombie.config.impactDamageScale
+    * Math.max(0.35, playerBody.rpm / playerBody.rpmCapacity);
+  applyDamageToZombie(zombie, hpDamage);
+
+  const { point, normal } = computeContactInfo(_playerCol, zombieCol);
+  emitBlood(point, Math.floor(24 + hit.impactForce * 7), Math.min(1, 0.95 + hit.impactForce / 10));
+  emitSparks(point, normal, Math.floor(5 + hit.impactForce * 3), Math.min(1, hit.impactForce / 10));
 });
 
 // ── Siege Engine: core damage (only if shield is down) ──
@@ -504,6 +532,15 @@ function deactivateEnemySpinnerForFall(enemy: EnemySpinnerState): THREE.Object3D
   return [enemy.topResult.tiltGroup];
 }
 
+function deactivateZombieForFall(zombie: ZombieState): THREE.Object3D[] {
+  zombie.alive = false;
+  zombie.collidable.vel.x = 0;
+  zombie.collidable.vel.z = 0;
+  deregisterEntity(zombie.id);
+  removeCollidableFromGameplay(zombie.collidable);
+  return [zombie.group];
+}
+
 function deactivateRobotForFall(robot: RobotEnemyState): THREE.Object3D[] {
   robot.alive = false;
   robot.collidable.vel.x = 0;
@@ -709,6 +746,20 @@ function spawnLevelEntity(ent: LevelEntity): void {
       }
       break;
     }
+    case 'zombie': {
+      const zombie = ZombieEntities.spawn(pos, ZOMBIE_TIER_1);
+      if (isEntityFallable(ent)) {
+        registerFallableActor(zombie.collidable, () => {
+          const roots = deactivateZombieForFall(zombie);
+          enqueueFallingVictim(createFallingVictim(
+            roots,
+            zombie.group,
+            () => ZombieEntities.destroy(zombie),
+          ));
+        });
+      }
+      break;
+    }
     case 'dreadnought': {
       const dreadnought = DreadnoughtEntities.spawn(pos, DREADNOUGHT_TIER_1);
       if (isEntityFallable(ent)) {
@@ -851,6 +902,7 @@ function resetGame(): void {
   // Destroy dynamic entities first (removes their collidables and scene objects)
   TurretEntities.destroyAll();
   EnemyEntities.destroyAll();
+  ZombieEntities.destroyAll();
   ObstacleEntities.destroyAll();
   DreadnoughtEntities.destroyAll();
   SiegeEntities.destroyAll();
@@ -881,6 +933,7 @@ function resetGame(): void {
   resetSparks();
   resetTrails();
   resetGooDecals();
+  resetGibs();
   resetRicochetBubbles();
   resetLavaEmbers();
   fallingVictims.length = 0;
@@ -974,6 +1027,37 @@ function updateRobotSystem(delta: number): void {
   }
 }
 
+function killZombie(zombie: ZombieState, gib: boolean): void {
+  if (!zombie.alive) return;
+
+  const deathPos = { x: zombie.collidable.pos.x, z: zombie.collidable.pos.z };
+  ZombieEntities.destroy(zombie);
+
+  if (gib) {
+    emitBlood({ x: deathPos.x, y: 0.95, z: deathPos.z }, 72, 1.0);
+    spawnBloodSplat(deathPos, 10, time);
+    // spawnBloodSplat({ x: deathPos.x + 0.7, z: deathPos.z + 0.25 }, 120, time + 0.08);
+    // spawnBloodSplat({ x: deathPos.x - 0.6, z: deathPos.z - 0.3 }, 60, time + 0.16);
+    spawnZombieGibs(deathPos, 16);
+  } else {
+    emitBlood({ x: deathPos.x, y: 0.75, z: deathPos.z }, 26, 0.82);
+    spawnBloodSplat(deathPos, 12, time);
+  }
+
+  spawnPickupAt(pickups, deathPos);
+}
+
+function updateZombieSystem(delta: number): void {
+  for (const zombie of ZombieEntities.getAll()) {
+    const attacked = updateZombieAI(zombie, playerBody.pos, delta);
+    if (!attacked) continue;
+
+    playerBody.rpm = Math.max(0, playerBody.rpm - zombie.config.attackDamage);
+    notifyPlayerHit();
+    emitBlood({ x: playerBody.pos.x, y: 0.45, z: playerBody.pos.z }, 8, 0.42);
+  }
+}
+
 // ─── Robot Death Check ────────────────────────────────────────────────────────
 
 function checkRobotDeath(): void {
@@ -983,6 +1067,14 @@ function checkRobotDeath(): void {
       RobotEntities.destroy(robot);
       explosions.push(createRobotExplosion(deathPos));
       spawnPickupAt(pickups, deathPos);
+    }
+  }
+}
+
+function checkZombieDeath(): void {
+  for (const zombie of [...ZombieEntities.getAll()]) {
+    if (isZombieDead(zombie)) {
+      killZombie(zombie, false);
     }
   }
 }
@@ -1103,6 +1195,7 @@ function animate(): void {
 
   if (gameOver) {
     updateFallingVictims(delta);
+    updateGibs(delta);
     const done = updateTopple(delta);
     if (done) gameOverOverlay.style.display = 'flex';
     updateHud(playerBody.rpm, time, delta);
@@ -1117,6 +1210,7 @@ function animate(): void {
   for (const b of DreadnoughtEntities.getAll()) updateDreadnoughtAI(b, playerBody.pos, delta);
   for (const s of SiegeEntities.getAll()) updateSiegeEngineAI(s, playerBody.pos, delta);
   for (const h of HiveEntities.getAll()) updateHiveAI(h, playerBody.pos, delta);
+  updateZombieSystem(delta);
   updateRobotSystem(delta);
   updateHiveSystem(delta);
   updateSlugSystem(delta);
@@ -1135,6 +1229,7 @@ function animate(): void {
   updateFallingVictims(delta);
   if (gameOver) {
     const done = updateTopple(delta);
+    updateGibs(delta);
     if (done) gameOverOverlay.style.display = 'flex';
     updateHud(playerBody.rpm, time, delta);
     updateCamera(playerBody.pos, playerBody.vel, delta);
@@ -1210,6 +1305,7 @@ function animate(): void {
   checkBossDeath();
   checkSiegeDeath();
   checkRobotDeath();
+  checkZombieDeath();
   checkHiveDeath();
   checkSlugDeath();
 
@@ -1227,6 +1323,7 @@ function animate(): void {
   updatePickups(pickups, time, delta);
   updatePlayerVisuals(time, delta);
   for (const e of EnemyEntities.getAll()) updateEnemyVisuals(e, time, delta);
+  for (const z of ZombieEntities.getAll()) updateZombieVisuals(z, playerBody.pos, delta, time);
   for (const b of DreadnoughtEntities.getAll()) updateDreadnoughtVisuals(b, time, delta);
   for (const s of SiegeEntities.getAll()) updateSiegeEngineVisuals(s, time, delta);
   for (const r of RobotEntities.getAll()) updateRobotVisuals(r, playerBody.pos, time, delta);
@@ -1237,9 +1334,11 @@ function animate(): void {
   updateCamera(playerBody.pos, playerBody.vel, delta);
   updateSparks(time);
   updateGooDecals(time);
+  updateGibs(delta);
   updateRicochetBubbles(delta);
   updateTrails(playerBody.pos, playerBody.vel);
   updateLavaSurfaces(time);
+  // updateSpaceBackground(time);
   for (const torch of fireTorches) updateFireTorch(torch, time);
   updateLavaEmbers(delta, time, {
     position: playerBody.pos,

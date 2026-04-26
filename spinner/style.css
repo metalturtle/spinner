@@ -11,9 +11,25 @@ html, body {
   background: #000;
 }
 
-#canvas-container {
+.space-background-video {
+  position: fixed;
+  inset: 0;
   width: 100vw;
   height: 100vh;
+  /* top: 30vh; */
+  /* left: 30vh; */
+  object-fit: cover;
+  opacity: 0.36;
+  filter: saturate(0.85) brightness(0.55);
+  pointer-events: none;
+  z-index: 0;
+}
+
+#canvas-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1;
 }
 
 canvas {

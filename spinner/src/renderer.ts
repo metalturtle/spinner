@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x000000);
+scene.background = null;
 
 export const camera = new THREE.PerspectiveCamera(
   60,
@@ -11,9 +11,10 @@ export const camera = new THREE.PerspectiveCamera(
 );
 // Initial position set by camera.ts initCamera()
 
-export const renderer = new THREE.WebGLRenderer({ antialias: true });
+export const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000, 0);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 

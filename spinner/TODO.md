@@ -47,3 +47,26 @@ glare effects
 v2:
 octoboss
 coop mode
+
+enemies:
+enemy spinner
+    will drop a powerup - combo attack
+octoboss
+laser spinner
+hive spinner
+zombies
+spiders
+drones
+turrets
+
+jumping fly enemy that shoots fireballs
+
+bosses:
+octoboss
+hive spinner
+laser spinner with mirror room
+dragon spinner? or just dragon
+
+dungeon enemies:
+
+keep dungeon theme aside:

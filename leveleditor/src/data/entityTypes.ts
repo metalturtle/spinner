@@ -15,6 +15,7 @@ export const ENTITY_TYPE_OPTIONS: EntityTypeOption[] = [
   { value: 'siege_engine', label: 'Siege Engine', color: 0xff9966 },
   { value: 'turret', label: 'Turret', color: 0xffaa44 },
   { value: 'enemy_spinner', label: 'Enemy Spinner', color: 0xcc66ff },
+  { value: 'zombie', label: 'Zombie', color: 0xa46a52 },
   { value: 'dreadnought', label: 'Dreadnought', color: 0xff4455 },
   { value: 'hive_boss', label: 'Hive Boss', color: 0xff77aa },
   { value: 'slug_big', label: 'Big Slug', color: 0x88ff66 },

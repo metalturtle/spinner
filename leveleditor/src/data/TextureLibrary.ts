@@ -61,7 +61,7 @@ export const TEXTURE_LIBRARY: TextureDefinition[] = (() => {
   for (const texture of sharedTextures as SharedTextureEntry[]) {
     const parsed = parseTextureName(texture.id);
     const entry = families.get(parsed.family) ?? {};
-    if (parsed.kind === 'base') entry.base = texture;
+    if (parsed.kind === 'base' || parsed.kind === 'other') entry.base = texture;
     else if (parsed.kind === 'normal') entry.normal = texture;
     else if (parsed.kind === 'bump') entry.bump = texture;
     families.set(parsed.family, entry);

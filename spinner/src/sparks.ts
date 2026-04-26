@@ -122,6 +122,14 @@ const GOO_PALETTE: Palette = [
   [0.3, 0.5,  0.0 ],  // olive goo
 ];
 
+const BLOOD_PALETTE: Palette = [
+  [0.95, 0.18, 0.06], // hot blood red
+  [0.78, 0.06, 0.02], // deep red
+  [0.55, 0.03, 0.01], // dark gore
+  [0.35, 0.02, 0.01], // dried brown-red
+  [0.85, 0.32, 0.1 ], // orange-red mist
+];
+
 // ─── Spark style config ─────────────────────────────────────────────────────
 
 export interface SparkStyle {
@@ -182,6 +190,18 @@ export const GOO_STYLE: SparkStyle = {
   lifetimeRange: 0.35,
   jitter:        0.3,
   palette:       GOO_PALETTE,
+};
+
+export const BLOOD_STYLE: SparkStyle = {
+  spreadAngle:   Math.PI * 0.95,
+  speedMin:      9,
+  speedRange:    20,
+  upMin:         1.5,
+  upRange:       6.5,
+  lifetimeMin:   0.2,
+  lifetimeRange: 0.32,
+  jitter:        0.22,
+  palette:       BLOOD_PALETTE,
 };
 
 // ─── Init ───────────────────────────────────────────────────────────────────
@@ -307,6 +327,15 @@ export function emitGoo(
   intensity: number,
 ): void {
   emitSparks(point, { x: 0, y: 1, z: 0 }, count, intensity, GOO_STYLE);
+}
+
+/** Blood burst — red-only gore spray. */
+export function emitBlood(
+  point: { x: number; y: number; z: number },
+  count: number,
+  intensity: number,
+): void {
+  emitSparks(point, { x: 0, y: 1, z: 0 }, count, intensity, BLOOD_STYLE);
 }
 
 // ─── Update (one uniform per frame) ─────────────────────────────────────────

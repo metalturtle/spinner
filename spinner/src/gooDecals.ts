@@ -2,10 +2,12 @@ import * as THREE from 'three';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
-const MAX_DECALS       = 200;
+const MAX_DECALS       = 400;
 const DECAL_Y          = 0.02;  // just above floor to avoid z-fight
-const SPLAT_MIN_RADIUS = 0.15;
-const SPLAT_MAX_RADIUS = 0.6;
+const GOO_SPLAT_MIN_RADIUS = 0.15;
+const GOO_SPLAT_MAX_RADIUS = 0.6;
+const BLOOD_SPLAT_MIN_RADIUS = 0.28;
+const BLOOD_SPLAT_MAX_RADIUS = 0.95;
 const FADE_START       = 25.0;  // seconds before decals start fading
 const FADE_DURATION    = 10.0;  // seconds to fully disappear
 
@@ -52,9 +54,20 @@ const GOO_COLORS = [
   new THREE.Color(0x1a6b0a),  // dark green slime
   new THREE.Color(0x0d4a06),  // very dark green
   new THREE.Color(0x2d8a15),  // bright slime
-  new THREE.Color(0x4a1508),  // dark blood
-  new THREE.Color(0x6b1a0a),  // red gore
   new THREE.Color(0x3d5c00),  // olive
+];
+
+const BLOOD_COLORS = [
+  // new THREE.Color(0x4a1508),  // dark blood
+  // new THREE.Color(0x6b1a0a),  // red gore
+  // new THREE.Color(0x7d1208),  // brighter blood
+  // new THREE.Color(0x3f0a05),  // dried blood
+  // new THREE.Color(0x561109),  // muddy red
+  new THREE.Color(0xff000d),  // dark blood
+  new THREE.Color(0xff000d),  // red gore
+  new THREE.Color(0xff000d),  // brighter blood
+  new THREE.Color(0xff000d),  // dried blood
+  new THREE.Color(0xff000d),  // muddy red
 ];
 
 // ─── State ──────────────────────────────────────────────────────────────────
@@ -66,9 +79,33 @@ interface Decal {
   alive:    boolean;
 }
 
+interface DecalSplatStyle {
+  minRadius: number;
+  maxRadius: number;
+  spread: number;
+  stretchMin: number;
+  stretchMax: number;
+}
+
 let decals: Decal[] = [];
 let sceneRef: THREE.Scene;
 let freeHead = 0;
+
+const GOO_SPLAT_STYLE: DecalSplatStyle = {
+  minRadius: GOO_SPLAT_MIN_RADIUS,
+  maxRadius: GOO_SPLAT_MAX_RADIUS,
+  spread: 1.8,
+  stretchMin: 0.92,
+  stretchMax: 1.12,
+};
+
+const BLOOD_SPLAT_STYLE: DecalSplatStyle = {
+  minRadius: BLOOD_SPLAT_MIN_RADIUS,
+  maxRadius: BLOOD_SPLAT_MAX_RADIUS,
+  spread: 2.6,
+  stretchMin: 0.7,
+  stretchMax: 1.55,
+};
 
 // ─── Init ───────────────────────────────────────────────────────────────────
 
@@ -78,20 +115,25 @@ export function initGooDecals(scn: THREE.Scene): void {
 
 // ─── Spawn ──────────────────────────────────────────────────────────────────
 
-/** Splatter a cluster of goo decals on the floor around a point. */
-export function spawnGooSplat(
+function spawnDecalSplat(
   pos: { x: number; z: number },
   count: number,
   time: number,
+  palette: THREE.Color[],
+  style: DecalSplatStyle,
 ): void {
   for (let i = 0; i < count; i++) {
     const angle  = Math.random() * Math.PI * 2;
-    const spread = Math.random() * 1.8;  // how far from center
+    const spread = Math.random() * style.spread;  // how far from center
     const x = pos.x + Math.cos(angle) * spread;
     const z = pos.z + Math.sin(angle) * spread;
-    const radius = SPLAT_MIN_RADIUS + Math.random() * (SPLAT_MAX_RADIUS - SPLAT_MIN_RADIUS);
+    const radius = style.minRadius + Math.random() * (style.maxRadius - style.minRadius);
+    const stretch = style.stretchMin + Math.random() * (style.stretchMax - style.stretchMin);
+    const stretchAxis = Math.random() < 0.5
+      ? { x: stretch, z: 1 / Math.max(stretch, 0.001) }
+      : { x: 1 / Math.max(stretch, 0.001), z: stretch };
 
-    const color = GOO_COLORS[Math.floor(Math.random() * GOO_COLORS.length)];
+    const color = palette[Math.floor(Math.random() * palette.length)];
 
     // Reuse or create
     let decal: Decal;
@@ -123,7 +165,7 @@ export function spawnGooSplat(
 
     decal.mesh.position.set(x, DECAL_Y, z);
     decal.mesh.rotation.z = Math.random() * Math.PI * 2; // random rotation
-    decal.mesh.scale.set(radius * 2, radius * 2, 1);
+    decal.mesh.scale.set(radius * 2 * stretchAxis.x, radius * 2 * stretchAxis.z, 1);
     decal.mesh.visible = true;
     decal.material.uniforms.uColor.value.set(color.r, color.g, color.b);
     decal.material.uniforms.uAlpha.value = 1.0;
@@ -132,6 +174,24 @@ export function spawnGooSplat(
 
     freeHead = (freeHead + 1) % MAX_DECALS;
   }
+}
+
+/** Splatter a cluster of goo decals on the floor around a point. */
+export function spawnGooSplat(
+  pos: { x: number; z: number },
+  count: number,
+  time: number,
+): void {
+  spawnDecalSplat(pos, count, time, GOO_COLORS, GOO_SPLAT_STYLE);
+}
+
+/** Splatter a cluster of blood decals on the floor around a point. */
+export function spawnBloodSplat(
+  pos: { x: number; z: number },
+  count: number,
+  time: number,
+): void {
+  spawnDecalSplat(pos, count, time, BLOOD_COLORS, BLOOD_SPLAT_STYLE);
 }
 
 // ─── Update (fade old decals) ───────────────────────────────────────────────
