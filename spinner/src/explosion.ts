@@ -5,9 +5,9 @@ import { scene } from './renderer';
 
 const EXPLOSION_DURATION   = 0.55;  // seconds — total lifetime
 const EXPLOSION_MAX_RADIUS = 2.5;   // world units at peak expansion
-const ENERGY_EXPLOSION_DURATION   = 2.0;
+const ENERGY_EXPLOSION_DURATION   = 1.0;
 const ENERGY_EXPLOSION_MAX_RADIUS = 3.6;
-const ROBOT_EXPLOSION_DURATION    = 2.0;
+const ROBOT_EXPLOSION_DURATION    = 1.0;
 const ROBOT_EXPLOSION_MAX_RADIUS  = 4.2;
 
 // ─── Energy Explosion Shader ────────────────────────────────────────────────

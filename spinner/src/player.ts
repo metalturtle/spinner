@@ -18,6 +18,7 @@ import { keys, shiftHeld } from './input';
 
 const HIT_FLASH_DUR = 0.15;
 const BODY_COLOR    = new THREE.Color(0xe94560);
+const PIT_FALL_DURATION = 1.0;
 
 // ─── Player Body ─────────────────────────────────────────────────────────────
 
@@ -50,6 +51,8 @@ scene.add(tiltGroup);
 export const playerTilt: SpinnerTiltState = { tiltX: 0, tiltZ: 0 };
 let hitFlashTimer  = 0;
 let toppleProgress = 0;
+let visualOffsetY  = 0;
+let deathMode: 'none' | 'topple' | 'pit' = 'none';
 export let playerId = 0;
 
 // ─── Setup (call once at start and again after every reset) ──────────────────
@@ -88,6 +91,8 @@ export function resetPlayer(): void {
   playerTilt.tiltX = 0;  playerTilt.tiltZ = 0;
   hitFlashTimer  = 0;
   toppleProgress = 0;
+  visualOffsetY  = 0;
+  deathMode      = 'none';
   tiltGroup.position.set(0, 0, 0);
   tiltGroup.rotation.set(0, 0, 0);
 }
@@ -158,6 +163,7 @@ export function updatePlayerVisuals(time: number, delta: number): void {
   const normalFrac  = Math.min(playerBody.rpm, softCap) / softCap;
 
   tiltGroup.position.x = playerBody.pos.x;
+  tiltGroup.position.y = visualOffsetY;
   tiltGroup.position.z = playerBody.pos.z;
 
   const spinFrac = overcharged ? playerBody.rpm / softCap : rpmFraction;
@@ -196,10 +202,36 @@ export function notifyHit(): void {
 
 // ─── Topple (game-over animation) ────────────────────────────────────────────
 
+export function startPlayerToppleDeath(): void {
+  toppleProgress = 0;
+  visualOffsetY = 0;
+  deathMode = 'topple';
+}
+
+export function startPlayerPitFallDeath(): void {
+  toppleProgress = 0;
+  visualOffsetY = 0;
+  deathMode = 'pit';
+  playerBody.vel.x = 0;
+  playerBody.vel.z = 0;
+}
+
 export function updateTopple(delta: number): boolean {
+  if (deathMode === 'pit') {
+    toppleProgress = Math.min(1, toppleProgress + delta / PIT_FALL_DURATION);
+    const ease = 1 - Math.pow(1 - toppleProgress, 3);
+    tiltGroup.rotation.x = ease * 0.55;
+    tiltGroup.rotation.z = ease * (Math.PI / 2.6);
+    visualOffsetY = -6 * ease;
+    tiltGroup.position.y = visualOffsetY;
+    spinGroup.rotation.y += (0.5 + ease * 8.0) * delta;
+    return toppleProgress >= 1;
+  }
+
   toppleProgress = Math.min(1, toppleProgress + delta * 1.5);
   const ease = 1 - Math.pow(1 - toppleProgress, 3);
   tiltGroup.rotation.z = ease * (Math.PI / 2);
+  tiltGroup.position.y = visualOffsetY;
   spinGroup.rotation.y += 0.5 * delta;
   return toppleProgress >= 1;
 }

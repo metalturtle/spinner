@@ -6,18 +6,19 @@ import {
   PICKUP_RPM_BOOST, HYPER_BOOST,
 } from './constants';
 import { spinnerConfig } from './spinnerConfig';
-import { runCollisions, collidables } from './physics';
+import { runCollisions, collidables, zones, type Collidable } from './physics';
 import { initHud, updateHud } from './hud';
 import { initCamera, updateCamera } from './camera';
 import {
   defineEntityType,
   registerCollisionPair, registerProximityPair,
   entityUpdateSystem, movementSystem, collisionSystem, proximitySystem, rpmSystem,
-  resetEntityRegistrations,
+  resetEntityRegistrations, deregisterEntity, untagCollidable,
 } from './systems';
 import {
   playerBody, setupPlayer, resetPlayer,
   playerRpmHooks, updatePlayerVisuals, updateTopple, notifyHit as notifyPlayerHit,
+  startPlayerPitFallDeath, startPlayerToppleDeath,
 } from './player';
 import {
   createNormalPickup, createHyperPickup, updatePickups, spawnPickupAt, ejectPickupAt,
@@ -35,31 +36,35 @@ import { createProjectile, updateProjectiles, type Projectile } from './projecti
 import { createExplosion, createRobotExplosion, updateExplosions, type Explosion } from './explosion';
 import {
   createObstacle, syncObstacle, obstacleHpDamage, applyDamageToObstacle, destroyObstacle,
-  CRATE_CONFIG, BARREL_CONFIG,
+  CRATE_CONFIG, BARREL_CONFIG, type ObstacleState,
 } from './obstacle';
 import {
   createEnemySpinner, updateEnemyAI, updateEnemyVisuals,
   onEnemyCollision, isEnemyDead, destroyEnemySpinner,
-  ENEMY_SPINNER_TIER_1,
+  ENEMY_SPINNER_TIER_1, type EnemySpinnerState,
 } from './enemySpinner';
 import {
   createDreadnought, updateDreadnoughtAI, updateDreadnoughtVisuals,
   checkWeakPoint, isDreadnoughtDead, destroyDreadnought,
+  type DreadnoughtState,
 } from './bossDreadnought';
 import { DREADNOUGHT_TIER_1, SIEGE_ENGINE_TIER_1 } from './bossDesigns';
 import {
   createSiegeEngine, updateSiegeEngineAI, syncSiegeEngineParts,
   updateSiegeEngineTurrets, updateSiegeEngineVisuals,
   isShieldAlive, applyDamageToSiegePart, isSiegeEngineDead, destroySiegeEngine,
+  type SiegeEngineState,
 } from './bossSiegeEngine';
 import {
   createRobotEnemy, updateRobotAI, updateRobotVisuals,
   applyDamageToRobot, isRobotDead, destroyRobotEnemy, ROBOT_TIER_1,
+  type RobotEnemyState,
 } from './robotEnemy';
 import {
   createHiveBoss, updateHiveAI, updateHiveChaingun, syncFlockPositions,
   updateHiveVisuals, onFlockCollision, isFlockSpinnerDead, destroyFlockSpinner,
   applyDamageToHiveCore, isHiveBossDead, destroyHiveBoss, HIVE_TIER_1,
+  type HiveBossState,
 } from './bossHive';
 import { initSparks, emitSparks, emitGoo, emitPlasma, updateSparks, resetSparks, computeContactInfo } from './sparks';
 import { hasPlayerWallHit } from './physics';
@@ -67,15 +72,16 @@ import { initTrails, updateTrails, resetTrails } from './trails';
 import {
   createSlugworm, updateSlugwormAI, updateSlugwormVisuals,
   isHeadHit, applyDamageToSlug, isSlugDead, destroySlugworm,
-  BIG_SLUGWORM, BABY_SLUGWORM,
+  BIG_SLUGWORM, BABY_SLUGWORM, type SlugwormState,
 } from './slugworm';
 import { createPoisonProjectile } from './projectile';
 import { initGooDecals, spawnGooSplat, updateGooDecals, resetGooDecals } from './gooDecals';
 import { updateRicochetBubbles, resetRicochetBubbles } from './ricochetBubbles';
-import { setupLevelLights, clearLevelLights } from './levelLights';
+import { createLevelPointLightRoot, setupLevelLights, clearLevelLights } from './levelLights';
 import { updateLavaSurfaces } from './lavaSurface';
 import { initLavaEmbers, resetLavaEmbers, updateLavaEmbers } from './lavaEmbers';
 import { createFireTorch, destroyFireTorch, type FireTorch, updateFireTorch } from './fireTorch';
+import type { LevelCircle, LevelEntity, LevelPolygon } from './levelLoader';
 
 
 // ─── Level-driven state ──────────────────────────────────────────────────────
@@ -313,35 +319,508 @@ const pickups:     Pickup[]     = [];
 const projectiles: Projectile[] = [];
 const explosions:  Explosion[]  = [];
 const fireTorches: FireTorch[]  = [];
+const dynamicLevelLightRoots: THREE.Object3D[] = [];
+const pendingTriggeredEntities = new Map<string, LevelEntity[]>();
+
+interface AreaZone {
+  contains(point: { x: number; z: number }): boolean;
+}
+
+interface SpawnTriggerZone extends AreaZone {
+  id: string;
+  fired: boolean;
+}
+
+interface FallingVictim {
+  roots: THREE.Object3D[];
+  primaryRoot: THREE.Object3D;
+  spinRoot?: THREE.Object3D;
+  driftX: number;
+  driftZ: number;
+  fallSpeed: number;
+  spinSpeed: number;
+  tumbleSpeed: number;
+  elapsed: number;
+  duration: number;
+  finalize: () => void;
+}
+
+interface FallableActor {
+  active: boolean;
+  collidable: Collidable;
+  killFallTimer: number;
+  beginFall: () => void;
+}
+
+const spawnTriggerZones: SpawnTriggerZone[] = [];
+const killFallZones: AreaZone[] = [];
+const fallingVictims: FallingVictim[] = [];
+const fallableActors: FallableActor[] = [];
+const KILL_FALL_DELAY = 0.5;
+let playerKillFallTimer = 0;
+
+function readStringProperty(props: Record<string, unknown> | undefined, key: string): string | null {
+  const raw = props?.[key];
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed ? trimmed : null;
+}
+
+function readBooleanProperty(props: Record<string, unknown> | undefined, key: string): boolean {
+  const raw = props?.[key];
+  return raw === true || raw === 'true' || raw === '1';
+}
+
+function isPointInPolygon(point: { x: number; z: number }, vertices: { x: number; z: number }[]): boolean {
+  let inside = false;
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+    const xi = vertices[i].x;
+    const zi = vertices[i].z;
+    const xj = vertices[j].x;
+    const zj = vertices[j].z;
+    const intersects = ((zi > point.z) !== (zj > point.z))
+      && (point.x < ((xj - xi) * (point.z - zi)) / ((zj - zi) || Number.EPSILON) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function buildAreaZoneFromPolygon(poly: LevelPolygon): AreaZone | null {
+  if (poly.vertices.length < 3) return null;
+  const vertices = poly.vertices.map((vertex) => ({ x: vertex.x, z: vertex.y }));
+  const holes = (poly.holes ?? []).map((hole) => hole.map((vertex) => ({ x: vertex.x, z: vertex.y })));
+  return {
+    contains(point) {
+      if (!isPointInPolygon(point, vertices)) return false;
+      return !holes.some((hole) => hole.length >= 3 && isPointInPolygon(point, hole));
+    },
+  };
+}
+
+function buildAreaZoneFromCircle(circle: LevelCircle): AreaZone | null {
+  if (circle.radius <= 0) return null;
+  const center = { x: circle.center.x, z: circle.center.y };
+  const radiusSq = circle.radius * circle.radius;
+  return {
+    contains(point) {
+      const dx = point.x - center.x;
+      const dz = point.z - center.z;
+      return dx * dx + dz * dz <= radiusSq;
+    },
+  };
+}
+
+function rebuildTriggerZones(level: LevelData): void {
+  spawnTriggerZones.length = 0;
+  killFallZones.length = 0;
+
+  for (const poly of level.polygons ?? []) {
+    if (poly.layer !== 'trigger') continue;
+    const zone = buildAreaZoneFromPolygon(poly);
+    if (!zone) continue;
+
+    const triggerId = readStringProperty(poly.properties, 'triggerId');
+    if (triggerId) {
+      spawnTriggerZones.push({ id: triggerId, fired: false, contains: zone.contains });
+    }
+    if (readStringProperty(poly.properties, 'triggerAction') === 'kill_fall') {
+      killFallZones.push(zone);
+    }
+  }
+
+  for (const circle of level.circles ?? []) {
+    if (circle.layer !== 'trigger') continue;
+    const zone = buildAreaZoneFromCircle(circle);
+    if (!zone) continue;
+
+    const triggerId = readStringProperty(circle.properties, 'triggerId');
+    if (triggerId) {
+      spawnTriggerZones.push({ id: triggerId, fired: false, contains: zone.contains });
+    }
+    if (readStringProperty(circle.properties, 'triggerAction') === 'kill_fall') {
+      killFallZones.push(zone);
+    }
+  }
+}
+
+function clearDynamicLevelLights(): void {
+  while (dynamicLevelLightRoots.length > 0) {
+    scene.remove(dynamicLevelLightRoots.pop()!);
+  }
+}
+
+function removeCollidableFromGameplay(collidable: Collidable): void {
+  untagCollidable(collidable);
+  const idx = collidables.indexOf(collidable);
+  if (idx !== -1) collidables.splice(idx, 1);
+}
+
+function createFallingVictim(
+  roots: THREE.Object3D[],
+  primaryRoot: THREE.Object3D,
+  finalize: () => void,
+  spinRoot?: THREE.Object3D,
+): FallingVictim {
+  const angle = Math.random() * Math.PI * 2;
+  const drift = 0.6 + Math.random() * 0.7;
+  return {
+    roots,
+    primaryRoot,
+    spinRoot,
+    driftX: Math.cos(angle) * drift,
+    driftZ: Math.sin(angle) * drift,
+    fallSpeed: 2.5 + Math.random() * 0.8,
+    spinSpeed: 4 + Math.random() * 6,
+    tumbleSpeed: 1.5 + Math.random() * 2.5,
+    elapsed: 0,
+    duration: 0.85 + Math.random() * 0.2,
+    finalize,
+  };
+}
+
+function enqueueFallingVictim(victim: FallingVictim): void {
+  fallingVictims.push(victim);
+}
+
+function registerFallableActor(collidable: Collidable, beginFall: () => void): void {
+  fallableActors.push({ active: true, collidable, killFallTimer: 0, beginFall });
+}
+
+function removeBossDrainZones(boss: DreadnoughtState): void {
+  for (const drain of boss.drainZones) {
+    const idx = zones.indexOf(drain.zone);
+    if (idx !== -1) zones.splice(idx, 1);
+    scene.remove(drain.mesh);
+  }
+  boss.drainZones.length = 0;
+}
+
+function deactivateEnemySpinnerForFall(enemy: EnemySpinnerState): THREE.Object3D[] {
+  enemy.alive = false;
+  enemy.collidable.vel.x = 0;
+  enemy.collidable.vel.z = 0;
+  deregisterEntity(enemy.id);
+  removeCollidableFromGameplay(enemy.collidable);
+  return [enemy.topResult.tiltGroup];
+}
+
+function deactivateRobotForFall(robot: RobotEnemyState): THREE.Object3D[] {
+  robot.alive = false;
+  robot.collidable.vel.x = 0;
+  robot.collidable.vel.z = 0;
+  deregisterEntity(robot.id);
+  removeCollidableFromGameplay(robot.collidable);
+  return [robot.group];
+}
+
+function deactivateObstacleForFall(obstacle: ObstacleState): THREE.Object3D[] {
+  obstacle.alive = false;
+  obstacle.collidable.vel.x = 0;
+  obstacle.collidable.vel.z = 0;
+  deregisterEntity(obstacle.id);
+  removeCollidableFromGameplay(obstacle.collidable);
+  return [obstacle.group];
+}
+
+function deactivateSlugForFall(slug: SlugwormState): THREE.Object3D[] {
+  slug.alive = false;
+  slug.collidable.vel.x = 0;
+  slug.collidable.vel.z = 0;
+  deregisterEntity(slug.id);
+  removeCollidableFromGameplay(slug.collidable);
+  return [slug.group];
+}
+
+function deactivateDreadnoughtForFall(boss: DreadnoughtState): THREE.Object3D[] {
+  boss.alive = false;
+  boss.collidable.vel.x = 0;
+  boss.collidable.vel.z = 0;
+  deregisterEntity(boss.id);
+  removeCollidableFromGameplay(boss.collidable);
+  removeBossDrainZones(boss);
+  return [boss.topResult.tiltGroup, boss.group];
+}
+
+function deactivateSiegeForFall(boss: SiegeEngineState): THREE.Object3D[] {
+  boss.alive = false;
+  boss.collidable.vel.x = 0;
+  boss.collidable.vel.z = 0;
+  deregisterEntity(boss.id);
+  removeCollidableFromGameplay(boss.collidable);
+  for (const part of boss.parts) {
+    removeCollidableFromGameplay(part.collidable);
+  }
+  return [boss.topResult.tiltGroup, boss.hpGroup, boss.shieldMesh, ...boss.parts.map((part) => part.group)];
+}
+
+function deactivateHiveForFall(boss: HiveBossState): THREE.Object3D[] {
+  boss.alive = false;
+  boss.collidable.vel.x = 0;
+  boss.collidable.vel.z = 0;
+  deregisterEntity(boss.id);
+  removeCollidableFromGameplay(boss.collidable);
+  for (const spinner of boss.flock) {
+    deregisterEntity(spinner.id);
+    removeCollidableFromGameplay(spinner.collidable);
+  }
+  return [boss.coreGroup, ...boss.flock.map((spinner) => spinner.topResult.tiltGroup)];
+}
+
+function updateFallingVictims(delta: number): void {
+  for (let i = fallingVictims.length - 1; i >= 0; i--) {
+    const victim = fallingVictims[i];
+    victim.elapsed += delta;
+    const t = Math.min(1, victim.elapsed / victim.duration);
+    const fallStep = victim.fallSpeed * (1 + t * 1.8) * delta;
+
+    for (const root of victim.roots) {
+      root.position.x += victim.driftX * delta;
+      root.position.y -= fallStep;
+      root.position.z += victim.driftZ * delta;
+    }
+
+    victim.primaryRoot.rotation.z += victim.tumbleSpeed * delta;
+    victim.primaryRoot.rotation.x += victim.tumbleSpeed * 0.35 * delta;
+    if (victim.spinRoot) {
+      victim.spinRoot.rotation.y += victim.spinSpeed * delta;
+    } else {
+      victim.primaryRoot.rotation.y += victim.spinSpeed * 0.4 * delta;
+    }
+
+    if (victim.elapsed >= victim.duration) {
+      victim.finalize();
+      fallingVictims.splice(i, 1);
+    }
+  }
+}
+
+function triggerPlayerPitFall(): void {
+  if (gameOver) return;
+  playerBody.rpm = 0;
+  startPlayerPitFallDeath();
+  gameOver = true;
+}
+
+function updateKillFallZones(delta: number): void {
+  if (killFallZones.length === 0) return;
+
+  if (!gameOver) {
+    if (killFallZones.some((zone) => zone.contains(playerBody.pos))) {
+      playerKillFallTimer += delta;
+      if (playerKillFallTimer >= KILL_FALL_DELAY) {
+        triggerPlayerPitFall();
+      }
+    } else {
+      playerKillFallTimer = 0;
+    }
+  }
+
+  for (const actor of fallableActors) {
+    if (!actor.active) continue;
+    if (!collidables.includes(actor.collidable)) {
+      actor.active = false;
+      continue;
+    }
+    if (!killFallZones.some((zone) => zone.contains(actor.collidable.pos))) {
+      actor.killFallTimer = 0;
+      continue;
+    }
+    actor.killFallTimer += delta;
+    if (actor.killFallTimer < KILL_FALL_DELAY) continue;
+    actor.active = false;
+    actor.beginFall();
+  }
+}
 
 // ─── Spawn from level data ───────────────────────────────────────────────────
 
+function isEntityFallable(ent: LevelEntity): boolean {
+  return readBooleanProperty(ent.properties, 'fallable');
+}
+
+function spawnLevelEntity(ent: LevelEntity): void {
+  const pos = lvPos(ent.position);
+  switch (ent.type) {
+    case 'pickup':
+      pickups.push(createNormalPickup(pos));
+      break;
+    case 'pickup_hyper':
+      pickups.push(createHyperPickup(pos));
+      break;
+    case 'obstacle': {
+      const cfg = ent.properties?.config === 'barrel' ? BARREL_CONFIG : CRATE_CONFIG;
+      const obstacle = ObstacleEntities.spawn(pos, cfg);
+      if (isEntityFallable(ent)) {
+        registerFallableActor(obstacle.collidable, () => {
+          const roots = deactivateObstacleForFall(obstacle);
+          enqueueFallingVictim(createFallingVictim(
+            roots,
+            obstacle.group,
+            () => ObstacleEntities.destroy(obstacle),
+          ));
+        });
+      }
+      break;
+    }
+    case 'robot': {
+      const robot = RobotEntities.spawn(pos, ROBOT_TIER_1);
+      if (isEntityFallable(ent)) {
+        registerFallableActor(robot.collidable, () => {
+          const roots = deactivateRobotForFall(robot);
+          enqueueFallingVictim(createFallingVictim(
+            roots,
+            robot.group,
+            () => RobotEntities.destroy(robot),
+          ));
+        });
+      }
+      break;
+    }
+    case 'siege_engine': {
+      const siege = SiegeEntities.spawn(pos, SIEGE_ENGINE_TIER_1);
+      if (isEntityFallable(ent)) {
+        registerFallableActor(siege.collidable, () => {
+          const roots = deactivateSiegeForFall(siege);
+          enqueueFallingVictim(createFallingVictim(
+            roots,
+            siege.topResult.tiltGroup,
+            () => SiegeEntities.destroy(siege),
+            siege.topResult.spinGroup,
+          ));
+        });
+      }
+      break;
+    }
+    case 'turret':
+      TurretEntities.spawn(pos, TURRET_TIER_1);
+      break;
+    case 'enemy_spinner': {
+      const enemy = EnemyEntities.spawn(pos, ENEMY_SPINNER_TIER_1);
+      if (isEntityFallable(ent)) {
+        registerFallableActor(enemy.collidable, () => {
+          const roots = deactivateEnemySpinnerForFall(enemy);
+          enqueueFallingVictim(createFallingVictim(
+            roots,
+            enemy.topResult.tiltGroup,
+            () => EnemyEntities.destroy(enemy),
+            enemy.topResult.spinGroup,
+          ));
+        });
+      }
+      break;
+    }
+    case 'dreadnought': {
+      const dreadnought = DreadnoughtEntities.spawn(pos, DREADNOUGHT_TIER_1);
+      if (isEntityFallable(ent)) {
+        registerFallableActor(dreadnought.collidable, () => {
+          const roots = deactivateDreadnoughtForFall(dreadnought);
+          enqueueFallingVictim(createFallingVictim(
+            roots,
+            dreadnought.topResult.tiltGroup,
+            () => DreadnoughtEntities.destroy(dreadnought),
+            dreadnought.topResult.spinGroup,
+          ));
+        });
+      }
+      break;
+    }
+    case 'hive_boss': {
+      const hive = HiveEntities.spawn(pos, HIVE_TIER_1);
+      if (isEntityFallable(ent)) {
+        registerFallableActor(hive.collidable, () => {
+          const roots = deactivateHiveForFall(hive);
+          enqueueFallingVictim(createFallingVictim(
+            roots,
+            hive.coreGroup,
+            () => HiveEntities.destroy(hive),
+          ));
+        });
+      }
+      break;
+    }
+    case 'slug_big': {
+      const slug = BigSlugEntities.spawn(pos, BIG_SLUGWORM);
+      if (isEntityFallable(ent)) {
+        registerFallableActor(slug.collidable, () => {
+          const roots = deactivateSlugForFall(slug);
+          enqueueFallingVictim(createFallingVictim(
+            roots,
+            slug.group,
+            () => BigSlugEntities.destroy(slug),
+          ));
+        });
+      }
+      break;
+    }
+    case 'slug_baby': {
+      const slug = BabySlugEntities.spawn(pos, BABY_SLUGWORM);
+      if (isEntityFallable(ent)) {
+        registerFallableActor(slug.collidable, () => {
+          const roots = deactivateSlugForFall(slug);
+          enqueueFallingVictim(createFallingVictim(
+            roots,
+            slug.group,
+            () => BabySlugEntities.destroy(slug),
+          ));
+        });
+      }
+      break;
+    }
+    case 'fire_torch':
+      fireTorches.push(createFireTorch(scene, ent));
+      break;
+    case 'light_point': {
+      const root = createLevelPointLightRoot(ent);
+      dynamicLevelLightRoots.push(root);
+      scene.add(root);
+      break;
+    }
+  }
+}
+
+function spawnTriggeredEntities(triggerId: string): void {
+  const queued = pendingTriggeredEntities.get(triggerId);
+  if (!queued || queued.length === 0) return;
+
+  pendingTriggeredEntities.delete(triggerId);
+  for (const entity of queued) {
+    spawnLevelEntity(entity);
+  }
+}
+
 function spawnAll(level: LevelData): void {
+  pendingTriggeredEntities.clear();
+  fallableActors.length = 0;
+  playerKillFallTimer = 0;
+  rebuildTriggerZones(level);
+
   for (const ent of level.entities) {
     const pos = lvPos(ent.position);
-    switch (ent.type) {
-      case 'player_spawn':
-        playerBody.pos.x = pos.x;
-        playerBody.pos.z = pos.z;
-        break;
-      case 'pickup':        pickups.push(createNormalPickup(pos)); break;
-      case 'pickup_hyper':  pickups.push(createHyperPickup(pos)); break;
-      case 'obstacle': {
-        const cfg = ent.properties?.config === 'barrel' ? BARREL_CONFIG : CRATE_CONFIG;
-        ObstacleEntities.spawn(pos, cfg);
-        break;
-      }
-      case 'robot':          RobotEntities.spawn(pos, ROBOT_TIER_1); break;
-      case 'siege_engine':   SiegeEntities.spawn(pos, SIEGE_ENGINE_TIER_1); break;
-      case 'turret':         TurretEntities.spawn(pos, TURRET_TIER_1); break;
-      case 'enemy_spinner':  EnemyEntities.spawn(pos, ENEMY_SPINNER_TIER_1); break;
-      case 'dreadnought':    DreadnoughtEntities.spawn(pos, DREADNOUGHT_TIER_1); break;
-      case 'hive_boss':      HiveEntities.spawn(pos, HIVE_TIER_1); break;
-      case 'slug_big':       BigSlugEntities.spawn(pos, BIG_SLUGWORM); break;
-      case 'slug_baby':      BabySlugEntities.spawn(pos, BABY_SLUGWORM); break;
-      case 'fire_torch':     fireTorches.push(createFireTorch(scene, ent)); break;
-      case 'light_point':    break;
+    if (ent.type === 'player_spawn') {
+      playerBody.pos.x = pos.x;
+      playerBody.pos.z = pos.z;
+      continue;
     }
+
+    const spawnTrigger = readStringProperty(ent.properties, 'spawnTrigger');
+    if (spawnTrigger) {
+      const pending = pendingTriggeredEntities.get(spawnTrigger);
+      if (pending) pending.push(ent);
+      else pendingTriggeredEntities.set(spawnTrigger, [ent]);
+      continue;
+    }
+
+    if (ent.type === 'light_point') continue;
+    spawnLevelEntity(ent);
+  }
+}
+
+function updateTriggerSpawns(): void {
+  for (const zone of spawnTriggerZones) {
+    if (zone.fired) continue;
+    if (!zone.contains(playerBody.pos)) continue;
+    zone.fired = true;
+    spawnTriggeredEntities(zone.id);
   }
 }
 
@@ -404,6 +883,10 @@ function resetGame(): void {
   resetGooDecals();
   resetRicochetBubbles();
   resetLavaEmbers();
+  fallingVictims.length = 0;
+  fallableActors.length = 0;
+  playerKillFallTimer = 0;
+  clearDynamicLevelLights();
   clearLevelLights(scene);
   setupLevelLights(scene, currentLevel);
   spawnAll(currentLevel);
@@ -619,6 +1102,7 @@ function animate(): void {
   time += delta;
 
   if (gameOver) {
+    updateFallingVictims(delta);
     const done = updateTopple(delta);
     if (done) gameOverOverlay.style.display = 'flex';
     updateHud(playerBody.rpm, time, delta);
@@ -645,6 +1129,18 @@ function animate(): void {
   // 2b. Sync siege engine sub-parts to core position (before collision)
   for (const s of SiegeEntities.getAll()) syncSiegeEngineParts(s);
   for (const h of HiveEntities.getAll()) syncFlockPositions(h);
+
+  // 2c. Kill-fall trigger zones
+  updateKillFallZones(delta);
+  updateFallingVictims(delta);
+  if (gameOver) {
+    const done = updateTopple(delta);
+    if (done) gameOverOverlay.style.display = 'flex';
+    updateHud(playerBody.rpm, time, delta);
+    updateCamera(playerBody.pos, playerBody.vel, delta);
+    renderer.render(scene, camera);
+    return;
+  }
 
   // 3. Collision resolution
   const { wallHits, circleHits } = runCollisions();
@@ -702,6 +1198,9 @@ function animate(): void {
   // 5. Proximity pair dispatch (pickup collection)
   proximitySystem();
 
+  // 5b. Level trigger spawns
+  updateTriggerSpawns();
+
   // 6. RPM system (base decay) + player-specific hooks
   rpmSystem(delta);
   playerRpmHooks(delta, hasPlayerWallHit(wallHits), circleHits);
@@ -715,6 +1214,7 @@ function animate(): void {
   checkSlugDeath();
 
   if (playerBody.rpm <= 0) {
+    startPlayerToppleDeath();
     gameOver = true;
     updateHud(0, time, delta);
     updateCamera(playerBody.pos, playerBody.vel, delta);

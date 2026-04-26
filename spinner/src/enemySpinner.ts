@@ -41,7 +41,7 @@ export interface EnemySpinnerConfig {
 }
 
 export const ENEMY_SPINNER_TIER_1: EnemySpinnerConfig = {
-  rpmCapacity:   100,
+  rpmCapacity:   120,
   rpmDecayRate:  0.0,      // ~30% of player's 1.0
   rpmSpeedDrain: 0.2,
   radius:        0.5,

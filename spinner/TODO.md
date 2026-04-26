@@ -43,3 +43,7 @@ entities:
     slugs
 normap maps
 glare effects
+
+v2:
+octoboss
+coop mode

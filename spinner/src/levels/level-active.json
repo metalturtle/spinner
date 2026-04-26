@@ -301,85 +301,6 @@
       "textureId": "rock_wall_16_diff_1k"
     },
     {
-      "id": "poly_moeaqhq0ozu419",
-      "name": "Room 12 - Bottom",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": 20,
-          "y": -10
-        },
-        {
-          "x": 100,
-          "y": -10
-        },
-        {
-          "x": 100,
-          "y": -9
-        },
-        {
-          "x": 20,
-          "y": -9
-        }
-      ],
-      "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
-    },
-    {
-      "id": "poly_moeaqhq0t5eny5",
-      "name": "Room 12 - Top",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": 20,
-          "y": 1
-        },
-        {
-          "x": 100,
-          "y": 1
-        },
-        {
-          "x": 100,
-          "y": 2
-        },
-        {
-          "x": 20,
-          "y": 2
-        }
-      ],
-      "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
-    },
-    {
-      "id": "poly_moeaqhq0d0ysxm",
-      "name": "Room 12 - Floor",
-      "layer": "floor",
-      "vertices": [
-        {
-          "x": 19,
-          "y": -9
-        },
-        {
-          "x": 97,
-          "y": -9
-        },
-        {
-          "x": 97,
-          "y": 1
-        },
-        {
-          "x": 19,
-          "y": 1
-        }
-      ],
-      "properties": {},
-      "color": "#2a3a4a",
-      "textureId": "rock_wall_16_diff_1k",
-      "textureScale": 4
-    },
-    {
       "id": "poly_moebfrkgw8ksz2",
       "name": "Room 16 - Wall - Rect 17",
       "layer": "wall",
@@ -858,6 +779,328 @@
       "color": "#3388ff",
       "textureId": "rock_wall_16_diff_1k",
       "textureScale": 4
+    },
+    {
+      "id": "poly_mofo22funzbr82",
+      "name": "Room 12 - Top - Rect 19 1",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 20,
+          "y": 1
+        },
+        {
+          "x": 49,
+          "y": 1
+        },
+        {
+          "x": 49,
+          "y": 2
+        },
+        {
+          "x": 20,
+          "y": 2
+        },
+        {
+          "x": 20,
+          "y": 1
+        }
+      ],
+      "properties": {},
+      "color": "#5577aa",
+      "textureId": "rock_wall_16_diff_1k"
+    },
+    {
+      "id": "poly_mofo22fupn2iip",
+      "name": "Room 12 - Top - Rect 19 2",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 56,
+          "y": 1
+        },
+        {
+          "x": 100,
+          "y": 1
+        },
+        {
+          "x": 100,
+          "y": 2
+        },
+        {
+          "x": 56,
+          "y": 2
+        },
+        {
+          "x": 56,
+          "y": 1
+        }
+      ],
+      "properties": {},
+      "color": "#5577aa",
+      "textureId": "rock_wall_16_diff_1k"
+    },
+    {
+      "id": "poly_mofo2dc7c0ewj2",
+      "name": "Room 12 - Bottom - Rect 20 1",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 20,
+          "y": -10
+        },
+        {
+          "x": 49,
+          "y": -10
+        },
+        {
+          "x": 49,
+          "y": -9
+        },
+        {
+          "x": 20,
+          "y": -9
+        },
+        {
+          "x": 20,
+          "y": -10
+        }
+      ],
+      "properties": {},
+      "color": "#5577aa",
+      "textureId": "rock_wall_16_diff_1k"
+    },
+    {
+      "id": "poly_mofo2dc7jrgcvz",
+      "name": "Room 12 - Bottom - Rect 20 2",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 56,
+          "y": -10
+        },
+        {
+          "x": 100,
+          "y": -10
+        },
+        {
+          "x": 100,
+          "y": -9
+        },
+        {
+          "x": 56,
+          "y": -9
+        },
+        {
+          "x": 56,
+          "y": -10
+        }
+      ],
+      "properties": {},
+      "color": "#5577aa",
+      "textureId": "rock_wall_16_diff_1k"
+    },
+    {
+      "id": "poly_mofo2pzqjm9lyk",
+      "name": "Room 12 - Floor - Rect 21 1",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": 19,
+          "y": -9
+        },
+        {
+          "x": 49,
+          "y": -9
+        },
+        {
+          "x": 49,
+          "y": 1
+        },
+        {
+          "x": 19,
+          "y": 1
+        },
+        {
+          "x": 19,
+          "y": -9
+        }
+      ],
+      "properties": {},
+      "color": "#2a3a4a",
+      "textureId": "rock_wall_16_diff_1k",
+      "textureScale": 4
+    },
+    {
+      "id": "poly_mofo2pzqe36qsh",
+      "name": "Room 12 - Floor - Rect 21 2",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": 56,
+          "y": -9
+        },
+        {
+          "x": 97,
+          "y": -9
+        },
+        {
+          "x": 97,
+          "y": 1
+        },
+        {
+          "x": 56,
+          "y": 1
+        },
+        {
+          "x": 56,
+          "y": -9
+        }
+      ],
+      "properties": {},
+      "color": "#2a3a4a",
+      "textureId": "rock_wall_16_diff_1k",
+      "textureScale": 4
+    },
+    {
+      "id": "poly_mofo3j84xk6rnt",
+      "name": "Polygon 22",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": 49,
+          "y": 1
+        },
+        {
+          "x": 50,
+          "y": 0
+        },
+        {
+          "x": 49,
+          "y": -1
+        },
+        {
+          "x": 50,
+          "y": -4
+        },
+        {
+          "x": 49,
+          "y": -6
+        },
+        {
+          "x": 50,
+          "y": -8
+        },
+        {
+          "x": 49,
+          "y": -10
+        }
+      ],
+      "properties": {},
+      "color": "#3388ff",
+      "textureId": "rock_wall_16_diff_1k",
+      "textureScale": 4
+    },
+    {
+      "id": "poly_mofo3vni0f9ftw",
+      "name": "Polygon 23",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": 56,
+          "y": 2
+        },
+        {
+          "x": 55,
+          "y": 1
+        },
+        {
+          "x": 56,
+          "y": -1
+        },
+        {
+          "x": 55,
+          "y": -2
+        },
+        {
+          "x": 54,
+          "y": -4
+        },
+        {
+          "x": 55,
+          "y": -5
+        },
+        {
+          "x": 55,
+          "y": -7
+        },
+        {
+          "x": 54,
+          "y": -10
+        },
+        {
+          "x": 56,
+          "y": -10
+        }
+      ],
+      "properties": {},
+      "color": "#ff5533",
+      "textureId": "rock_wall_16_diff_1k",
+      "textureScale": 4
+    },
+    {
+      "id": "poly_mofp0yfgau143m",
+      "name": "Rect 25",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 55,
+          "y": -9
+        },
+        {
+          "x": 56,
+          "y": -9
+        },
+        {
+          "x": 56,
+          "y": 1
+        },
+        {
+          "x": 55,
+          "y": 1
+        }
+      ],
+      "properties": {
+        "invisible": "true"
+      },
+      "color": "#ff5533"
+    },
+    {
+      "id": "poly_mofppg2kh1vf20",
+      "name": "Rect 25",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 50,
+          "y": -10
+        },
+        {
+          "x": 55,
+          "y": -10
+        },
+        {
+          "x": 55,
+          "y": 1
+        },
+        {
+          "x": 50,
+          "y": 1
+        }
+      ],
+      "properties": {
+        "triggerAction": "kill_fall"
+      },
+      "color": "#ff5533"
     }
   ],
   "circles": [
@@ -1080,6 +1323,19 @@
       "properties": {
         "intensity": "20",
         "decay": "0.5"
+      }
+    },
+    {
+      "id": "ent_mofoyuglo4gu6x",
+      "name": "Trigger 13",
+      "type": "trigger",
+      "position": {
+        "x": 84,
+        "y": -5
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "arena_wave_1"
       }
     }
   ]

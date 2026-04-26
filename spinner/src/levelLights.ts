@@ -13,7 +13,12 @@ function parseColor(value: unknown, fallback: string): THREE.ColorRepresentation
   return typeof value === 'string' && value.trim() ? value : fallback;
 }
 
-function createPointLight(entity: LevelEntity): THREE.Object3D {
+function hasSpawnTrigger(entity: LevelEntity): boolean {
+  const triggerId = entity.properties?.spawnTrigger;
+  return typeof triggerId === 'string' && triggerId.trim().length > 0;
+}
+
+export function createLevelPointLightRoot(entity: LevelEntity): THREE.Object3D {
   const props = entity.properties ?? {};
   const color = parseColor(props.color, '#ffd080');
   const intensity = parseNumber(props.intensity, 2.0, 0);
@@ -36,7 +41,8 @@ export function setupLevelLights(scene: THREE.Scene, level: LevelData): void {
 
   for (const entity of level.entities) {
     if (entity.type !== 'light_point') continue;
-    const root = createPointLight(entity);
+    if (hasSpawnTrigger(entity)) continue;
+    const root = createLevelPointLightRoot(entity);
     levelLightRoots.push(root);
     scene.add(root);
   }

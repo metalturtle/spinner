@@ -93,6 +93,8 @@ export class PropertiesPanel {
           <span>${poly.vertices.length}</span>
         </div>
         ${poly.layer === 'floor' ? this.surfaceSection(poly.properties) : ''}
+        ${poly.layer === 'wall' ? this.wallSection(poly.properties) : ''}
+        ${poly.layer === 'trigger' ? this.triggerSection(poly.properties) : ''}
         ${this.kvSection(poly.properties)}
       `;
 
@@ -132,6 +134,7 @@ export class PropertiesPanel {
           <label>Radius</label>
           <input type="number" data-field="radius" value="${circle.radius.toFixed(2)}" step="0.5" min="0.1" />
         </div>
+        ${circle.layer === 'trigger' ? this.triggerSection(circle.properties) : ''}
         ${this.kvSection(circle.properties)}
       `;
 
@@ -173,6 +176,7 @@ export class PropertiesPanel {
           <label>Rotation</label>
           <input type="number" data-field="rotation" value="${entity.rotation}" step="15" />
         </div>
+        ${this.spawnSection(entity.properties)}
         ${this.isLightEmitterEntity(entity.type) ? this.lightSection(entity.properties) : ''}
         ${this.kvSection(entity.properties)}
       `;
@@ -247,6 +251,56 @@ export class PropertiesPanel {
     `;
   }
 
+  private wallSection(properties: Record<string, string>): string {
+    const invisible = properties.invisible === 'true';
+    return `
+      <div class="prop-section">
+        <h4>Wall</h4>
+        <div class="prop-row">
+          <label>Invisible</label>
+          <input type="checkbox" data-field="invisible"${invisible ? ' checked' : ''} />
+        </div>
+      </div>
+    `;
+  }
+
+  private triggerSection(properties: Record<string, string>): string {
+    const triggerAction = properties.triggerAction ?? '';
+    return `
+      <div class="prop-section">
+        <h4>Trigger</h4>
+        <div class="prop-row">
+          <label>Trigger ID</label>
+          <input type="text" data-field="triggerId" value="${this.esc(properties.triggerId ?? '')}" placeholder="arena_wave_1" />
+        </div>
+        <div class="prop-row">
+          <label>Action</label>
+          <select data-field="triggerAction">
+            <option value=""${triggerAction === '' ? ' selected' : ''}>None</option>
+            <option value="kill_fall"${triggerAction === 'kill_fall' ? ' selected' : ''}>Kill Fall</option>
+          </select>
+        </div>
+      </div>
+    `;
+  }
+
+  private spawnSection(properties: Record<string, string>): string {
+    const fallable = properties.fallable === 'true';
+    return `
+      <div class="prop-section">
+        <h4>Spawn</h4>
+        <div class="prop-row">
+          <label>Spawn Trigger</label>
+          <input type="text" data-field="spawnTrigger" value="${this.esc(properties.spawnTrigger ?? '')}" placeholder="arena_wave_1" />
+        </div>
+        <div class="prop-row">
+          <label>Fallable</label>
+          <input type="checkbox" data-field="fallable"${fallable ? ' checked' : ''} />
+        </div>
+      </div>
+    `;
+  }
+
   private isLightEmitterEntity(type: string): boolean {
     return type === 'light_point' || type === 'fire_torch';
   }
@@ -304,6 +358,7 @@ export class PropertiesPanel {
           else if (field === 'useReliefMap') oldValue = String(poly.useReliefMap === true);
           else if (field === 'surfaceType') oldValue = (poly.properties.surfaceType === 'water' ? 'lava' : (poly.properties.surfaceType ?? 'normal'));
           else if (field === 'drainRate') oldValue = poly.properties.drainRate ?? '8';
+          else oldValue = String(poly.properties[field] ?? '');
         } else if (type === 'circle') {
           const circle = this.editor.levelData.getCircle(id);
           if (!circle) return;
@@ -314,6 +369,7 @@ export class PropertiesPanel {
           else if (field === 'textureScale') oldValue = String(circle.textureScale ?? 1);
           else if (field === 'useReliefMap') oldValue = String(circle.useReliefMap === true);
           else if (field === 'radius') oldValue = String(circle.radius);
+          else oldValue = String(circle.properties[field] ?? '');
         } else {
           const entity = this.editor.levelData.getEntity(id);
           if (!entity) return;
@@ -323,6 +379,7 @@ export class PropertiesPanel {
           else if (field === 'positionY') oldValue = String(entity.position.y);
           else if (field === 'rotation') oldValue = String(entity.rotation);
           else if (field.startsWith('light:')) oldValue = entity.properties[field.slice(6)] ?? '';
+          else oldValue = String(entity.properties[field] ?? '');
         }
         const targetField = type === 'entity' && field.startsWith('light:') ? field.slice(6) : field;
         const cmd = new EditPropertyCmd(this.editor.levelData, type, id, targetField, oldValue, newValue);

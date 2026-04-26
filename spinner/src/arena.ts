@@ -53,6 +53,11 @@ function getDrainRate(poly: LevelPolygon): number {
   return 8;
 }
 
+function isInvisibleWall(poly: LevelPolygon): boolean {
+  const raw = poly.properties?.invisible;
+  return raw === true || raw === 'true' || raw === '1';
+}
+
 function extrudeWallPoly(poly: LevelPolygon, mat: THREE.MeshStandardMaterial): THREE.Mesh {
   const shape = makeShapeFromPolygon(poly);
   const geo = new THREE.ExtrudeGeometry(shape, { depth: WALL_HEIGHT, bevelEnabled: false });
@@ -237,6 +242,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
 
   // ─── Walls from layer='wall' polygons ────────────────────────────────────
   for (const poly of wallPolys) {
+    const invisible = isInvisibleWall(poly);
     const hasTexture = Boolean(poly.textureId);
     const normalMap = TextureManager.getNormal(poly.textureId, poly.useReliefMap);
     const map = DEBUG_SHOW_NORMAL_AS_ALBEDO && normalMap ? normalMap : TextureManager.get(poly.textureId);
@@ -259,8 +265,10 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
       const p1 = verts[i], p2 = verts[(i + 1) % verts.length];
       walls.push({ p1: { x: p1.x, z: p1.y }, p2: { x: p2.x, z: p2.y } });
     }
-    // Visual: extrude the whole polygon shape upward (one solid mesh per polygon)
-    scene.add(extrudeWallPoly(poly, wallMat));
+    if (!invisible) {
+      // Visual: extrude the whole polygon shape upward (one solid mesh per polygon)
+      scene.add(extrudeWallPoly(poly, wallMat));
+    }
   }
 
 }

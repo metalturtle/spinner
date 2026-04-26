@@ -42,7 +42,7 @@ export function createLavaMaterial(): THREE.ShaderMaterial {
     uniforms: {
       uTime: { value: 0 },
       uResolution: { value: new THREE.Vector2(512, 512) },
-      uScale: { value: 0.5 },
+      uScale: { value: 0.3 },
     },
     vertexShader,
     fragmentShader,
