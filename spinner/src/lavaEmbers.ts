@@ -40,6 +40,14 @@ interface EmberPointEmitter {
   flyingSpawnCarry: number;
 }
 
+interface SpinnerInfluence {
+  position: Vec2;
+  radius: number;
+  rpm: number;
+  rpmCapacity: number;
+  spinSign: number;
+}
+
 const SURFACE_EMBER_PALETTE: [number, number, number][] = [
   [1.0, 0.84, 0.26],
   [1.0, 0.7, 0.18],
@@ -100,14 +108,14 @@ void main() {
   vec3 tipPos = position + aVelocity * age;
   float driftRatio = mix(lifeRatio, sqrt(lifeRatio), aKind);
   float swirl = aSeed * 6.28318530718 + age * (1.6 + aSeed * 2.1);
-  tipPos.x += sin(swirl) * mix(0.07, 0.3, aKind) * driftRatio;
-  tipPos.z += cos(swirl * 1.13) * mix(0.05, 0.24, aKind) * driftRatio;
-  tipPos.y += aKind * sin(swirl * 0.65) * 0.12 * driftRatio;
+  tipPos.x += sin(swirl) * mix(0.09, 0.38, aKind) * driftRatio;
+  tipPos.z += cos(swirl * 1.13) * mix(0.07, 0.31, aKind) * driftRatio;
+  tipPos.y += aKind * sin(swirl * 0.65) * 0.08 * driftRatio;
 
   float speed = length(aVelocity);
   vec3 velDir = speed > 0.001 ? aVelocity / speed : vec3(0.0, 1.0, 0.0);
-  float trail = mix(0.18, 0.72, aKind) + speed * mix(0.04, 0.12, aKind);
-  trail *= mix(1.0 - lifeRatio * 0.42, 1.0 - lifeRatio * 0.12, aKind);
+  float trail = mix(0.12, 0.46, aKind) + speed * mix(0.028, 0.085, aKind);
+  trail *= mix(1.0 - lifeRatio * 0.5, 1.0 - lifeRatio * 0.18, aKind);
   vec3 tailPos = tipPos - velDir * trail;
 
   vec3 pos = mix(tailPos, tipPos, aEndpoint);
@@ -179,6 +187,29 @@ function samplePointInRegion(region: LavaEmitterRegion): Vec2 | null {
   return null;
 }
 
+function computeTipPosition(
+  px: number,
+  py: number,
+  pz: number,
+  vx: number,
+  vy: number,
+  vz: number,
+  seed: number,
+  kind: number,
+  age: number,
+  lifetime: number,
+): Vec3 {
+  const lifeRatio = age / lifetime;
+  const driftRatio = kind === FLYING_KIND ? Math.sqrt(lifeRatio) : lifeRatio;
+  const swirl = seed * Math.PI * 2 + age * (1.6 + seed * 2.1);
+
+  return {
+    x: px + vx * age + Math.sin(swirl) * (kind === FLYING_KIND ? 0.38 : 0.09) * driftRatio,
+    y: py + vy * age + (kind === FLYING_KIND ? Math.sin(swirl * 0.65) * 0.08 * driftRatio : 0),
+    z: pz + vz * age + Math.cos(swirl * 1.13) * (kind === FLYING_KIND ? 0.31 : 0.07) * driftRatio,
+  };
+}
+
 function emitEmber(point: Vec3, kind: number, spreadMultiplier = 1): void {
   if (!positions || !velocities || !birthTimes || !lifetimes || !seeds || !kinds || !colors) return;
 
@@ -196,9 +227,9 @@ function emitEmber(point: Vec3, kind: number, spreadMultiplier = 1): void {
   const by = point.y + (isFlying ? 0.05 + Math.random() * 0.12 : Math.random() * 0.05);
   const bz = point.z + (Math.random() - 0.5) * spread;
 
-  const vx = (Math.random() - 0.5) * (isFlying ? 1.75 : 0.62);
-  const vy = isFlying ? (2.15 + Math.random() * 1.8) : (1.3 + Math.random() * 1.15);
-  const vz = (Math.random() - 0.5) * (isFlying ? 1.75 : 0.62);
+  const vx = (Math.random() - 0.5) * (isFlying ? 2.9 : 1.3);
+  const vy = isFlying ? (1.2 + Math.random() * 0.85) : (0.72 + Math.random() * 0.48);
+  const vz = (Math.random() - 0.5) * (isFlying ? 2.9 : 1.3);
 
   positions[v0_3] = bx; positions[v0_3 + 1] = by; positions[v0_3 + 2] = bz;
   positions[v1_3] = bx; positions[v1_3 + 1] = by; positions[v1_3 + 2] = bz;
@@ -207,7 +238,7 @@ function emitEmber(point: Vec3, kind: number, spreadMultiplier = 1): void {
   velocities[v1_3] = vx; velocities[v1_3 + 1] = vy; velocities[v1_3 + 2] = vz;
 
   birthTimes[v0] = currentTime; birthTimes[v1] = currentTime;
-  const lifetime = isFlying ? (2.3 + Math.random() * 1.7) : (1.0 + Math.random() * 0.9);
+  const lifetime = isFlying ? (1.95 + Math.random() * 1.25) : (0.82 + Math.random() * 0.62);
   lifetimes[v0] = lifetime; lifetimes[v1] = lifetime;
   const seed = Math.random();
   seeds[v0] = seed; seeds[v1] = seed;
@@ -217,6 +248,76 @@ function emitEmber(point: Vec3, kind: number, spreadMultiplier = 1): void {
   const color = palette[Math.floor(Math.random() * palette.length)];
   colors[v0_3] = color[0]; colors[v0_3 + 1] = color[1]; colors[v0_3 + 2] = color[2];
   colors[v1_3] = color[0]; colors[v1_3 + 1] = color[1]; colors[v1_3 + 2] = color[2];
+}
+
+function applySpinnerInfluence(influence: SpinnerInfluence): boolean {
+  if (!positions || !velocities || !birthTimes || !lifetimes || !seeds || !kinds) return false;
+  if (influence.rpm <= 0 || influence.rpmCapacity <= 0) return false;
+
+  let changedAny = false;
+  const rpmRatio = THREE.MathUtils.clamp(influence.rpm / influence.rpmCapacity, 0, 1.5);
+  if (rpmRatio <= 0.02) return false;
+
+  const zoneRadius = influence.radius + 0.65 + rpmRatio * 0.95;
+  const zoneRadiusSq = zoneRadius * zoneRadius;
+  const spinSign = influence.spinSign >= 0 ? 1 : -1;
+
+  for (let i = 0; i < MAX_EMBERS; i++) {
+    const v0 = i * VERTS_PER_EMBER;
+    const v1 = v0 + 1;
+    const age = currentTime - birthTimes[v0];
+    const lifetime = lifetimes[v0];
+    if (age <= 0 || age >= lifetime) continue;
+
+    const v0_3 = v0 * 3;
+    const v1_3 = v1 * 3;
+    const kind = kinds[v0];
+    const tipPos = computeTipPosition(
+      positions[v0_3], positions[v0_3 + 1], positions[v0_3 + 2],
+      velocities[v0_3], velocities[v0_3 + 1], velocities[v0_3 + 2],
+      seeds[v0], kind, age, lifetime,
+    );
+
+    const dx = tipPos.x - influence.position.x;
+    const dz = tipPos.z - influence.position.z;
+    const distSq = dx * dx + dz * dz;
+    if (distSq > zoneRadiusSq) continue;
+
+    const dist = Math.max(0.001, Math.sqrt(distSq));
+    const nx = dx / dist;
+    const nz = dz / dist;
+    const tx = spinSign > 0 ? -nz : nz;
+    const tz = spinSign > 0 ? nx : -nx;
+
+    const falloff = 1 - dist / zoneRadius;
+    const closeBoost = dist < influence.radius + 0.18 ? 1.45 : 1.0;
+    const tangentialSpeed = (1.6 + rpmRatio * (kind === FLYING_KIND ? 5.8 : 4.1)) * falloff * closeBoost;
+    const outwardSpeed = (0.45 + rpmRatio * (kind === FLYING_KIND ? 2.6 : 1.8)) * falloff * closeBoost;
+    const upwardBoost = (kind === FLYING_KIND ? 0.45 : 0.22) + falloff * rpmRatio * 0.45;
+
+    const curVx = velocities[v0_3];
+    const curVy = velocities[v0_3 + 1];
+    const curVz = velocities[v0_3 + 2];
+
+    const nextVx = curVx * 0.72 + tx * tangentialSpeed + nx * outwardSpeed;
+    const nextVy = Math.max(curVy * 0.82 + upwardBoost, kind === FLYING_KIND ? 1.1 : 0.75);
+    const nextVz = curVz * 0.72 + tz * tangentialSpeed + nz * outwardSpeed;
+
+    const remainingLifetime = lifetime - age;
+    if (remainingLifetime <= 0.03) continue;
+
+    positions[v0_3] = tipPos.x; positions[v0_3 + 1] = tipPos.y; positions[v0_3 + 2] = tipPos.z;
+    positions[v1_3] = tipPos.x; positions[v1_3 + 1] = tipPos.y; positions[v1_3 + 2] = tipPos.z;
+
+    velocities[v0_3] = nextVx; velocities[v0_3 + 1] = nextVy; velocities[v0_3 + 2] = nextVz;
+    velocities[v1_3] = nextVx; velocities[v1_3 + 1] = nextVy; velocities[v1_3 + 2] = nextVz;
+
+    birthTimes[v0] = currentTime; birthTimes[v1] = currentTime;
+    lifetimes[v0] = remainingLifetime; lifetimes[v1] = remainingLifetime;
+    changedAny = true;
+  }
+
+  return changedAny;
 }
 
 export function initLavaEmbers(scene: THREE.Scene): void {
@@ -234,7 +335,7 @@ export function initLavaEmbers(scene: THREE.Scene): void {
 
   for (let i = 0; i < MAX_EMBERS; i++) {
     endpoints[i * 2] = 0.0;
-    endpoints[i * 2 + 1] = 1.7;
+    endpoints[i * 2 + 1] = 1.48;
   }
 
   geometry = new THREE.BufferGeometry();
@@ -330,14 +431,14 @@ export function unregisterEmberPointEmitter(id: string): void {
   pointEmitters.delete(id);
 }
 
-export function updateLavaEmbers(delta: number, time: number): void {
+export function updateLavaEmbers(delta: number, time: number, spinnerInfluence?: SpinnerInfluence): void {
   currentTime = time;
   if (!geometry || !material) return;
 
   material.uniforms.uTime.value = time;
   if (emitterRegions.length === 0 && pointEmitters.size === 0) return;
 
-  let emittedAny = false;
+  let changedAny = false;
 
   for (const region of emitterRegions) {
     region.surfaceSpawnCarry = Math.min(
@@ -352,7 +453,7 @@ export function updateLavaEmbers(delta: number, time: number): void {
       const point = samplePointInRegion(region);
       if (!point) continue;
       emitEmber({ x: point.x, y: SURFACE_Y, z: point.z }, SURFACE_KIND);
-      emittedAny = true;
+      changedAny = true;
     }
 
     region.flyingSpawnCarry = Math.min(
@@ -367,7 +468,7 @@ export function updateLavaEmbers(delta: number, time: number): void {
       const point = samplePointInRegion(region);
       if (!point) continue;
       emitEmber({ x: point.x, y: SURFACE_Y, z: point.z }, FLYING_KIND);
-      emittedAny = true;
+      changedAny = true;
     }
   }
 
@@ -386,7 +487,7 @@ export function updateLavaEmbers(delta: number, time: number): void {
         y: emitter.position.y + Math.random() * emitter.heightJitter,
         z: emitter.position.z,
       }, SURFACE_KIND, Math.max(0.75, emitter.radius / 0.16));
-      emittedAny = true;
+      changedAny = true;
     }
 
     emitter.flyingSpawnCarry = Math.min(
@@ -403,11 +504,15 @@ export function updateLavaEmbers(delta: number, time: number): void {
         y: emitter.position.y + Math.random() * emitter.heightJitter,
         z: emitter.position.z,
       }, FLYING_KIND, Math.max(0.9, emitter.radius / 0.16));
-      emittedAny = true;
+      changedAny = true;
     }
   }
 
-  if (!emittedAny) return;
+  if (spinnerInfluence) {
+    changedAny = applySpinnerInfluence(spinnerInfluence) || changedAny;
+  }
+
+  if (!changedAny) return;
 
   geometry.attributes.position.needsUpdate = true;
   geometry.attributes.aVelocity.needsUpdate = true;

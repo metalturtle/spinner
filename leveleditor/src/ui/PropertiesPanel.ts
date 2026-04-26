@@ -162,8 +162,12 @@ export class PropertiesPanel {
           <datalist id="entity-type-suggestions-panel">${this.entityTypeDatalistOptions()}</datalist>
         </div>
         <div class="prop-row">
-          <label>Position</label>
-          <span>${entity.position.x.toFixed(1)}, ${entity.position.y.toFixed(1)}</span>
+          <label>Pos X</label>
+          <input type="number" data-field="positionX" value="${entity.position.x.toFixed(2)}" step="0.5" />
+        </div>
+        <div class="prop-row">
+          <label>Pos Y</label>
+          <input type="number" data-field="positionY" value="${entity.position.y.toFixed(2)}" step="0.5" />
         </div>
         <div class="prop-row">
           <label>Rotation</label>
@@ -315,6 +319,8 @@ export class PropertiesPanel {
           if (!entity) return;
           if (field === 'name') oldValue = entity.name;
           else if (field === 'type') oldValue = entity.type;
+          else if (field === 'positionX') oldValue = String(entity.position.x);
+          else if (field === 'positionY') oldValue = String(entity.position.y);
           else if (field === 'rotation') oldValue = String(entity.rotation);
           else if (field.startsWith('light:')) oldValue = entity.properties[field.slice(6)] ?? '';
         }

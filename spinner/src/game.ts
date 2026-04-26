@@ -741,7 +741,13 @@ function animate(): void {
   updateTrails(playerBody.pos, playerBody.vel);
   updateLavaSurfaces(time);
   for (const torch of fireTorches) updateFireTorch(torch, time);
-  updateLavaEmbers(delta, time);
+  updateLavaEmbers(delta, time, {
+    position: playerBody.pos,
+    radius: playerBody.radius,
+    rpm: playerBody.rpm,
+    rpmCapacity: playerBody.rpmCapacity,
+    spinSign: 1,
+  });
   renderer.render(scene, camera);
 }
 

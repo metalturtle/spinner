@@ -223,11 +223,11 @@
           "y": 16
         },
         {
-          "x": 29,
+          "x": 16,
           "y": 16
         },
         {
-          "x": 29,
+          "x": 16,
           "y": 36
         },
         {
@@ -250,11 +250,11 @@
           "y": 16
         },
         {
-          "x": 12,
+          "x": 10,
           "y": 16
         },
         {
-          "x": 12,
+          "x": 10,
           "y": 17
         },
         {
@@ -276,7 +276,7 @@
       "layer": "wall",
       "vertices": [
         {
-          "x": 17,
+          "x": 15,
           "y": 16
         },
         {
@@ -288,11 +288,11 @@
           "y": 17
         },
         {
-          "x": 17,
+          "x": 15,
           "y": 17
         },
         {
-          "x": 17,
+          "x": 15,
           "y": 16
         }
       ],
@@ -784,19 +784,19 @@
       "vertices": [
         {
           "x": 16,
-          "y": 22
+          "y": 17
         },
         {
-          "x": 26,
-          "y": 22
+          "x": 29,
+          "y": 17
         },
         {
-          "x": 26,
-          "y": 30
+          "x": 29,
+          "y": 36
         },
         {
           "x": 16,
-          "y": 30
+          "y": 36
         }
       ],
       "properties": {
@@ -985,6 +985,101 @@
         "height": "1.8",
         "poleHeight": "1.55",
         "flameSize": "0.22"
+      }
+    },
+    {
+      "id": "ent_mofmjfzqu1x9hf",
+      "name": "Robot 6",
+      "type": "robot",
+      "position": {
+        "x": 39,
+        "y": -4
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mofmp1zowoiak5",
+      "name": "Waypoint 7",
+      "type": "fire_torch",
+      "position": {
+        "x": 24,
+        "y": -2
+      },
+      "rotation": 0,
+      "properties": {
+        "intensity": "20.0",
+        "decay": "0.5"
+      }
+    },
+    {
+      "id": "ent_mofmp48paeh9ah",
+      "name": "Waypoint 8",
+      "type": "fire_torch",
+      "position": {
+        "x": 28,
+        "y": -10
+      },
+      "rotation": 0,
+      "properties": {
+        "intensity": "20.0",
+        "decay": "0.8"
+      }
+    },
+    {
+      "id": "ent_mofmp65x3x5crh",
+      "name": "Waypoint 9",
+      "type": "fire_torch",
+      "position": {
+        "x": 40,
+        "y": -2
+      },
+      "rotation": 0,
+      "properties": {
+        "intensity": "20",
+        "decay": "0.8"
+      }
+    },
+    {
+      "id": "ent_mofmp7h7hw9cq1",
+      "name": "Waypoint 10",
+      "type": "fire_torch",
+      "position": {
+        "x": 57,
+        "y": -10
+      },
+      "rotation": 0,
+      "properties": {
+        "intensity": "20.0",
+        "decay": "0.5"
+      }
+    },
+    {
+      "id": "ent_mofmp9rjwaiphs",
+      "name": "Waypoint 11",
+      "type": "fire_torch",
+      "position": {
+        "x": 72,
+        "y": -1
+      },
+      "rotation": 0,
+      "properties": {
+        "intensity": "20.0",
+        "decay": "0.5"
+      }
+    },
+    {
+      "id": "ent_mofmpaqel7cvtv",
+      "name": "Waypoint 12",
+      "type": "fire_torch",
+      "position": {
+        "x": 90,
+        "y": -10
+      },
+      "rotation": 0,
+      "properties": {
+        "intensity": "20",
+        "decay": "0.5"
       }
     }
   ]

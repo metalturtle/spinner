@@ -12,6 +12,7 @@ const FLOOR_COLOR   = 0x445566;
 const CIRCLE_FLOOR_SEGMENTS = 48;
 const CIRCLE_FLOOR_INSET = 0.05;
 const DEBUG_SHOW_NORMAL_AS_ALBEDO = false;
+const lavaLightRoots: THREE.Object3D[] = [];
 
 function getSurfaceColor(color: string | undefined, fallback: THREE.ColorRepresentation, hasTexture: boolean): THREE.ColorRepresentation {
   if (!color) return hasTexture ? 0xffffff : fallback;
@@ -68,8 +69,62 @@ function extrudeWallPoly(poly: LevelPolygon, mat: THREE.MeshStandardMaterial): T
   return mesh;
 }
 
+function clearLavaLights(scene: THREE.Scene): void {
+  while (lavaLightRoots.length > 0) {
+    const root = lavaLightRoots.pop()!;
+    scene.remove(root);
+  }
+}
+
+function addLavaLight(scene: THREE.Scene, poly: LevelPolygon): void {
+  if (poly.vertices.length < 3) return;
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  let centerX = 0;
+  let centerZ = 0;
+
+  for (const vertex of poly.vertices) {
+    minX = Math.min(minX, vertex.x);
+    maxX = Math.max(maxX, vertex.x);
+    minZ = Math.min(minZ, vertex.y);
+    maxZ = Math.max(maxZ, vertex.y);
+    centerX += vertex.x;
+    centerZ += vertex.y;
+  }
+
+  centerX /= poly.vertices.length;
+  centerZ /= poly.vertices.length;
+
+  const spanX = maxX - minX;
+  const spanZ = maxZ - minZ;
+  const radius = Math.max(spanX, spanZ) * 0.5;
+
+  const root = new THREE.Group();
+  root.position.set(centerX, 2, centerZ);
+
+  const light = new THREE.PointLight(0xff6a1a, (100.2 + radius * 0.18) * 10, Math.max(6, radius * 2.8), 1.6);
+  light.castShadow = false;
+  root.add(light);
+
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    color: 0xff7f22,
+    transparent: true,
+    opacity: 0.18,
+    depthWrite: false,
+  }));
+  glow.scale.set(Math.max(2.8, radius * 1.3), Math.max(2.8, radius * 1.3), 1);
+  root.add(glow);
+
+  lavaLightRoots.push(root);
+  scene.add(root);
+}
+
 export function createArena(scene: THREE.Scene, level: LevelData): void {
   clearLavaEmbers();
+  clearLavaLights(scene);
 
   // ─── Separate polygons and circles by layer ──────────────────────────────
   const polys        = level.polygons ?? [];
@@ -129,6 +184,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
           drainRate: getDrainRate(poly),
         });
         registerLavaEmitter(poly);
+        addLavaLight(scene, poly);
       }
     }
   }

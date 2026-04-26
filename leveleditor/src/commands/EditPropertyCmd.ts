@@ -77,6 +77,8 @@ export class EditPropertyCmd implements Command {
       if (!entity) return;
       if (this.field === 'name') entity.name = value;
       else if (this.field === 'type') entity.type = value;
+      else if (this.field === 'positionX') entity.position.x = parseFloat(value) || 0;
+      else if (this.field === 'positionY') entity.position.y = parseFloat(value) || 0;
       else if (this.field === 'rotation') entity.rotation = parseFloat(value) || 0;
       else entity.properties[this.field] = value;
       this.levelData.notifyEntityChanged(this.objectId);
