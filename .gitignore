@@ -28,3 +28,6 @@ pnpm-debug.log*
 
 textures
 models
+
+video/
+galaxy.mov
