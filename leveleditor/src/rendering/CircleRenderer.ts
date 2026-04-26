@@ -5,6 +5,7 @@ import { LAYER_Z } from '../data/Polygon';
 import { applyWorldUVs, getTextureScale, TextureManager } from './TextureManager';
 
 const CIRCLE_SEGMENTS = 48;
+const DEBUG_SHOW_NORMAL_AS_ALBEDO = false;
 
 function getSurfaceColor(colorHex: string, hasTexture: boolean, lightingPreviewEnabled: boolean): THREE.Color {
   const authoredColor = new THREE.Color(colorHex);
@@ -67,14 +68,18 @@ export class CircleRenderer {
     if (textureScale) {
       applyWorldUVs(fillGeo, textureScale, circle.center.x, circle.center.y);
     }
+    const reliefEnabled = Boolean(circle.useReliefMap);
+    const normalMap = TextureManager.getNormal(circle.textureId, reliefEnabled || DEBUG_SHOW_NORMAL_AS_ALBEDO);
+    const baseMap = TextureManager.get(circle.textureId);
+    const debugMap = DEBUG_SHOW_NORMAL_AS_ALBEDO && normalMap ? normalMap : null;
     const fillMat = this.lightingPreviewEnabled
       ? new THREE.MeshStandardMaterial({
           color,
-          map: TextureManager.get(circle.textureId),
-          normalMap: TextureManager.getNormal(circle.textureId, circle.useReliefMap),
-          bumpMap: TextureManager.getBump(circle.textureId, circle.useReliefMap),
-          normalScale: circle.useReliefMap ? new THREE.Vector2(0.7, 0.7) : undefined,
-          bumpScale: circle.useReliefMap ? 0.12 : undefined,
+          map: debugMap ?? baseMap,
+          normalMap: DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap,
+          bumpMap: DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : TextureManager.getBump(circle.textureId, reliefEnabled),
+          normalScale: reliefEnabled ? new THREE.Vector2(0.7, 0.7) : undefined,
+          bumpScale: reliefEnabled ? 0.12 : undefined,
           transparent: fillOpacity < 1,
           opacity: fillOpacity,
           side: THREE.DoubleSide,

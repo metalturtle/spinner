@@ -50,12 +50,12 @@ export class LightingPreviewManager {
   }
 
   private onEntityAdded(entity: EntityData): void {
-    if (!this.enabled || entity.type !== 'light_point') return;
+    if (!this.enabled || !this.isLightEmitterEntity(entity.type)) return;
     this.addLight(entity);
   }
 
   private onEntityChanged(entity: EntityData): void {
-    if (entity.type !== 'light_point') {
+    if (!this.isLightEmitterEntity(entity.type)) {
       this.onEntityRemoved(entity.id);
       return;
     }
@@ -79,7 +79,7 @@ export class LightingPreviewManager {
     if (!this.enabled) return;
 
     for (const entity of this.levelData.entities) {
-      if (entity.type === 'light_point') {
+      if (this.isLightEmitterEntity(entity.type)) {
         this.addLight(entity);
       }
     }
@@ -102,5 +102,9 @@ export class LightingPreviewManager {
 
     this.lightRoots.set(entity.id, root);
     this.root.add(root);
+  }
+
+  private isLightEmitterEntity(type: string): boolean {
+    return type === 'light_point' || type === 'fire_torch';
   }
 }

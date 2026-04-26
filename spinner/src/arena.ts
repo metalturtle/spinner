@@ -3,6 +3,7 @@ import { WALL_HEIGHT } from './constants';
 import { walls, zones } from './physics';
 import type { LevelData, LevelPolygon } from './levelLoader';
 import { createLavaMaterial } from './lavaSurface';
+import { clearLavaEmbers, registerLavaEmitter } from './lavaEmbers';
 import { applyWallExtrusionUVs, applyWorldUVs, getTextureScale, TextureManager } from './textureUtils';
 
 const WALL_COLOR    = 0x0f3460;
@@ -10,6 +11,7 @@ const WALL_EMISSIVE = 0x051030;
 const FLOOR_COLOR   = 0x445566;
 const CIRCLE_FLOOR_SEGMENTS = 48;
 const CIRCLE_FLOOR_INSET = 0.05;
+const DEBUG_SHOW_NORMAL_AS_ALBEDO = false;
 
 function getSurfaceColor(color: string | undefined, fallback: THREE.ColorRepresentation, hasTexture: boolean): THREE.ColorRepresentation {
   if (!color) return hasTexture ? 0xffffff : fallback;
@@ -67,6 +69,8 @@ function extrudeWallPoly(poly: LevelPolygon, mat: THREE.MeshStandardMaterial): T
 }
 
 export function createArena(scene: THREE.Scene, level: LevelData): void {
+  clearLavaEmbers();
+
   // ─── Separate polygons and circles by layer ──────────────────────────────
   const polys        = level.polygons ?? [];
   const circs        = level.circles  ?? [];
@@ -77,9 +81,12 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
 
   function makeSurfaceMat(color?: string, textureId?: string): THREE.MeshStandardMaterial {
     const hasTexture = Boolean(textureId);
+    const baseMap = TextureManager.get(textureId);
+    const debugNormalMap = TextureManager.getNormal(textureId, true);
+    const map = DEBUG_SHOW_NORMAL_AS_ALBEDO && debugNormalMap ? debugNormalMap : baseMap;
     return new THREE.MeshStandardMaterial({
       color: getSurfaceColor(color, FLOOR_COLOR, hasTexture),
-      map: TextureManager.get(textureId),
+      map,
       roughness: 0.85,
       metalness: 0.05,
     });
@@ -102,7 +109,8 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
       );
       if (!isLava) {
         const mat = mesh.material as THREE.MeshStandardMaterial;
-        mat.normalMap = TextureManager.getNormal(poly.textureId, poly.useReliefMap);
+        const normalMap = TextureManager.getNormal(poly.textureId, poly.useReliefMap);
+        mat.normalMap = DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap;
         mat.bumpMap = TextureManager.getBump(poly.textureId, poly.useReliefMap);
         if (poly.useReliefMap) {
           mat.normalScale = new THREE.Vector2(0.6, 0.6);
@@ -120,6 +128,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
           holes: (poly.holes ?? []).map((hole) => hole.map((v) => ({ x: v.x, z: v.y }))),
           drainRate: getDrainRate(poly),
         });
+        registerLavaEmitter(poly);
       }
     }
   }
@@ -138,7 +147,8 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
         makeSurfaceMat(c.color, c.textureId),
       );
       const mat = mesh.material as THREE.MeshStandardMaterial;
-      mat.normalMap = TextureManager.getNormal(c.textureId, c.useReliefMap);
+      const normalMap = TextureManager.getNormal(c.textureId, c.useReliefMap);
+      mat.normalMap = DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap;
       mat.bumpMap = TextureManager.getBump(c.textureId, c.useReliefMap);
       if (c.useReliefMap) {
         mat.normalScale = new THREE.Vector2(0.6, 0.6);
@@ -172,10 +182,12 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
   // ─── Walls from layer='wall' polygons ────────────────────────────────────
   for (const poly of wallPolys) {
     const hasTexture = Boolean(poly.textureId);
+    const normalMap = TextureManager.getNormal(poly.textureId, poly.useReliefMap);
+    const map = DEBUG_SHOW_NORMAL_AS_ALBEDO && normalMap ? normalMap : TextureManager.get(poly.textureId);
     const wallMat = new THREE.MeshStandardMaterial({
       color: hasTexture ? 0xffffff : getSurfaceColor(poly.color, WALL_COLOR, hasTexture),
-      map: TextureManager.get(poly.textureId),
-      normalMap: TextureManager.getNormal(poly.textureId, poly.useReliefMap),
+      map,
+      normalMap: DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap,
       bumpMap: TextureManager.getBump(poly.textureId, poly.useReliefMap),
       emissive: hasTexture ? 0x000000 : new THREE.Color(WALL_EMISSIVE),
       roughness: 0.4,

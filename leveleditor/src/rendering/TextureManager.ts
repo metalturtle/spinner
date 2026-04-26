@@ -63,13 +63,13 @@ export class TextureManager {
     if (!enabled) return null;
     const definition = getTextureDefinition(textureId);
     if (!definition?.normalSrc) return null;
+    if (definition.normalSrc.toLowerCase().endsWith('.exr')) return null;
     return this.load(definition.normalSrc, false);
   }
 
   static getBump(textureId?: string, enabled?: boolean): THREE.Texture | null {
     if (!enabled) return null;
     const definition = getTextureDefinition(textureId);
-    if (definition?.normalSrc) return null;
     if (!definition?.bumpSrc) return null;
     return this.load(definition.bumpSrc, false);
   }

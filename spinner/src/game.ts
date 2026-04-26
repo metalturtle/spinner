@@ -74,6 +74,8 @@ import { initGooDecals, spawnGooSplat, updateGooDecals, resetGooDecals } from '.
 import { updateRicochetBubbles, resetRicochetBubbles } from './ricochetBubbles';
 import { setupLevelLights, clearLevelLights } from './levelLights';
 import { updateLavaSurfaces } from './lavaSurface';
+import { initLavaEmbers, resetLavaEmbers, updateLavaEmbers } from './lavaEmbers';
+import { createFireTorch, destroyFireTorch, type FireTorch, updateFireTorch } from './fireTorch';
 
 
 // ─── Level-driven state ──────────────────────────────────────────────────────
@@ -90,6 +92,7 @@ initCamera();
 initSparks(scene);
 initTrails(scene);
 initGooDecals(scene);
+initLavaEmbers(scene);
 
 // ─── Entity Type Managers ─────────────────────────────────────────────────────
 
@@ -309,6 +312,7 @@ setupPlayer();
 const pickups:     Pickup[]     = [];
 const projectiles: Projectile[] = [];
 const explosions:  Explosion[]  = [];
+const fireTorches: FireTorch[]  = [];
 
 // ─── Spawn from level data ───────────────────────────────────────────────────
 
@@ -335,6 +339,7 @@ function spawnAll(level: LevelData): void {
       case 'hive_boss':      HiveEntities.spawn(pos, HIVE_TIER_1); break;
       case 'slug_big':       BigSlugEntities.spawn(pos, BIG_SLUGWORM); break;
       case 'slug_baby':      BabySlugEntities.spawn(pos, BABY_SLUGWORM); break;
+      case 'fire_torch':     fireTorches.push(createFireTorch(scene, ent)); break;
       case 'light_point':    break;
     }
   }
@@ -391,11 +396,14 @@ function resetGame(): void {
   projectiles.length = 0;
   for (const e of explosions)  { if (e.alive) scene.remove(e.mesh); }
   explosions.length = 0;
+  for (const torch of fireTorches) destroyFireTorch(scene, torch);
+  fireTorches.length = 0;
 
   resetSparks();
   resetTrails();
   resetGooDecals();
   resetRicochetBubbles();
+  resetLavaEmbers();
   clearLevelLights(scene);
   setupLevelLights(scene, currentLevel);
   spawnAll(currentLevel);
@@ -732,6 +740,8 @@ function animate(): void {
   updateRicochetBubbles(delta);
   updateTrails(playerBody.pos, playerBody.vel);
   updateLavaSurfaces(time);
+  for (const torch of fireTorches) updateFireTorch(torch, time);
+  updateLavaEmbers(delta, time);
   renderer.render(scene, camera);
 }
 

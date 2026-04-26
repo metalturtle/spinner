@@ -51,6 +51,11 @@ export class EntityRenderer {
       return;
     }
 
+    if (entity.type === 'fire_torch') {
+      this.buildTorchVisual(group, entity, color);
+      return;
+    }
+
     this.buildDefaultVisual(group, entity, color);
   }
 
@@ -152,6 +157,46 @@ export class EntityRenderer {
     });
     const ring = new THREE.Line(ringGeo, ringMat);
     group.add(ring);
+  }
+
+  private buildTorchVisual(group: THREE.Group, entity: EntityData, color: number): void {
+    const x = entity.position.x;
+    const y = entity.position.y;
+    const poleHeight = this.readNumber(entity.properties.poleHeight, 1.55, 0.6);
+    const flameHeight = this.readNumber(entity.properties.height, 1.8, 0.4);
+    const flameColor = this.readColor(entity.properties.color, color);
+    const glowRange = this.readNumber(entity.properties.range, 9.5, 0.5) * 0.22;
+
+    const poleGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x, y, 0),
+      new THREE.Vector3(x, y + poleHeight, 0),
+    ]);
+    const poleMat = new THREE.LineBasicMaterial({ color: 0x7a5230, depthTest: false });
+    group.add(new THREE.Line(poleGeo, poleMat));
+
+    const flameGeo = new THREE.CircleGeometry(0.16, 18);
+    const flameMat = new THREE.MeshBasicMaterial({
+      color: flameColor,
+      transparent: true,
+      opacity: 0.88,
+      blending: THREE.AdditiveBlending,
+      depthTest: false,
+    });
+    const flame = new THREE.Mesh(flameGeo, flameMat);
+    flame.position.set(x, y + flameHeight, 0.01);
+    flame.userData = { type: 'entity', id: entity.id };
+    group.add(flame);
+
+    const coreGeo = new THREE.CircleGeometry(0.08, 16);
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xffefb0, depthTest: false });
+    const core = new THREE.Mesh(coreGeo, coreMat);
+    core.position.set(x, y + flameHeight + 0.02, 0.02);
+    core.userData = { type: 'entity', id: entity.id };
+    group.add(core);
+
+    const glow = this.createLightDisc(glowRange, flameColor, 0.12);
+    glow.position.set(x, y + flameHeight, -0.02);
+    group.add(glow);
   }
 
   private createLightDisc(radius: number, color: number, opacity: number): THREE.Mesh {

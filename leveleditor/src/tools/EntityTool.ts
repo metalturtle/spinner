@@ -57,6 +57,18 @@ export class EntityTool implements Tool {
       };
     }
 
+    if (type === 'fire_torch') {
+      return {
+        color: '#ff9a3c',
+        intensity: '3.4',
+        range: '9.5',
+        decay: '1.6',
+        height: '1.8',
+        poleHeight: '1.55',
+        flameSize: '0.22',
+      };
+    }
+
     return {};
   }
 }

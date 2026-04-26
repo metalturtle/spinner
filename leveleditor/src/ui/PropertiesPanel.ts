@@ -169,7 +169,7 @@ export class PropertiesPanel {
           <label>Rotation</label>
           <input type="number" data-field="rotation" value="${entity.rotation}" step="15" />
         </div>
-        ${entity.type === 'light_point' ? this.lightSection(entity.properties) : ''}
+        ${this.isLightEmitterEntity(entity.type) ? this.lightSection(entity.properties) : ''}
         ${this.kvSection(entity.properties)}
       `;
 
@@ -243,6 +243,10 @@ export class PropertiesPanel {
     `;
   }
 
+  private isLightEmitterEntity(type: string): boolean {
+    return type === 'light_point' || type === 'fire_torch';
+  }
+
   private surfaceSection(properties: Record<string, string>): string {
     const rawSurfaceType = properties.surfaceType ?? 'normal';
     const surfaceType = rawSurfaceType === 'water' ? 'lava' : rawSurfaceType;
@@ -268,10 +272,11 @@ export class PropertiesPanel {
   private reliefRow(textureId: string | undefined, enabled: boolean | undefined): string {
     const texture = TEXTURE_LIBRARY.find((entry) => entry.id === textureId);
     if (!texture?.hasRelief) return '';
+    const isEnabled = enabled === true;
     return `
       <div class="prop-row">
         <label>Use Relief</label>
-        <input type="checkbox" data-field="useReliefMap"${enabled ? ' checked' : ''} />
+        <input type="checkbox" data-field="useReliefMap"${isEnabled ? ' checked' : ''} />
       </div>
     `;
   }
@@ -292,7 +297,7 @@ export class PropertiesPanel {
           else if (field === 'color') oldValue = poly.color;
           else if (field === 'textureId') oldValue = poly.textureId ?? '';
           else if (field === 'textureScale') oldValue = String(poly.textureScale ?? 1);
-          else if (field === 'useReliefMap') oldValue = String(Boolean(poly.useReliefMap));
+          else if (field === 'useReliefMap') oldValue = String(poly.useReliefMap === true);
           else if (field === 'surfaceType') oldValue = (poly.properties.surfaceType === 'water' ? 'lava' : (poly.properties.surfaceType ?? 'normal'));
           else if (field === 'drainRate') oldValue = poly.properties.drainRate ?? '8';
         } else if (type === 'circle') {
@@ -303,7 +308,7 @@ export class PropertiesPanel {
           else if (field === 'color') oldValue = circle.color;
           else if (field === 'textureId') oldValue = circle.textureId ?? '';
           else if (field === 'textureScale') oldValue = String(circle.textureScale ?? 1);
-          else if (field === 'useReliefMap') oldValue = String(Boolean(circle.useReliefMap));
+          else if (field === 'useReliefMap') oldValue = String(circle.useReliefMap === true);
           else if (field === 'radius') oldValue = String(circle.radius);
         } else {
           const entity = this.editor.levelData.getEntity(id);

@@ -4,6 +4,8 @@ import type { PolygonData } from '../data/Polygon';
 import { LAYER_Z } from '../data/Polygon';
 import { applyWorldUVs, getTextureScale, TextureManager } from './TextureManager';
 
+const DEBUG_SHOW_NORMAL_AS_ALBEDO = false;
+
 function getSurfaceColor(colorHex: string, hasTexture: boolean, lightingPreviewEnabled: boolean): THREE.Color {
   const authoredColor = new THREE.Color(colorHex);
   if (!hasTexture) return authoredColor;
@@ -89,14 +91,18 @@ export class PolygonRenderer {
       applyWorldUVs(fillGeo, textureScale);
     }
     const fillOpacity = getSurfaceOpacity(poly.layer, hasTexture, this.lightingPreviewEnabled);
+    const reliefEnabled = Boolean(poly.useReliefMap);
+    const normalMap = TextureManager.getNormal(poly.textureId, reliefEnabled || DEBUG_SHOW_NORMAL_AS_ALBEDO);
+    const baseMap = TextureManager.get(poly.textureId);
+    const debugMap = DEBUG_SHOW_NORMAL_AS_ALBEDO && normalMap ? normalMap : null;
     const fillMat = this.lightingPreviewEnabled
       ? new THREE.MeshStandardMaterial({
           color,
-          map: TextureManager.get(poly.textureId),
-          normalMap: TextureManager.getNormal(poly.textureId, poly.useReliefMap),
-          bumpMap: TextureManager.getBump(poly.textureId, poly.useReliefMap),
-          normalScale: poly.useReliefMap ? new THREE.Vector2(0.7, 0.7) : undefined,
-          bumpScale: poly.useReliefMap ? 0.12 : undefined,
+          map: debugMap ?? baseMap,
+          normalMap: DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap,
+          bumpMap: DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : TextureManager.getBump(poly.textureId, reliefEnabled),
+          normalScale: reliefEnabled ? new THREE.Vector2(0.7, 0.7) : undefined,
+          bumpScale: reliefEnabled ? 0.12 : undefined,
           transparent: fillOpacity < 1,
           opacity: fillOpacity,
           side: THREE.DoubleSide,

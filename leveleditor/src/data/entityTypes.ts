@@ -19,6 +19,7 @@ export const ENTITY_TYPE_OPTIONS: EntityTypeOption[] = [
   { value: 'hive_boss', label: 'Hive Boss', color: 0xff77aa },
   { value: 'slug_big', label: 'Big Slug', color: 0x88ff66 },
   { value: 'slug_baby', label: 'Baby Slug', color: 0xaaff88 },
+  { value: 'fire_torch', label: 'Fire Torch', color: 0xff8a33 },
   { value: 'light_point', label: 'Point Light', color: 0xffd066 },
   { value: 'trigger', label: 'Trigger', color: 0xff8844 },
   { value: 'waypoint', label: 'Waypoint', color: 0x4488ff },
