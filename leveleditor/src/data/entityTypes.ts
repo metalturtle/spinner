@@ -13,6 +13,7 @@ export const ENTITY_TYPE_OPTIONS: EntityTypeOption[] = [
   { value: 'obstacle', label: 'Obstacle', color: 0xb08b5b },
   { value: 'robot', label: 'Robot', color: 0xff6666 },
   { value: 'siege_engine', label: 'Siege Engine', color: 0xff9966 },
+  { value: 'spider_reliquary', label: 'Spider Reliquary', color: 0xd6a158 },
   { value: 'turret', label: 'Turret', color: 0xffaa44 },
   { value: 'enemy_spinner', label: 'Enemy Spinner', color: 0xcc66ff },
   { value: 'zombie', label: 'Zombie', color: 0xa46a52 },

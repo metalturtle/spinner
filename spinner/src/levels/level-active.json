@@ -1203,7 +1203,7 @@
     {
       "id": "ent_moen6dmub30vfl",
       "name": "Player Spawn 5",
-      "type": "zombie",
+      "type": "spider_reliquary",
       "position": {
         "x": 134,
         "y": -4

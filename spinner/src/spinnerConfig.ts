@@ -38,7 +38,7 @@ export interface SpinnerConfig {
 }
 
 export const spinnerConfig: SpinnerConfig = {
-  rpmCapacity:   150,
+  rpmCapacity:   300,
 
   rpmDecayRate:  1.0,
   rpmSpeedDrain: 0.3,

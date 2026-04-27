@@ -66,6 +66,10 @@ octoboss
 hive spinner
 laser spinner with mirror room
 dragon spinner? or just dragon
+see BOSS-PLANS.md for detailed encounter plans:
+    Spider Reliquary
+    The Gravity Organ
+    The Wyrm Coil
 
 dungeon enemies:
 

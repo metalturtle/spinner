@@ -61,6 +61,12 @@ import {
   type SiegeEngineState,
 } from './bossSiegeEngine';
 import {
+  createSpiderReliquary, updateSpiderReliquaryAI, syncSpiderReliquaryLegs,
+  updateSpiderReliquaryVisuals, canDamageSpiderCore, getSpiderCoreDamageMultiplier,
+  applyDamageToSpiderLeg, isSpiderReliquaryDead, destroySpiderReliquary,
+  SPIDER_RELIQUARY_TIER_1, type SpiderReliquaryState,
+} from './bossSpiderReliquary';
+import {
   createRobotEnemy, updateRobotAI, updateRobotVisuals,
   applyDamageToRobot, isRobotDead, destroyRobotEnemy, ROBOT_TIER_1,
   type RobotEnemyState,
@@ -116,6 +122,7 @@ const ZombieEntities      = defineEntityType({ create: createZombieEnemy,   dest
 const ObstacleEntities    = defineEntityType({ create: createObstacle,      destroy: destroyObstacle      });
 const DreadnoughtEntities = defineEntityType({ create: createDreadnought,   destroy: destroyDreadnought   });
 const SiegeEntities       = defineEntityType({ create: createSiegeEngine,   destroy: destroySiegeEngine   });
+const SpiderEntities      = defineEntityType({ create: createSpiderReliquary, destroy: destroySpiderReliquary });
 const RobotEntities       = defineEntityType({ create: createRobotEnemy,    destroy: destroyRobotEnemy    });
 const HiveEntities        = defineEntityType({ create: createHiveBoss,      destroy: destroyHiveBoss      });
 const BigSlugEntities     = defineEntityType({ create: createSlugworm,      destroy: destroySlugworm      });
@@ -225,6 +232,44 @@ registerCollisionPair('player', 'siege_part', (_playerCol, partCol, hit) => {
     }
     const { point, normal } = computeContactInfo(_playerCol, partCol);
     emitSparks(point, normal, Math.floor(10 + hit.impactForce * 8), Math.min(1, hit.impactForce / 8));
+    return;
+  }
+});
+
+registerCollisionPair('player', 'spider_core', (_playerCol, coreCol, hit) => {
+  const spider = SpiderEntities.getAll().find((boss) => boss.collidable === coreCol);
+  if (!spider?.alive) return;
+
+  const { point, normal } = computeContactInfo(_playerCol, coreCol);
+  if (!canDamageSpiderCore(spider)) {
+    emitSparks(point, normal, Math.floor(16 + hit.impactForce * 10), Math.min(1, hit.impactForce / 7));
+    return;
+  }
+
+  const safePlayerRpm = Math.max(0.01, playerBody.rpm);
+  const safeEnemyRpm = Math.max(0.01, coreCol.rpm);
+  const rpmDamage = COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
+    * hit.impactForce * (playerBody.mass / coreCol.mass)
+    * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor
+    * getSpiderCoreDamageMultiplier(spider);
+  spider.collidable.rpm = Math.max(0, spider.collidable.rpm - rpmDamage);
+  emitSparks(point, normal, Math.floor(18 + hit.impactForce * 12), Math.min(1, hit.impactForce / 6));
+});
+
+registerCollisionPair('player', 'spider_leg', (_playerCol, legCol, hit) => {
+  for (const spider of SpiderEntities.getAll()) {
+    if (!spider.alive) continue;
+    const leg = spider.legs.find((entry) => entry.alive && entry.collidable === legCol);
+    if (!leg) continue;
+
+    const hpDamage = hit.impactForce * 0.55 * Math.max(0.4, playerBody.rpm / playerBody.rpmCapacity);
+    const { point, normal } = computeContactInfo(_playerCol, legCol);
+    if (applyDamageToSpiderLeg(spider, leg, hpDamage)) {
+      explosions.push(createExplosion({ x: legCol.pos.x, z: legCol.pos.z }));
+      emitSparks(point, normal, Math.floor(24 + hit.impactForce * 12), Math.min(1, 0.5 + hit.impactForce / 8));
+    } else {
+      emitSparks(point, normal, Math.floor(12 + hit.impactForce * 7), Math.min(1, hit.impactForce / 8));
+    }
     return;
   }
 });
@@ -590,6 +635,18 @@ function deactivateSiegeForFall(boss: SiegeEngineState): THREE.Object3D[] {
   return [boss.topResult.tiltGroup, boss.hpGroup, boss.shieldMesh, ...boss.parts.map((part) => part.group)];
 }
 
+function deactivateSpiderForFall(boss: SpiderReliquaryState): THREE.Object3D[] {
+  boss.alive = false;
+  boss.collidable.vel.x = 0;
+  boss.collidable.vel.z = 0;
+  deregisterEntity(boss.id);
+  removeCollidableFromGameplay(boss.collidable);
+  for (const leg of boss.legs) {
+    if (leg.alive) removeCollidableFromGameplay(leg.collidable);
+  }
+  return [boss.bodyGroup, boss.hpGroup, ...boss.legs.filter((leg) => leg.alive).map((leg) => leg.group)];
+}
+
 function deactivateHiveForFall(boss: HiveBossState): THREE.Object3D[] {
   boss.alive = false;
   boss.collidable.vel.x = 0;
@@ -723,6 +780,20 @@ function spawnLevelEntity(ent: LevelEntity): void {
             siege.topResult.tiltGroup,
             () => SiegeEntities.destroy(siege),
             siege.topResult.spinGroup,
+          ));
+        });
+      }
+      break;
+    }
+    case 'spider_reliquary': {
+      const spider = SpiderEntities.spawn(pos, SPIDER_RELIQUARY_TIER_1);
+      if (isEntityFallable(ent)) {
+        registerFallableActor(spider.collidable, () => {
+          const roots = deactivateSpiderForFall(spider);
+          enqueueFallingVictim(createFallingVictim(
+            roots,
+            spider.bodyGroup,
+            () => SpiderEntities.destroy(spider),
           ));
         });
       }
@@ -906,6 +977,7 @@ function resetGame(): void {
   ObstacleEntities.destroyAll();
   DreadnoughtEntities.destroyAll();
   SiegeEntities.destroyAll();
+  SpiderEntities.destroyAll();
   RobotEntities.destroyAll();
   HiveEntities.destroyAll();
   BigSlugEntities.destroyAll();
@@ -982,6 +1054,25 @@ function updateSiegeTurretSystem(delta: number): void {
     const events = updateSiegeEngineTurrets(siege, playerBody.pos, playerBody.vel, delta);
     for (const ev of events) {
       projectiles.push(createProjectile(ev.firePos, ev.fireDir, ev.speed, ev.damage));
+    }
+  }
+}
+
+function updateSpiderSystem(delta: number): void {
+  for (const spider of SpiderEntities.getAll()) {
+    if (!spider.alive) continue;
+    const events = updateSpiderReliquaryAI(spider, playerBody.pos, playerBody.radius, delta);
+    for (const event of events) {
+      emitSparks(
+        event.point,
+        { x: 0, y: 1, z: 0 },
+        event.kind === 'pulse' ? 18 : 26,
+        event.kind === 'pulse' ? 0.7 : 0.9,
+      );
+      if (!event.hitPlayer) continue;
+
+      playerBody.rpm = Math.max(0, playerBody.rpm - event.damage);
+      notifyPlayerHit();
     }
   }
 }
@@ -1093,6 +1184,22 @@ function checkSiegeDeath(): void {
       spawnPickupAt(pickups, { x: deathPos.x, z: deathPos.z + 2 });
       spawnPickupAt(pickups, { x: deathPos.x + 1, z: deathPos.z - 2 });
     }
+  }
+}
+
+function checkSpiderDeath(): void {
+  for (const spider of [...SpiderEntities.getAll()]) {
+    if (!isSpiderReliquaryDead(spider)) continue;
+    const deathPos = { x: spider.collidable.pos.x, z: spider.collidable.pos.z };
+    SpiderEntities.destroy(spider);
+    explosions.push(createExplosion(deathPos));
+    explosions.push(createExplosion({ x: deathPos.x + 1.2, z: deathPos.z + 0.8 }));
+    explosions.push(createExplosion({ x: deathPos.x - 1.1, z: deathPos.z - 0.9 }));
+    spawnPickupAt(pickups, deathPos);
+    spawnPickupAt(pickups, { x: deathPos.x + 2, z: deathPos.z });
+    spawnPickupAt(pickups, { x: deathPos.x - 2, z: deathPos.z });
+    spawnPickupAt(pickups, { x: deathPos.x, z: deathPos.z + 2 });
+    spawnPickupAt(pickups, { x: deathPos.x, z: deathPos.z - 2 });
   }
 }
 
@@ -1216,12 +1323,14 @@ function animate(): void {
   updateSlugSystem(delta);
   updateTurretSystem(delta);
   updateSiegeTurretSystem(delta);
+  updateSpiderSystem(delta);
 
   // 2. Movement (friction, clamp, position for all registered movables)
   movementSystem(delta);
 
   // 2b. Sync siege engine sub-parts to core position (before collision)
   for (const s of SiegeEntities.getAll()) syncSiegeEngineParts(s);
+  for (const spider of SpiderEntities.getAll()) syncSpiderReliquaryLegs(spider, delta);
   for (const h of HiveEntities.getAll()) syncFlockPositions(h);
 
   // 2c. Kill-fall trigger zones
@@ -1304,6 +1413,7 @@ function animate(): void {
   checkEnemyDeath();
   checkBossDeath();
   checkSiegeDeath();
+  checkSpiderDeath();
   checkRobotDeath();
   checkZombieDeath();
   checkHiveDeath();
@@ -1326,6 +1436,7 @@ function animate(): void {
   for (const z of ZombieEntities.getAll()) updateZombieVisuals(z, playerBody.pos, delta, time);
   for (const b of DreadnoughtEntities.getAll()) updateDreadnoughtVisuals(b, time, delta);
   for (const s of SiegeEntities.getAll()) updateSiegeEngineVisuals(s, time, delta);
+  for (const spider of SpiderEntities.getAll()) updateSpiderReliquaryVisuals(spider, time, delta);
   for (const r of RobotEntities.getAll()) updateRobotVisuals(r, playerBody.pos, time, delta);
   for (const h of HiveEntities.getAll()) updateHiveVisuals(h, playerBody.pos, time, delta);
   for (const s of BigSlugEntities.getAll()) updateSlugwormVisuals(s, time, delta);
