@@ -1101,6 +1101,53 @@
         "triggerId": "arena_wave_1"
       },
       "color": "#33cc66"
+    },
+    {
+      "id": "poly_mognhcgm637lvk",
+      "name": "Polygon 26",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": 142,
+          "y": -3
+        },
+        {
+          "x": 139,
+          "y": -6
+        },
+        {
+          "x": 129,
+          "y": -7
+        },
+        {
+          "x": 119,
+          "y": 0
+        },
+        {
+          "x": 116,
+          "y": -6
+        },
+        {
+          "x": 129,
+          "y": -11
+        },
+        {
+          "x": 142,
+          "y": -10
+        },
+        {
+          "x": 149,
+          "y": 0
+        },
+        {
+          "x": 143,
+          "y": 1
+        }
+      ],
+      "properties": {
+        "surfaceType": "lava"
+      },
+      "color": "#33cc66"
     }
   ],
   "circles": [

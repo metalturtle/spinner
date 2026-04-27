@@ -3,6 +3,7 @@ import { scene } from './renderer';
 import { ARENA_SIZE } from './constants';
 import { collidables, type Collidable, type Vec2 } from './physics';
 import { createHpBar, updateHpBar } from './hpBar';
+import { isPointInLava } from './arena';
 import {
   nextEntityId,
   registerMovement,
@@ -29,7 +30,13 @@ export interface SpiderReliquaryConfig {
   stepThreshold: number;
   stepDuration: number;
   stepHeight: number;
+  strideLead: number;
+  minStrideDistance: number;
+  bodySupportBias: number;
   bodyScale: number;
+  lavaProbeStep: number;
+  lavaProbeMaxDistance: number;
+  lavaTangentProbeCount: number;
   shieldLegThreshold: number;
   collapseDuration: number;
   stompRadius: number;
@@ -59,7 +66,13 @@ export const SPIDER_RELIQUARY_TIER_1: SpiderReliquaryConfig = {
   stepThreshold: 1.7,
   stepDuration: 0.28,
   stepHeight: 1.2,
+  strideLead: 1.25,
+  minStrideDistance: 1.35,
+  bodySupportBias: 0.4,
   bodyScale: 0.5,
+  lavaProbeStep: 0.75,
+  lavaProbeMaxDistance: 3.4,
+  lavaTangentProbeCount: 3,
   shieldLegThreshold: 2,
   collapseDuration: 4.6,
   stompRadius: 1.85,
@@ -140,6 +153,7 @@ export interface SpiderReliquaryState {
   legCycleCursor: number;
   gaitGroupActive: 0 | 1;
   turnRate: number;
+  visualPos: THREE.Vector3;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -199,6 +213,73 @@ function solveTwoBoneKnee(
   return hip.clone()
     .addScaledVector(forward, along)
     .addScaledVector(bend, height);
+}
+
+function isFootReachable(
+  boss: SpiderReliquaryState,
+  hip: THREE.Vector3,
+  foot: THREE.Vector3,
+): boolean {
+  const maxReach = boss.config.legUpperLength + boss.config.legLowerLength - 0.15;
+  return hip.distanceTo(foot) <= maxReach;
+}
+
+function findSafeFootTarget(
+  boss: SpiderReliquaryState,
+  hip: THREE.Vector3,
+  preferred: THREE.Vector3,
+  outward: THREE.Vector3,
+  tangent: THREE.Vector3,
+  currentFoot: THREE.Vector3,
+): THREE.Vector3 {
+  const safeCurrent = currentFoot.clone();
+  safeCurrent.y = 0.05;
+  const candidates: THREE.Vector3[] = [];
+  const addCandidate = (candidate: THREE.Vector3) => {
+    const normalized = candidate.clone();
+    normalized.y = 0.05;
+    candidates.push(normalized);
+  };
+
+  addCandidate(preferred);
+
+  const maxDistance = boss.config.lavaProbeMaxDistance;
+  const step = boss.config.lavaProbeStep;
+  const tangentCount = boss.config.lavaTangentProbeCount;
+  for (let forward = step; forward <= maxDistance + 1e-4; forward += step) {
+    addCandidate(preferred.clone().addScaledVector(outward, forward));
+    for (let side = 1; side <= tangentCount; side++) {
+      const sideOffset = step * side;
+      addCandidate(
+        preferred.clone()
+          .addScaledVector(outward, forward)
+          .addScaledVector(tangent, sideOffset),
+      );
+      addCandidate(
+        preferred.clone()
+          .addScaledVector(outward, forward)
+          .addScaledVector(tangent, -sideOffset),
+      );
+    }
+  }
+
+  for (let side = 1; side <= tangentCount; side++) {
+    const sideOffset = step * side;
+    addCandidate(preferred.clone().addScaledVector(tangent, sideOffset));
+    addCandidate(preferred.clone().addScaledVector(tangent, -sideOffset));
+  }
+
+  for (const candidate of candidates) {
+    if (!isFootReachable(boss, hip, candidate)) continue;
+    if (isPointInLava({ x: candidate.x, z: candidate.z })) continue;
+    return candidate;
+  }
+
+  if (!isPointInLava({ x: safeCurrent.x, z: safeCurrent.z }) && isFootReachable(boss, hip, safeCurrent)) {
+    return safeCurrent;
+  }
+
+  return preferred.clone().setY(0.05);
 }
 
 function getAliveLegCount(boss: SpiderReliquaryState): number {
@@ -505,6 +586,7 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
     legCycleCursor: 0,
     gaitGroupActive: 0,
     turnRate: 0,
+    visualPos: new THREE.Vector3(pos.x, 0, pos.z),
   };
 
   bodyGroup.position.set(pos.x, 0, pos.z);
@@ -522,6 +604,24 @@ export function syncSpiderReliquaryLegs(boss: SpiderReliquaryState, delta: numbe
   const bodySpeed = Math.hypot(core.vel.x, core.vel.z);
   const turnUrgency = clamp(Math.abs(boss.turnRate) / 3.2, 0, 1);
   const turnSign = Math.sign(boss.turnRate) || 1;
+  let supportX = 0;
+  let supportZ = 0;
+  let supportWeight = 0;
+  for (const leg of boss.legs) {
+    if (!leg.alive || leg.footPos.lengthSq() === 0) continue;
+    const weight = leg.stepProgress < 1 ? 0.35 : 1.0;
+    supportX += leg.footPos.x * weight;
+    supportZ += leg.footPos.z * weight;
+    supportWeight += weight;
+  }
+  const supportCenterX = supportWeight > 0 ? supportX / supportWeight : core.pos.x;
+  const supportCenterZ = supportWeight > 0 ? supportZ / supportWeight : core.pos.z;
+  const visualBias = boss.config.bodySupportBias + turnUrgency * 0.08;
+  const desiredVisualX = lerp(core.pos.x, supportCenterX, visualBias);
+  const desiredVisualZ = lerp(core.pos.z, supportCenterZ, visualBias);
+  const bodyFollow = delta <= 0 ? 1 : Math.min((4.2 + bodySpeed * 0.28) * delta, 1);
+  boss.visualPos.x = lerp(boss.visualPos.x, desiredVisualX, bodyFollow);
+  boss.visualPos.z = lerp(boss.visualPos.z, desiredVisualZ, bodyFollow);
   const moveDir = bodySpeed > 0.01
     ? new THREE.Vector3(core.vel.x / bodySpeed, 0, core.vel.z / bodySpeed)
     : new THREE.Vector3(Math.sin(boss.facingAngle), 0, Math.cos(boss.facingAngle));
@@ -533,6 +633,7 @@ export function syncSpiderReliquaryLegs(boss: SpiderReliquaryState, delta: numbe
     leg: SpiderLeg;
     hip: THREE.Vector3;
     idealFoot: THREE.Vector3;
+    stepTarget: THREE.Vector3;
     outward: THREE.Vector3;
     tangent: THREE.Vector3;
     needsStep: boolean;
@@ -549,34 +650,55 @@ export function syncSpiderReliquaryLegs(boss: SpiderReliquaryState, delta: numbe
     const tangent = new THREE.Vector3(Math.sin(angle + Math.PI * 0.5), 0, Math.cos(angle + Math.PI * 0.5));
     const gaitPulse = Math.sin(boss.gaitTime * 1.9 + leg.phaseOffset);
     const hip = new THREE.Vector3(
-      core.pos.x + outward.x * leg.hipRadius,
+      boss.visualPos.x + outward.x * leg.hipRadius,
       hipY,
-      core.pos.z + outward.z * leg.hipRadius,
+      boss.visualPos.z + outward.z * leg.hipRadius,
     );
-    const idealFoot = new THREE.Vector3(
-      core.pos.x + outward.x * leg.footRadius
+    const strideLead = boss.config.strideLead + bodySpeed * 0.2 + turnUrgency * 0.45;
+    const preferredFoot = new THREE.Vector3(
+      boss.visualPos.x + outward.x * leg.footRadius
         + tangent.x * gaitPulse * 0.8
         + tangent.x * turnSign * turnUrgency * 0.9
-        + moveDir.x * (0.35 + 0.18 * gaitPulse),
+        + moveDir.x * (strideLead + 0.24 * gaitPulse),
       0.05,
-      core.pos.z + outward.z * leg.footRadius
+      boss.visualPos.z + outward.z * leg.footRadius
         + tangent.z * gaitPulse * 0.8
         + tangent.z * turnSign * turnUrgency * 0.9
-        + moveDir.z * (0.35 + 0.18 * gaitPulse),
+        + moveDir.z * (strideLead + 0.24 * gaitPulse),
     );
 
     if (leg.footPos.lengthSq() === 0) {
-      leg.footPos.copy(idealFoot);
-      leg.footFrom.copy(idealFoot);
-      leg.footTo.copy(idealFoot);
+      const seededFoot = findSafeFootTarget(boss, hip, preferredFoot, outward, tangent, preferredFoot);
+      leg.footPos.copy(seededFoot);
+      leg.footFrom.copy(seededFoot);
+      leg.footTo.copy(seededFoot);
     }
 
-    const error = leg.footPos.distanceTo(idealFoot);
+    const idealFoot = findSafeFootTarget(boss, hip, preferredFoot, outward, tangent, leg.footPos);
+    let stepTarget = idealFoot.clone();
+    const minStride = boss.config.minStrideDistance * (1.0 + turnUrgency * 0.25);
+    if (leg.footPos.lengthSq() > 0 && leg.footPos.distanceTo(stepTarget) < minStride) {
+      const strideDir = stepTarget.clone().sub(leg.footPos);
+      if (strideDir.lengthSq() < 1e-4) {
+        strideDir.copy(outward).addScaledVector(moveDir, 1.1).addScaledVector(tangent, turnSign * 0.35);
+      }
+      strideDir.normalize().multiplyScalar(minStride);
+      stepTarget = findSafeFootTarget(
+        boss,
+        hip,
+        leg.footPos.clone().add(strideDir).setY(0.05),
+        outward,
+        tangent,
+        leg.footPos,
+      );
+    }
+
+    const error = leg.footPos.distanceTo(stepTarget);
     const needsStep = leg.stepProgress >= 1 && error > stepThreshold;
     if (needsStep) groupNeedsStep[leg.gaitGroup] = true;
     groupError[leg.gaitGroup] += error;
     if (leg.stepProgress < 1) steppingGroup = leg.gaitGroup;
-    entries.push({ leg, hip, idealFoot, outward, tangent, needsStep, error });
+    entries.push({ leg, hip, idealFoot, stepTarget, outward, tangent, needsStep, error });
   }
 
   if (steppingGroup === null) {
@@ -594,7 +716,7 @@ export function syncSpiderReliquaryLegs(boss: SpiderReliquaryState, delta: numbe
       for (const entry of entries) {
         if (entry.leg.gaitGroup !== targetGroup || !entry.needsStep) continue;
         entry.leg.footFrom.copy(entry.leg.footPos);
-        entry.leg.footTo.copy(entry.idealFoot);
+        entry.leg.footTo.copy(entry.stepTarget);
         entry.leg.stepProgress = 0;
         entry.leg.stepDuration = boss.config.stepDuration * (0.88 + Math.random() * 0.24);
       }
@@ -607,7 +729,7 @@ export function syncSpiderReliquaryLegs(boss: SpiderReliquaryState, delta: numbe
   const phaseSpeed = phaseSpeedForStep(boss);
   const emergencyThreshold = stepThreshold * (1.55 - turnUrgency * 0.3);
   for (const entry of entries) {
-    const { leg, hip, idealFoot, outward, tangent, error } = entry;
+    const { leg, hip, stepTarget, outward, tangent, error } = entry;
 
     if (leg.stepProgress < 1) {
       leg.stepProgress = Math.min(1, leg.stepProgress + delta / Math.max(leg.stepDuration / phaseSpeed, 0.01));
@@ -648,12 +770,8 @@ export function syncSpiderReliquaryLegs(boss: SpiderReliquaryState, delta: numbe
     leg.collidable.pos.z = knee.z * 0.35 + leg.footPos.z * 0.65;
     leg.hpGroup.position.set(leg.footPos.x, 2.45, leg.footPos.z);
 
-    if (leg.stepProgress >= 1 && steppingGroup === null && !groupNeedsStep[leg.gaitGroup]) {
-      leg.footPos.lerp(idealFoot, delta * 0.8);
-    }
-
     if (leg.stepProgress >= 1 && error > emergencyThreshold) {
-      leg.footPos.lerp(idealFoot, delta * (0.75 + turnUrgency * 0.75));
+      leg.footPos.lerp(stepTarget, delta * (0.55 + turnUrgency * 0.45));
     }
   }
 }
@@ -818,8 +936,8 @@ export function updateSpiderReliquaryVisuals(
   const aliveLegs = getAliveLegCount(boss);
   const collapseFrac = clamp(boss.collapseTimer / boss.config.collapseDuration, 0, 1);
 
-  boss.bodyGroup.position.set(body.pos.x, 0, body.pos.z);
-  boss.hpGroup.position.set(body.pos.x, 0, body.pos.z);
+  boss.bodyGroup.position.set(boss.visualPos.x, 0, boss.visualPos.z);
+  boss.hpGroup.position.set(boss.visualPos.x, 0, boss.visualPos.z);
   boss.bodyGroup.rotation.y = boss.facingAngle;
   updateHpBar(boss.hpBarFill, rpmFrac, 1.0);
 
@@ -829,6 +947,7 @@ export function updateSpiderReliquaryVisuals(
   let supportZ = 0;
   let supportCount = 0;
   let steppingCount = 0;
+  let averageFootLift = 0;
   for (const leg of boss.legs) {
     if (!leg.alive) {
       deadBiasX += Math.sin(leg.baseAngle + boss.facingAngle);
@@ -838,14 +957,23 @@ export function updateSpiderReliquaryVisuals(
     supportX += leg.footPos.x;
     supportZ += leg.footPos.z;
     supportCount += 1;
+    averageFootLift += leg.footPos.y;
     if (leg.stepProgress < 1) steppingCount += 1;
   }
   const supportBiasX = supportCount > 0 ? supportX / supportCount - body.pos.x : 0;
   const supportBiasZ = supportCount > 0 ? supportZ / supportCount - body.pos.z : 0;
   const supportInstability = steppingCount / Math.max(1, supportCount);
+  const meanFootLift = supportCount > 0 ? averageFootLift / supportCount : 0;
+  const strideLift = clamp(meanFootLift / Math.max(boss.config.stepHeight, 0.001), 0, 1);
 
-  const wobble = Math.sin(time * (phase === 2 ? 9 : 5)) * 0.03;
-  boss.bodyRoot.position.y = 0.94 - collapseFrac * 0.34 - supportInstability * 0.06 + wobble;
+  const wobble = Math.sin(time * (phase === 2 ? 9 : 5)) * 0.045;
+  const gaitBob = Math.sin(boss.gaitTime * 2.2) * (0.05 + supportInstability * 0.03);
+  boss.bodyRoot.position.y = 0.92
+    - collapseFrac * 0.34
+    - supportInstability * 0.1
+    + strideLift * 0.22
+    + gaitBob
+    + wobble;
   const desiredRoll = deadBiasX * 0.16 - supportBiasX * 0.11 + collapseFrac * 0.24 * Math.sin(time * 8);
   const desiredPitch = -deadBiasZ * 0.16 + supportBiasZ * 0.11 + collapseFrac * 0.18 * Math.cos(time * 7);
   boss.bodyRoot.rotation.z += (desiredRoll - boss.bodyRoot.rotation.z) * Math.min(4.8 * delta, 1);

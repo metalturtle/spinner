@@ -13,6 +13,8 @@ const CIRCLE_FLOOR_SEGMENTS = 48;
 const CIRCLE_FLOOR_INSET = 0.05;
 const DEBUG_SHOW_NORMAL_AS_ALBEDO = false;
 const lavaLightRoots: THREE.Object3D[] = [];
+type LavaRegion = { contains(point: { x: number; z: number }): boolean };
+const lavaRegions: LavaRegion[] = [];
 
 function getSurfaceColor(color: string | undefined, fallback: THREE.ColorRepresentation, hasTexture: boolean): THREE.ColorRepresentation {
   if (!color) return hasTexture ? 0xffffff : fallback;
@@ -36,6 +38,44 @@ function makeShapeFromPolygon(poly: LevelPolygon): THREE.Shape {
   }
 
   return shape;
+}
+
+function isPointInPolygon(point: { x: number; z: number }, vertices: { x: number; z: number }[]): boolean {
+  let inside = false;
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+    const xi = vertices[i].x;
+    const zi = vertices[i].z;
+    const xj = vertices[j].x;
+    const zj = vertices[j].z;
+    const intersects = ((zi > point.z) !== (zj > point.z))
+      && (point.x < ((xj - xi) * (point.z - zi)) / ((zj - zi) || Number.EPSILON) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function buildLavaRegionFromPolygon(poly: LevelPolygon): LavaRegion | null {
+  if (poly.vertices.length < 3) return null;
+  const outer = poly.vertices.map((vertex) => ({ x: vertex.x, z: vertex.y }));
+  const holes = (poly.holes ?? []).map((hole) => hole.map((vertex) => ({ x: vertex.x, z: vertex.y })));
+  return {
+    contains(point) {
+      if (!isPointInPolygon(point, outer)) return false;
+      return !holes.some((hole) => hole.length >= 3 && isPointInPolygon(point, hole));
+    },
+  };
+}
+
+function clearLavaRegions(): void {
+  lavaRegions.length = 0;
+}
+
+function registerLavaRegion(region: LavaRegion | null): void {
+  if (region) lavaRegions.push(region);
+}
+
+export function isPointInLava(point: { x: number; z: number }): boolean {
+  return lavaRegions.some((region) => region.contains(point));
 }
 
 function isLavaSurface(poly: LevelPolygon): boolean {
@@ -130,6 +170,7 @@ function addLavaLight(scene: THREE.Scene, poly: LevelPolygon): void {
 export function createArena(scene: THREE.Scene, level: LevelData): void {
   clearLavaEmbers();
   clearLavaLights(scene);
+  clearLavaRegions();
 
   // ─── Separate polygons and circles by layer ──────────────────────────────
   const polys        = level.polygons ?? [];
@@ -188,6 +229,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
           holes: (poly.holes ?? []).map((hole) => hole.map((v) => ({ x: v.x, z: v.y }))),
           drainRate: getDrainRate(poly),
         });
+        registerLavaRegion(buildLavaRegionFromPolygon(poly));
         registerLavaEmitter(poly);
         addLavaLight(scene, poly);
       }
