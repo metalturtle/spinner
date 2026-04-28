@@ -98,7 +98,7 @@ export const SPIDER_RELIQUARY_TIER_1: SpiderReliquaryConfig = {
   pulseDamage: [12, 16, 21],
   pulseCooldown: [5.2, 4.1, 3.2],
   legSlamRadius: 1.9,
-  legSlamTriggerRange: 3.8,
+  legSlamTriggerRange: 4.8,
   legSlamLungeDistance: 2.2,
   legSlamWindup: [0.34, 0.3, 0.26],
   legSlamRecover: 0.22,
@@ -1057,17 +1057,26 @@ export function updateSpiderReliquaryAI(
     const nz = dz / dist;
     const desiredRange = playerWebbed
       ? 3.1
-      : phase === 0 ? 7.2 : phase === 1 ? 6.2 : 5.0;
+      : phase === 0 ? 6.0 : phase === 1 ? 5.4 : 4.8;
     const orbitDir = Math.sin(boss.gaitTime * 1.25) >= 0 ? 1 : -1;
+    const ramSetupRange = boss.config.legSlamTriggerRange + playerRadius + 0.65;
+    const shouldBraceForRam = dist <= ramSetupRange && boss.legSlamCooldown <= 0.22;
 
     if (dist > desiredRange) {
       body.vel.x += nx * accel * delta;
       body.vel.z += nz * accel * delta;
+    } else if (shouldBraceForRam) {
+      body.vel.x *= 0.82;
+      body.vel.z *= 0.82;
+      body.vel.x += nx * accel * 0.22 * delta;
+      body.vel.z += nz * accel * 0.22 * delta;
     } else {
-      body.vel.x += (-nz * orbitDir) * accel * 0.55 * delta;
-      body.vel.z += (nx * orbitDir) * accel * 0.55 * delta;
-      body.vel.x -= nx * accel * 0.16 * delta;
-      body.vel.z -= nz * accel * 0.16 * delta;
+      const orbitStrength = phase === 0 ? 0.36 : 0.46;
+      const inwardDamp = phase === 0 ? 0.1 : 0.14;
+      body.vel.x += (-nz * orbitDir) * accel * orbitStrength * delta;
+      body.vel.z += (nx * orbitDir) * accel * orbitStrength * delta;
+      body.vel.x -= nx * accel * inwardDamp * delta;
+      body.vel.z -= nz * accel * inwardDamp * delta;
     }
 
     const bounds = getArenaBounds();
@@ -1152,14 +1161,22 @@ export function updateSpiderReliquaryAI(
     if (!attack.hitResolved && attack.elapsed >= attack.windup) {
       const point = attack.kind === 'pulse'
         ? { x: boss.collidable.pos.x, z: boss.collidable.pos.z }
-        : attack.point;
+        : attack.kind === 'leg_slam'
+          ? {
+            x: boss.collidable.pos.x + Math.sin(attack.facingAngle) * (oneLegMode ? 0.9 : 1.1),
+            z: boss.collidable.pos.z + Math.cos(attack.facingAngle) * (oneLegMode ? 0.9 : 1.1),
+          }
+          : attack.point;
+      const hitRadius = attack.kind === 'leg_slam'
+        ? attack.radius * (oneLegMode ? 1.55 : 1.15)
+        : attack.radius;
       const distToPlayer = Math.hypot(playerPos.x - point.x, playerPos.z - point.z);
       events.push({
         kind: attack.kind,
         point: { x: point.x, y: attack.kind === 'leg_slam' ? 0.34 : 0.18, z: point.z },
-        radius: attack.radius,
+        radius: hitRadius,
         damage: attack.damage,
-        hitPlayer: distToPlayer <= attack.radius + playerRadius,
+        hitPlayer: distToPlayer <= hitRadius + playerRadius,
         knockback: attack.kind === 'leg_slam' ? (phase === 2 ? 39 : 31.5) : undefined,
       });
       attack.hitResolved = true;

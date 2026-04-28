@@ -625,6 +625,218 @@ Control plan:
 - every attack family gets a distinct color or shape language
 - keep cadence learnable even in phase 3
 
+### Alternate Build Path: Octoboss
+
+Status: recommended implementation-first version for boss slot 2
+
+If we want the second boss to ship sooner, the octoboss should be treated as a more collision-forward sibling to the Gravity Organ instead of a full replacement for it. The core idea is simpler, more physical, and maps better to the current Spider Reliquary work:
+
+- central floating spinner-core body
+- large eye with pupil that tracks the player continuously
+- 2 tentacles ending in drill tips
+- tentacles are the danger
+- core is the real weakness
+
+This version keeps the spectacle of a central set-piece boss, but avoids needing full room-wide push/pull scripting on the first pass. Gravity or resonance behavior can still be layered in later as phase seasoning rather than as the whole fight.
+
+#### Fantasy
+
+A hovering machine idol with a spinning base and a living mechanical eye. Two long drill-tipped tentacles lash around the arena like hostile instrument arms. The player survives the reach and chaos of the tentacles, then crashes into the exposed core during brief recovery windows.
+
+#### Why This Fits Spinner
+
+- strong readable weak point
+- tentacles create moving collision hazards without needing lots of projectiles
+- the eye gives the boss personality even while the body stays mostly anchored
+- procedural animation does a lot of visual work for relatively little authored content
+- builds directly on the current multi-part boss and IK experimentation
+
+#### Encounter Pillars
+
+- do not fight the tentacles directly
+- read which tentacle is herding and which one is committing
+- punish missed overextensions rather than forcing damage at all times
+- make the core hit windows feel earned and dramatic
+
+#### Combat Model
+
+The octoboss should not behave like two always-on homing arms. That would be noisy and frustrating in top-down play. Instead, the boss should attack in readable patterns:
+
+1. one tentacle claims space
+2. one tentacle commits to the player
+3. both drills overextend or cross
+4. the core stalls and becomes vulnerable
+
+The core remains shielded or heavily resistant during normal pressure states. The player wins by preserving RPM and position until the boss creates its own punish window.
+
+Recommended damage model:
+
+- drills and tentacle shafts are hazardous on contact
+- tentacles do not have their own health in MVP
+- core takes all meaningful damage
+- stalled core takes bonus collision damage
+
+#### Visual Direction
+
+- spinner-like lower base so it still feels native to this game
+- central iris with a bright pupil that rotates to face the player
+- brass, steel, ivory, and orange-white eye glow
+- tentacles feel slightly ceremonial or organ-like rather than pure monster flesh
+- drill tips should silhouette clearly from the rest of the limb
+
+#### Phase Plan
+
+##### Phase 1: Probe
+
+Boss behavior:
+
+- core hovers near the arena center
+- pupil tracks the player at all times
+- tentacles flail with controlled idle motion, then take turns stabbing
+- one tentacle may sweep while the other aims a direct strike
+
+Player lesson:
+
+- tentacles are contact hazards
+- the core is not always punishable
+- safe movement matters more than greed
+
+Main attacks:
+
+- Drill Jab: one tentacle reaches toward predicted player position
+- Side Sweep: one tentacle scrapes laterally to deny an escape lane
+- Double Plant: both tentacles stab outward and linger briefly
+- Core Stall: after a committed miss, the core wobbles and opens for damage
+
+##### Phase 2: Cross Rhythm
+
+Boss behavior:
+
+- tentacles chain into each other more quickly
+- one arm herds while the other attacks
+- the boss reorients faster to keep the eye and body facing the player
+
+Player lesson:
+
+- learn the attack role of each tentacle
+- recognize when a pattern is ending and a punish window is coming
+- stay out of the drill ends even when the arm path looks safe
+
+Main attacks:
+
+- Scissor Cross: tentacles cross in front of the core, then separate violently
+- Corkscrew Chase: one drill tracks the player for a short committed burst
+- Floor Rake: a tentacle drags low and leaves a temporary hazard streak
+- Eye Flash Stall: after both arms overcommit, the eye blooms and the core becomes vulnerable
+
+##### Phase 3: Frenzy Organ
+
+Boss behavior:
+
+- idle motion becomes more erratic and desperate
+- core vulnerability windows are shorter but more rewarding
+- the body may add a small pulse or shove when the arms reset
+
+Player lesson:
+
+- mastery phase
+- read tempo, not just single telegraphs
+- commit only during true stall windows
+
+Main attacks:
+
+- Twin Chase: both drills pressure in sequence, not simultaneously
+- Spiral Guard: tentacles circle the core before snapping outward
+- Panic Pulse: a short-range body burst that protects the boss after a punish window
+- Exposed Eye: the pupil dilates, iris opens, and core takes bonus damage
+
+#### Technical Plan
+
+Best baseline is the current Spider Reliquary, especially:
+
+- body + weak-point structure
+- state-driven attack scheduling
+- procedural limb posing
+- core damage gating and vulnerability windows
+
+Recommended implementation structure:
+
+1. `bossOctoboss.ts` with a dedicated state object
+2. one core collidable tagged like the spider core
+3. two tentacle data objects, each with segment positions, tip collider, and current intent
+4. simple state machine for `idle`, `windup`, `commit`, `recover`, and `stall`
+5. eye tracking solved as a visual-only rotation toward the player
+6. first-pass tentacle IK can be lighter than the spider leg solver because it does not need foot planting
+
+Recommended tentacle model for MVP:
+
+- 3 or 4 segments per tentacle
+- anchored at fixed sockets on the core body
+- solve toward a moving target point
+- add idle sine offsets so the limbs feel alive between attacks
+- only the drill tip needs the strongest collider behavior
+
+#### Reuse From Spider Reliquary
+
+- copy the boss-level separation between AI, procedural sync, and visuals
+- reuse the pattern of attack telegraph meshes and timed attack events
+- reuse the core-only collision damage hookup in `game.ts`
+- reuse IK math ideas, but not the foot planting gait logic
+
+Important simplification:
+
+- spider legs are support limbs
+- octoboss tentacles are weapon limbs
+
+That means the tentacles should not spend effort pretending to locomote. They only need to look threatening, reach well, and clearly overcommit.
+
+#### MVP Scope
+
+Version 1:
+
+- floating core body
+- animated eye with player tracking
+- 2 tentacles with procedural segment motion
+- dangerous drill tips
+- 2 to 3 attack patterns
+- explicit core vulnerability stall
+- no tentacle health
+- no room-wide gravity field
+
+Version 2 polish:
+
+- temporary scrape hazards
+- stronger eye animation and emissive bloom
+- body pulse during resets
+- optional gravity tug or resonance ring added as a phase accent
+- richer death sequence with collapsing limbs and exploding pupil/core
+
+#### Main Risks
+
+- fully freeform homing tentacles may become unreadable
+- too much continuous hazard time may leave no real punish window
+- per-segment collisions could become fiddly and frustrating
+
+Control plan:
+
+- choreograph attacks in patterns instead of full limb autonomy
+- keep one tentacle in the spotlight at a time for most attacks
+- treat shaft contact as lower-threat than drill-tip contact if needed
+- make stall windows visually loud and mechanically generous in MVP
+
+#### Implementation Checklist
+
+1. Define `OctobossConfig` and the minimal state machine.
+2. Build the core body mesh with spinner base, iris, and pupil.
+3. Add visual-only eye tracking toward the player.
+4. Implement two procedural tentacles with 3 to 4 segments and drill tips.
+5. Add tip hazard collision and core-only damage rules.
+6. Add telegraphed attack states: jab, sweep, double-commit.
+7. Add a stall/exposed-core window after overextension.
+8. Hook the boss into `game.ts` spawn, update, visuals, collisions, and death handling.
+9. Tune timing first for readability, then tune damage and spectacle.
+10. Only after the MVP feels good, decide whether to fold any Gravity Organ push/pull ideas back into later phases.
+
 
 ## 3. The Wyrm Coil
 

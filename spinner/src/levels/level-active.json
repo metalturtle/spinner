@@ -1168,7 +1168,7 @@
       },
       "rotation": 0,
       "properties": {
-        "color": "#ffd080",
+        "color": "#ff0000",
         "intensity": "40.0",
         "range": "8",
         "decay": "0.8",
