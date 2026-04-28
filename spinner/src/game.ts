@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import { renderer, scene, camera } from './renderer';
-import { createArena } from './arena';
+import { createArena, isPointInLava } from './arena';
 import {
   RPM_HALF_POINT_RATIO, COLLISION_DAMAGE_RATIO,
   PICKUP_RPM_BOOST, HYPER_BOOST,
 } from './constants';
 import { spinnerConfig } from './spinnerConfig';
-import { runCollisions, collidables, zones, type Collidable } from './physics';
-import { initHud, updateHud } from './hud';
+import { runCollisions, collidables, walls, zones, type Collidable, type Segment, type Vec2 } from './physics';
+import { initHud, updateHud, type ComboHudState } from './hud';
 import { initCamera, updateCamera } from './camera';
 import {
   defineEntityType,
@@ -19,6 +19,7 @@ import {
   playerBody, playerId, setupPlayer, resetPlayer,
   playerRpmHooks, updatePlayerVisuals, updateTopple, notifyHit as notifyPlayerHit,
   startPlayerPitFallDeath, startPlayerToppleDeath,
+  setPlayerControlLocked, setPlayerInvulnerable, isPlayerInvulnerable,
 } from './player';
 import {
   createNormalPickup, createHyperPickup, updatePickups, spawnPickupAt, ejectPickupAt,
@@ -95,6 +96,7 @@ import { initLavaEmbers, resetLavaEmbers, updateLavaEmbers } from './lavaEmbers'
 import { createFireTorch, destroyFireTorch, type FireTorch, updateFireTorch } from './fireTorch';
 import { initSpaceBackground, updateSpaceBackground } from './spaceBackground';
 import type { LevelCircle, LevelEntity, LevelPolygon } from './levelLoader';
+import { consumeSpecialPressed } from './input';
 
 
 // ─── Level-driven state ──────────────────────────────────────────────────────
@@ -323,9 +325,11 @@ registerCollisionPair('player', 'boss', (_playerCol, bossCol, hit) => {
   const playerDamage = COLLISION_DAMAGE_RATIO * bossCol.rpmCapacity
     * hit.impactForce * (bossCol.mass / playerBody.mass)
     * (safeEnemyRpm / safePlayerRpm) * bossCol.heatFactor;
-  playerBody.rpm = Math.max(0, playerBody.rpm - playerDamage * playerDamageMult);
+  if (!isPlayerInvulnerable()) {
+    playerBody.rpm = Math.max(0, playerBody.rpm - playerDamage * playerDamageMult);
+  }
 
-  if (hitWeak || playerDamage * playerDamageMult > 5) {
+  if ((hitWeak || playerDamage * playerDamageMult > 5) && !isPlayerInvulnerable()) {
     notifyPlayerHit();
   }
   const { point, normal } = computeContactInfo(_playerCol, bossCol);
@@ -342,8 +346,10 @@ registerCollisionPair('player', 'slug_big', (_playerCol, slugCol, hit) => {
   if (isHeadHit(slug, playerBody.pos)) {
     // Head contact — poison drains player RPM, no damage to slug
     const drain = slug.config.poisonDrain * 0.1 * (1 + hit.impactForce * 0.3);
-    playerBody.rpm = Math.max(0, playerBody.rpm - drain);
-    notifyPlayerHit();
+    if (!isPlayerInvulnerable()) {
+      playerBody.rpm = Math.max(0, playerBody.rpm - drain);
+      notifyPlayerHit();
+    }
     // Toxic green sparks
     emitGoo(point, Math.floor(6 + hit.impactForce * 3), Math.min(1, hit.impactForce / 8));
   } else {
@@ -371,7 +377,7 @@ registerCollisionPair('player', 'slug_baby', (_playerCol, slugCol, hit) => {
 
 registerProximityPair('player', 'pickup', (_playerProx, pickupProx) => {
   const pickup = pickupProx.owner as Pickup;
-  if (pickup.collected) return;
+  if (pickup.collected || isPlayerInvulnerable()) return;
 
   if (pickup.type === 'normal') {
     const halfPoint = spinnerConfig.rpmCapacity * RPM_HALF_POINT_RATIO;
@@ -1026,6 +1032,16 @@ function resetGame(): void {
   resetEntityRegistrations();
   resetPlayer();
   setupPlayer();
+  comboState.phase = 'idle';
+  comboState.cooldownTimer = 0;
+  comboState.recoveryTimer = 0;
+  comboState.pauseTimer = 0;
+  comboState.strikeIndex = 0;
+  comboState.slotTargets = [];
+  comboState.segment = null;
+  comboState.hitCounts.clear();
+  setPlayerControlLocked(false);
+  setPlayerInvulnerable(false);
 
   gameOver = false;
   gameOverOverlay.style.display = 'none';
@@ -1061,6 +1077,603 @@ window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() === 'r' && gameOver) resetGame();
 });
 
+type ComboPhase = 'idle' | 'active' | 'returning' | 'recovering';
+
+interface ComboTarget {
+  id: string;
+  collidable: Collidable;
+  getPos: () => Vec2;
+  isValid: () => boolean;
+  applyDamage: (damage: number) => void;
+}
+
+interface ComboSegment {
+  kind: 'strike' | 'return';
+  from: Vec2;
+  to: Vec2;
+  duration: number;
+  elapsed: number;
+  target?: ComboTarget;
+  arc?: {
+    center: Vec2;
+    radius: number;
+    startAngle: number;
+    sweepDir: 1 | -1;
+  };
+}
+
+interface ComboState {
+  phase: ComboPhase;
+  cooldownTimer: number;
+  recoveryTimer: number;
+  pauseTimer: number;
+  strikeIndex: number;
+  originPos: Vec2;
+  slotTargets: ComboTarget[];
+  hitCounts: Map<Collidable, number>;
+  segment: ComboSegment | null;
+}
+
+const comboState: ComboState = {
+  phase: 'idle',
+  cooldownTimer: 0,
+  recoveryTimer: 0,
+  pauseTimer: 0,
+  strikeIndex: 0,
+  originPos: { x: 0, z: 0 },
+  slotTargets: [],
+  hitCounts: new Map(),
+  segment: null,
+};
+
+function cloneVec2(vec: Vec2): Vec2 {
+  return { x: vec.x, z: vec.z };
+}
+
+function lerpVec2(a: Vec2, b: Vec2, t: number): Vec2 {
+  return {
+    x: a.x + (b.x - a.x) * t,
+    z: a.z + (b.z - a.z) * t,
+  };
+}
+
+function distanceSq(a: Vec2, b: Vec2): number {
+  const dx = a.x - b.x;
+  const dz = a.z - b.z;
+  return dx * dx + dz * dz;
+}
+
+function pointSegmentDistanceSq(point: Vec2, seg: Segment): number {
+  const dx = seg.p2.x - seg.p1.x;
+  const dz = seg.p2.z - seg.p1.z;
+  const segLenSq = dx * dx + dz * dz;
+  if (segLenSq === 0) return distanceSq(point, seg.p1);
+
+  const t = Math.max(0, Math.min(1,
+    ((point.x - seg.p1.x) * dx + (point.z - seg.p1.z) * dz) / segLenSq
+  ));
+  const closest = {
+    x: seg.p1.x + t * dx,
+    z: seg.p1.z + t * dz,
+  };
+  return distanceSq(point, closest);
+}
+
+function isPointSafeForPlayer(point: Vec2): boolean {
+  if (isPointInLava(point)) return false;
+  if (killFallZones.some((zone) => zone.contains(point))) return false;
+
+  const minWallDistSq = Math.pow(playerBody.radius * 0.92, 2);
+  for (const wall of walls) {
+    if (pointSegmentDistanceSq(point, wall) < minWallDistSq) return false;
+  }
+
+  return true;
+}
+
+function getSafeComboReturnPoint(origin: Vec2, fallback: Vec2): Vec2 {
+  if (isPointSafeForPlayer(origin)) return cloneVec2(origin);
+
+  const sampleRadius = playerBody.radius * 1.6;
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const candidate = {
+      x: origin.x + Math.cos(angle) * sampleRadius,
+      z: origin.z + Math.sin(angle) * sampleRadius,
+    };
+    if (isPointSafeForPlayer(candidate)) return candidate;
+  }
+
+  return cloneVec2(fallback);
+}
+
+function comboRepeatFalloff(hitCount: number): number {
+  const falloff = spinnerConfig.comboRepeatFalloff;
+  return falloff[Math.min(hitCount, falloff.length - 1)];
+}
+
+function makeComboTargetId(prefix: string, collidable: Collidable): string {
+  return `${prefix}-${collidables.indexOf(collidable)}`;
+}
+
+function buildComboTargets(): ComboTarget[] {
+  const targets: ComboTarget[] = [];
+
+  for (const turret of TurretEntities.getAll()) {
+    if (!turret.alive) continue;
+    targets.push({
+      id: makeComboTargetId('turret', turret.collidable),
+      collidable: turret.collidable,
+      getPos: () => cloneVec2(turret.collidable.pos),
+      isValid: () => turret.alive,
+      applyDamage: (damage) => {
+        if (!turret.alive) return;
+        if (applyDamageToTurret(turret, damage)) {
+          const deathPos = cloneVec2(turret.collidable.pos);
+          TurretEntities.destroy(turret);
+          explosions.push(createExplosion(deathPos));
+        }
+      },
+    });
+  }
+
+  for (const enemy of EnemyEntities.getAll()) {
+    if (!enemy.alive) continue;
+    targets.push({
+      id: makeComboTargetId('enemy', enemy.collidable),
+      collidable: enemy.collidable,
+      getPos: () => cloneVec2(enemy.collidable.pos),
+      isValid: () => enemy.alive,
+      applyDamage: (damage) => {
+        if (!enemy.alive) return;
+        enemy.collidable.rpm = Math.max(0, enemy.collidable.rpm - damage);
+        onEnemyCollision(enemy);
+      },
+    });
+  }
+
+  for (const zombie of ZombieEntities.getAll()) {
+    if (!zombie.alive) continue;
+    targets.push({
+      id: makeComboTargetId('zombie', zombie.collidable),
+      collidable: zombie.collidable,
+      getPos: () => cloneVec2(zombie.collidable.pos),
+      isValid: () => zombie.alive,
+      applyDamage: (damage) => {
+        if (!zombie.alive) return;
+        applyDamageToZombie(zombie, damage);
+      },
+    });
+  }
+
+  for (const boss of DreadnoughtEntities.getAll()) {
+    if (!boss.alive) continue;
+    targets.push({
+      id: makeComboTargetId('boss', boss.collidable),
+      collidable: boss.collidable,
+      getPos: () => cloneVec2(boss.collidable.pos),
+      isValid: () => boss.alive,
+      applyDamage: (damage) => {
+        if (!boss.alive) return;
+        const { bossDamageMult } = checkWeakPoint(boss, playerBody.pos);
+        boss.collidable.rpm = Math.max(0, boss.collidable.rpm - damage * bossDamageMult);
+      },
+    });
+  }
+
+  for (const siege of SiegeEntities.getAll()) {
+    if (!siege.alive) continue;
+
+    if (!isShieldAlive(siege)) {
+      targets.push({
+        id: makeComboTargetId('siege-core', siege.collidable),
+        collidable: siege.collidable,
+        getPos: () => cloneVec2(siege.collidable.pos),
+        isValid: () => siege.alive && !isShieldAlive(siege),
+        applyDamage: (damage) => {
+          if (!siege.alive || isShieldAlive(siege)) return;
+          siege.collidable.rpm = Math.max(0, siege.collidable.rpm - damage);
+        },
+      });
+    }
+
+    for (const part of siege.parts) {
+      if (!part.alive) continue;
+      targets.push({
+        id: makeComboTargetId(`siege-part-${part.type}`, part.collidable),
+        collidable: part.collidable,
+        getPos: () => cloneVec2(part.collidable.pos),
+        isValid: () => siege.alive && part.alive,
+        applyDamage: (damage) => {
+          if (!siege.alive || !part.alive) return;
+          if (applyDamageToSiegePart(siege, part, damage)) {
+            explosions.push(createExplosion(cloneVec2(part.collidable.pos)));
+          }
+        },
+      });
+    }
+  }
+
+  for (const spider of SpiderEntities.getAll()) {
+    if (!spider.alive) continue;
+
+    if (canDamageSpiderCore(spider)) {
+      targets.push({
+        id: makeComboTargetId('spider-core', spider.collidable),
+        collidable: spider.collidable,
+        getPos: () => cloneVec2(spider.collidable.pos),
+        isValid: () => spider.alive && canDamageSpiderCore(spider),
+        applyDamage: (damage) => {
+          if (!spider.alive || !canDamageSpiderCore(spider)) return;
+          spider.collidable.rpm = Math.max(
+            0,
+            spider.collidable.rpm - damage * getSpiderCoreDamageMultiplier(spider),
+          );
+        },
+      });
+    }
+
+    for (const leg of spider.legs) {
+      if (!leg.alive) continue;
+      targets.push({
+        id: makeComboTargetId('spider-leg', leg.collidable),
+        collidable: leg.collidable,
+        getPos: () => cloneVec2(leg.collidable.pos),
+        isValid: () => spider.alive && leg.alive,
+        applyDamage: (damage) => {
+          if (!spider.alive || !leg.alive) return;
+          if (applyDamageToSpiderLeg(spider, leg, damage)) {
+            explosions.push(createExplosion(cloneVec2(leg.collidable.pos)));
+          }
+        },
+      });
+    }
+  }
+
+  for (const robot of RobotEntities.getAll()) {
+    if (!robot.alive) continue;
+    targets.push({
+      id: makeComboTargetId('robot', robot.collidable),
+      collidable: robot.collidable,
+      getPos: () => cloneVec2(robot.collidable.pos),
+      isValid: () => robot.alive,
+      applyDamage: (damage) => {
+        if (!robot.alive) return;
+        applyDamageToRobot(robot, damage);
+      },
+    });
+  }
+
+  for (const hive of HiveEntities.getAll()) {
+    if (!hive.alive) continue;
+
+    targets.push({
+      id: makeComboTargetId('hive-core', hive.collidable),
+      collidable: hive.collidable,
+      getPos: () => cloneVec2(hive.collidable.pos),
+      isValid: () => hive.alive,
+      applyDamage: (damage) => {
+        if (!hive.alive) return;
+        const aliveCount = hive.flock.filter((spinner) => spinner.alive).length;
+        const shieldMult = aliveCount >= 3 ? 0.1 : aliveCount >= 1 ? 0.4 : 1.0;
+        applyDamageToHiveCore(hive, damage * shieldMult);
+      },
+    });
+
+    for (const spinner of hive.flock) {
+      if (!spinner.alive) continue;
+      targets.push({
+        id: makeComboTargetId('hive-flock', spinner.collidable),
+        collidable: spinner.collidable,
+        getPos: () => cloneVec2(spinner.collidable.pos),
+        isValid: () => hive.alive && spinner.alive,
+        applyDamage: (damage) => {
+          if (!hive.alive || !spinner.alive) return;
+          spinner.collidable.rpm = Math.max(0, spinner.collidable.rpm - damage);
+          onFlockCollision(spinner);
+        },
+      });
+    }
+  }
+
+  for (const slug of BigSlugEntities.getAll()) {
+    if (!slug.alive) continue;
+    targets.push({
+      id: makeComboTargetId('slug-big', slug.collidable),
+      collidable: slug.collidable,
+      getPos: () => cloneVec2(slug.collidable.pos),
+      isValid: () => slug.alive,
+      applyDamage: (damage) => {
+        if (!slug.alive) return;
+        applyDamageToSlug(slug, damage);
+      },
+    });
+  }
+
+  for (const slug of BabySlugEntities.getAll()) {
+    if (!slug.alive) continue;
+    targets.push({
+      id: makeComboTargetId('slug-baby', slug.collidable),
+      collidable: slug.collidable,
+      getPos: () => cloneVec2(slug.collidable.pos),
+      isValid: () => slug.alive,
+      applyDamage: (damage) => {
+        if (!slug.alive) return;
+        applyDamageToSlug(slug, damage);
+      },
+    });
+  }
+
+  return targets;
+}
+
+function getNearestComboTargets(from: Vec2): ComboTarget[] {
+  return buildComboTargets()
+    .sort((a, b) => distanceSq(from, a.getPos()) - distanceSq(from, b.getPos()));
+}
+
+function resolveComboStrikeTarget(): ComboTarget | null {
+  const preferred = comboState.slotTargets[comboState.strikeIndex];
+  if (preferred?.isValid()) return preferred;
+
+  const nearest = getNearestComboTargets(playerBody.pos);
+  return nearest[0] ?? null;
+}
+
+function computeComboStrikeDestination(from: Vec2, target: ComboTarget): Vec2 {
+  const targetPos = target.getPos();
+  let dx = targetPos.x - from.x;
+  let dz = targetPos.z - from.z;
+  let dist = Math.hypot(dx, dz);
+
+  if (dist < 0.001) {
+    dx = 1;
+    dz = 0;
+    dist = 1;
+  }
+
+  const dirX = dx / dist;
+  const dirZ = dz / dist;
+  const offset = playerBody.radius + target.collidable.radius + 0.35;
+  return {
+    x: targetPos.x - dirX * offset,
+    z: targetPos.z - dirZ * offset,
+  };
+}
+
+function createComboStrikeArc(from: Vec2, to: Vec2, strikeIndex: number): ComboSegment['arc'] | undefined {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const dist = Math.hypot(dx, dz);
+  if (dist < 0.25) return undefined;
+
+  const center = {
+    x: (from.x + to.x) * 0.5,
+    z: (from.z + to.z) * 0.5,
+  };
+  const startAngle = Math.atan2(from.z - center.z, from.x - center.x);
+
+  return {
+    center,
+    radius: dist * 0.5,
+    startAngle,
+    sweepDir: strikeIndex % 2 === 0 ? 1 : -1,
+  };
+}
+
+function sampleComboSegmentPosition(segment: ComboSegment, t: number): Vec2 {
+  if (segment.kind === 'strike' && segment.arc) {
+    const angle = segment.arc.startAngle + segment.arc.sweepDir * Math.PI * t;
+    return {
+      x: segment.arc.center.x + Math.cos(angle) * segment.arc.radius,
+      z: segment.arc.center.z + Math.sin(angle) * segment.arc.radius,
+    };
+  }
+
+  return lerpVec2(segment.from, segment.to, t);
+}
+
+function computeComboRpmDamage(hitCount: number): number {
+  const rpmFrac = Math.max(0, Math.min(1, playerBody.rpm / playerBody.rpmCapacity));
+  return playerBody.rpmCapacity
+    * 0.028
+    * spinnerConfig.comboDamageMultiplier
+    * (0.6 + rpmFrac * 0.5)
+    * comboRepeatFalloff(hitCount);
+}
+
+function computeComboHpDamage(hitCount: number): number {
+  const rpmFrac = Math.max(0, Math.min(1, playerBody.rpm / playerBody.rpmCapacity));
+  return playerBody.rpmCapacity
+    * 0.02
+    * spinnerConfig.comboDamageMultiplier
+    * (0.65 + rpmFrac * 0.55)
+    * comboRepeatFalloff(hitCount);
+}
+
+function applyComboHit(target: ComboTarget): void {
+  const hitCount = comboState.hitCounts.get(target.collidable) ?? 0;
+  const type = target.id;
+  const isHpTarget = type.startsWith('turret')
+    || type.startsWith('zombie')
+    || type.startsWith('siege-part')
+    || type.startsWith('spider-leg')
+    || type.startsWith('robot')
+    || type.startsWith('hive-core')
+    || type.startsWith('slug');
+  const damage = isHpTarget ? computeComboHpDamage(hitCount) : computeComboRpmDamage(hitCount);
+
+  comboState.hitCounts.set(target.collidable, hitCount + 1);
+  target.applyDamage(damage);
+
+  const hitPos = target.getPos();
+  const dirX = hitPos.x - playerBody.pos.x;
+  const dirZ = hitPos.z - playerBody.pos.z;
+  const len = Math.hypot(dirX, dirZ) || 1;
+
+  emitSparks(
+    { x: hitPos.x, y: 0.5, z: hitPos.z },
+    { x: dirX / len, y: 0, z: dirZ / len },
+    28,
+    1.0,
+  );
+  emitPlasma({ x: hitPos.x, y: 0.55, z: hitPos.z }, 12, 0.55);
+}
+
+function beginComboReturn(): void {
+  comboState.phase = 'returning';
+  comboState.segment = {
+    kind: 'return',
+    from: cloneVec2(playerBody.pos),
+    to: getSafeComboReturnPoint(comboState.originPos, playerBody.pos),
+    duration: spinnerConfig.comboReturnDuration / Math.max(spinnerConfig.comboSpeedScale, 0.001),
+    elapsed: 0,
+  };
+}
+
+function beginNextComboStrike(): void {
+  const target = resolveComboStrikeTarget();
+  if (!target) {
+    beginComboReturn();
+    return;
+  }
+
+  const from = cloneVec2(playerBody.pos);
+  const to = computeComboStrikeDestination(from, target);
+  comboState.phase = 'active';
+  comboState.segment = {
+    kind: 'strike',
+    from,
+    to,
+    duration: spinnerConfig.comboStrikeDuration / Math.max(spinnerConfig.comboSpeedScale, 0.001),
+    elapsed: 0,
+    target,
+    arc: createComboStrikeArc(from, to, comboState.strikeIndex),
+  };
+}
+
+function isComboBusy(): boolean {
+  return comboState.phase !== 'idle';
+}
+
+function shouldSnapComboCamera(): boolean {
+  return comboState.phase === 'active' || comboState.phase === 'returning';
+}
+
+function getComboMinRpm(): number {
+  return spinnerConfig.rpmCapacity * spinnerConfig.comboMinRpmRatio;
+}
+
+function canStartPlayerCombo(): boolean {
+  return !isComboBusy()
+    && comboState.cooldownTimer <= 0
+    && playerBody.rpm >= getComboMinRpm()
+    && getNearestComboTargets(playerBody.pos).length > 0;
+}
+
+function tryStartPlayerCombo(): void {
+  if (!consumeSpecialPressed()) return;
+  if (!canStartPlayerCombo()) return;
+
+  const nearest = getNearestComboTargets(playerBody.pos);
+  const slotTargets: ComboTarget[] = [];
+  for (let i = 0; i < spinnerConfig.comboHitCount; i++) {
+    slotTargets.push(nearest[i % nearest.length]);
+  }
+
+  comboState.phase = 'active';
+  comboState.cooldownTimer = spinnerConfig.comboCooldown;
+  comboState.recoveryTimer = 0;
+  comboState.pauseTimer = 0;
+  comboState.strikeIndex = 0;
+  comboState.originPos = cloneVec2(playerBody.pos);
+  comboState.slotTargets = slotTargets;
+  comboState.hitCounts.clear();
+  comboState.segment = null;
+
+  playerBody.rpm = Math.max(0, playerBody.rpm - spinnerConfig.rpmCapacity * spinnerConfig.comboCostRatio);
+  setPlayerControlLocked(true);
+  setPlayerInvulnerable(true);
+  playerBody.vel.x = 0;
+  playerBody.vel.z = 0;
+
+  beginNextComboStrike();
+}
+
+function updatePlayerCombo(delta: number): void {
+  if (comboState.cooldownTimer > 0) {
+    comboState.cooldownTimer = Math.max(0, comboState.cooldownTimer - delta);
+  }
+
+  if (comboState.phase === 'idle') return;
+
+  if (comboState.phase === 'recovering') {
+    comboState.recoveryTimer = Math.max(0, comboState.recoveryTimer - delta);
+    playerBody.vel.x = 0;
+    playerBody.vel.z = 0;
+    if (comboState.recoveryTimer <= 0) {
+      comboState.phase = 'idle';
+      comboState.slotTargets = [];
+      comboState.segment = null;
+      setPlayerControlLocked(false);
+    }
+    return;
+  }
+
+  if (comboState.pauseTimer > 0) {
+    comboState.pauseTimer = Math.max(0, comboState.pauseTimer - delta);
+    playerBody.vel.x = 0;
+    playerBody.vel.z = 0;
+    return;
+  }
+
+  if (!comboState.segment) {
+    if (comboState.strikeIndex >= spinnerConfig.comboHitCount) beginComboReturn();
+    else beginNextComboStrike();
+  }
+  if (!comboState.segment) return;
+
+  const segment = comboState.segment;
+  segment.elapsed = Math.min(segment.duration, segment.elapsed + delta);
+  const t = segment.duration > 0 ? segment.elapsed / segment.duration : 1;
+  const nextPos = sampleComboSegmentPosition(segment, t);
+  playerBody.pos.x = nextPos.x;
+  playerBody.pos.z = nextPos.z;
+  playerBody.vel.x = 0;
+  playerBody.vel.z = 0;
+
+  if (segment.elapsed < segment.duration) return;
+
+  if (segment.kind === 'strike') {
+    const didHit = Boolean(segment.target?.isValid());
+    if (didHit) applyComboHit(segment.target!);
+    comboState.strikeIndex += 1;
+    comboState.segment = null;
+    comboState.pauseTimer = didHit ? spinnerConfig.comboHitPause : 0;
+    return;
+  }
+
+  comboState.phase = 'recovering';
+  comboState.recoveryTimer = spinnerConfig.comboRecovery;
+  comboState.segment = null;
+  setPlayerInvulnerable(false);
+}
+
+function getComboHudState(): ComboHudState {
+  const cooldownFraction = comboState.cooldownTimer > 0
+    ? 1 - comboState.cooldownTimer / spinnerConfig.comboCooldown
+    : 1;
+  const ready = comboState.cooldownTimer <= 0;
+  const blockedByRpm = ready && playerBody.rpm < getComboMinRpm();
+
+  return {
+    cooldownFraction: Math.max(0, Math.min(1, cooldownFraction)),
+    active: comboState.phase === 'active' || comboState.phase === 'returning',
+    ready,
+    blockedByRpm,
+  };
+}
+
 // ─── Turret System (AI + projectiles) ────────────────────────────────────────
 
 function updateTurretSystem(delta: number): void {
@@ -1074,7 +1687,13 @@ function updateTurretSystem(delta: number): void {
     }
   }
 
-  const { rpmDamage, hitFlash } = updateProjectiles(projectiles, playerBody.pos, playerBody.radius, delta);
+  const { rpmDamage, hitFlash } = updateProjectiles(
+    projectiles,
+    playerBody.pos,
+    playerBody.radius,
+    delta,
+    isPlayerInvulnerable(),
+  );
   if (rpmDamage > 0) {
     playerBody.rpm = Math.max(0, playerBody.rpm - rpmDamage);
     if (hitFlash) {
@@ -1110,7 +1729,7 @@ function updateSpiderSystem(delta: number): void {
         event.kind === 'pulse' ? 18 : event.kind === 'leg_slam' ? 30 : 22,
         event.kind === 'pulse' ? 0.7 : event.kind === 'leg_slam' ? 1.0 : 0.85,
       );
-      if (!event.hitPlayer) continue;
+      if (!event.hitPlayer || isPlayerInvulnerable()) continue;
 
       playerBody.rpm = Math.max(0, playerBody.rpm - event.damage);
       notifyPlayerHit();
@@ -1319,7 +1938,7 @@ function killZombie(zombie: ZombieState, gib: boolean): void {
 function updateZombieSystem(delta: number): void {
   for (const zombie of ZombieEntities.getAll()) {
     const attacked = updateZombieAI(zombie, playerBody.pos, delta);
-    if (!attacked) continue;
+    if (!attacked || isPlayerInvulnerable()) continue;
 
     playerBody.rpm = Math.max(0, playerBody.rpm - zombie.config.attackDamage);
     notifyPlayerHit();
@@ -1483,13 +2102,14 @@ function animate(): void {
     updateGibs(delta);
     const done = updateTopple(delta);
     if (done) gameOverOverlay.style.display = 'flex';
-    updateHud(playerBody.rpm, time, delta);
-    updateCamera(playerBody.pos, playerBody.vel, delta);
+    updateHud(playerBody.rpm, time, delta, getComboHudState());
+    updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
     renderer.render(scene, camera);
     return;
   }
 
   // 1. Entity updates (intent — player input, enemy AI, boss AI, turret aim)
+  tryStartPlayerCombo();
   entityUpdateSystem(delta);
   for (const e of EnemyEntities.getAll()) updateEnemyAI(e, playerBody.pos, delta);
   for (const b of DreadnoughtEntities.getAll()) updateDreadnoughtAI(b, playerBody.pos, delta);
@@ -1507,6 +2127,7 @@ function animate(): void {
     playerBody.vel.z *= PLAYER_WEB_VEL_DAMP;
     setMovementMaxSpeed(playerId, spinnerConfig.maxSpeed * PLAYER_WEB_SPEED_MULT);
   }
+  updatePlayerCombo(delta);
 
   // 2. Movement (friction, clamp, position for all registered movables)
   movementSystem(delta);
@@ -1524,8 +2145,8 @@ function animate(): void {
     const done = updateTopple(delta);
     updateGibs(delta);
     if (done) gameOverOverlay.style.display = 'flex';
-    updateHud(playerBody.rpm, time, delta);
-    updateCamera(playerBody.pos, playerBody.vel, delta);
+    updateHud(playerBody.rpm, time, delta, getComboHudState());
+    updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
     renderer.render(scene, camera);
     return;
   }
@@ -1606,8 +2227,8 @@ function animate(): void {
   if (playerBody.rpm <= 0) {
     startPlayerToppleDeath();
     gameOver = true;
-    updateHud(0, time, delta);
-    updateCamera(playerBody.pos, playerBody.vel, delta);
+    updateHud(0, time, delta, getComboHudState());
+    updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
     renderer.render(scene, camera);
     return;
   }
@@ -1625,8 +2246,8 @@ function animate(): void {
   for (const h of HiveEntities.getAll()) updateHiveVisuals(h, playerBody.pos, time, delta);
   for (const s of BigSlugEntities.getAll()) updateSlugwormVisuals(s, time, delta);
   for (const s of BabySlugEntities.getAll()) updateSlugwormVisuals(s, time, delta);
-  updateHud(playerBody.rpm, time, delta);
-  updateCamera(playerBody.pos, playerBody.vel, delta);
+  updateHud(playerBody.rpm, time, delta, getComboHudState());
+  updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
   sampleSpiderMotionDebug(delta);
   updateSparks(time);
   updateGooDecals(time);

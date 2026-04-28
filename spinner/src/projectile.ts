@@ -382,6 +382,7 @@ export function updateProjectiles(
   spinnerPos:    Vec2,
   spinnerRadius: number,
   delta:         number,
+  ignorePlayerHits = false,
 ): ProjectileResult {
   let rpmDamage = 0;
   let hitFlash  = false;
@@ -425,7 +426,7 @@ export function updateProjectiles(
     const ddx  = spinnerPos.x - p.pos.x;
     const ddz  = spinnerPos.z - p.pos.z;
     const dist = Math.sqrt(ddx * ddx + ddz * ddz);
-    if (dist < spinnerRadius + PROJECTILE_RADIUS) {
+    if (!ignorePlayerHits && dist < spinnerRadius + PROJECTILE_RADIUS) {
       rpmDamage += p.damage;
       hitFlash   = true;
       p.alive    = false;

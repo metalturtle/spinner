@@ -53,6 +53,8 @@ let hitFlashTimer  = 0;
 let toppleProgress = 0;
 let visualOffsetY  = 0;
 let deathMode: 'none' | 'topple' | 'pit' = 'none';
+let playerControlLocked = false;
+let playerInvulnerable = false;
 export let playerId = 0;
 
 // ─── Setup (call once at start and again after every reset) ──────────────────
@@ -63,6 +65,11 @@ export function setupPlayer(): void {
   registerProximityBody('player', playerProximity);
 
   registerUpdate(playerId, (delta: number) => {
+    if (playerControlLocked) {
+      setMovementMaxSpeed(playerId, spinnerConfig.maxSpeed);
+      return;
+    }
+
     const sprinting = shiftHeld && playerBody.rpm > 0;
     const accel = spinnerConfig.acceleration * (sprinting ? spinnerConfig.sprintAccelMult : 1.0);
     const maxSpd = spinnerConfig.maxSpeed    * (sprinting ? spinnerConfig.sprintSpeedMult : 1.0);
@@ -93,6 +100,8 @@ export function resetPlayer(): void {
   toppleProgress = 0;
   visualOffsetY  = 0;
   deathMode      = 'none';
+  playerControlLocked = false;
+  playerInvulnerable = false;
   tiltGroup.position.set(0, 0, 0);
   tiltGroup.rotation.set(0, 0, 0);
 }
@@ -102,8 +111,13 @@ export function resetPlayer(): void {
 export function playerRpmHooks(delta: number, playerWallHit: boolean, circleHits: CircleHit[]): void {
   // Sprint drain — only when actually moving
   const isMoving = keys.w || keys.s || keys.a || keys.d;
-  if (shiftHeld && isMoving && playerBody.rpm > 0) {
+  if (!playerControlLocked && shiftHeld && isMoving && playerBody.rpm > 0) {
     playerBody.rpm -= spinnerConfig.sprintRpmDrain * delta;
+  }
+
+  if (playerInvulnerable) {
+    playerBody.rpm = Math.max(0, playerBody.rpm);
+    return;
   }
 
   // Wall penalty
@@ -198,6 +212,22 @@ export function updatePlayerVisuals(time: number, delta: number): void {
 
 export function notifyHit(): void {
   hitFlashTimer = HIT_FLASH_DUR;
+}
+
+export function setPlayerControlLocked(locked: boolean): void {
+  playerControlLocked = locked;
+  if (locked) {
+    playerBody.vel.x = 0;
+    playerBody.vel.z = 0;
+  }
+}
+
+export function setPlayerInvulnerable(invulnerable: boolean): void {
+  playerInvulnerable = invulnerable;
+}
+
+export function isPlayerInvulnerable(): boolean {
+  return playerInvulnerable;
 }
 
 // ─── Topple (game-over animation) ────────────────────────────────────────────

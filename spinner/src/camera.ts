@@ -25,7 +25,15 @@ export function initCamera(): void {
   camera.lookAt(camX, 0, camZ);
 }
 
-export function updateCamera(pos: Vec2, vel: Vec2, delta: number): void {
+export function updateCamera(pos: Vec2, vel: Vec2, delta: number, snapToPlayer = false): void {
+  if (snapToPlayer) {
+    camX = pos.x;
+    camZ = pos.z;
+    camera.position.set(camX, CAM_Y, camZ + CAM_Z_OFFSET);
+    camera.lookAt(camX, 0, camZ);
+    return;
+  }
+
   // 1. Look-ahead target — offset toward movement direction
   const targetX = pos.x + vel.x * LOOK_AHEAD;
   const targetZ = pos.z + vel.z * LOOK_AHEAD;

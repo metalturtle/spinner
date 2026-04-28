@@ -4,11 +4,13 @@ const TRACKED_KEYS = new Set<string>(['w', 'a', 's', 'd']);
 
 export const keys: Record<Direction, boolean> = { w: false, a: false, s: false, d: false };
 export let shiftHeld = false;
+let specialPressed = false;
 
 window.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
   if (TRACKED_KEYS.has(key)) keys[key as Direction] = true;
   if (e.key === 'Shift') shiftHeld = true;
+  if (key === 'x' && !e.repeat) specialPressed = true;
 });
 
 window.addEventListener('keyup', (e) => {
@@ -16,3 +18,9 @@ window.addEventListener('keyup', (e) => {
   if (TRACKED_KEYS.has(key)) keys[key as Direction] = false;
   if (e.key === 'Shift') shiftHeld = false;
 });
+
+export function consumeSpecialPressed(): boolean {
+  if (!specialPressed) return false;
+  specialPressed = false;
+  return true;
+}
