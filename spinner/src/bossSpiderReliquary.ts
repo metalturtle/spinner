@@ -158,6 +158,7 @@ export interface SpiderReliquaryState {
   gaitGroupActive: 0 | 1;
   turnRate: number;
   visualPos: THREE.Vector3;
+  corePassThroughCooldown: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -557,8 +558,6 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
     rpmCapacity: config.coreRpmCapacity,
     heatFactor: config.heatFactor,
   };
-  collidables.push(collidable);
-
   const id = nextEntityId();
   registerMovement(id, collidable, config.coreMaxSpeed[0], 0.95);
   registerRpm(id, collidable, 0, 0);
@@ -593,6 +592,7 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
     gaitGroupActive: 0,
     turnRate: 0,
     visualPos: new THREE.Vector3(pos.x, 0, pos.z),
+    corePassThroughCooldown: 0,
   };
 
   bodyGroup.position.set(pos.x, 0, pos.z);
@@ -845,6 +845,7 @@ export function updateSpiderReliquaryAI(
   boss.collapseTimer = Math.max(0, boss.collapseTimer - delta);
   boss.stompCooldown = Math.max(0, boss.stompCooldown - delta);
   boss.pulseCooldown = Math.max(0, boss.pulseCooldown - delta);
+  boss.corePassThroughCooldown = Math.max(0, boss.corePassThroughCooldown - delta);
 
   const body = boss.collidable;
   const dx = playerPos.x - body.pos.x;

@@ -1077,6 +1077,50 @@ function updateSpiderSystem(delta: number): void {
   }
 }
 
+function updateSpiderCorePassThroughHits(): void {
+  for (const spider of SpiderEntities.getAll()) {
+    if (!spider.alive || spider.corePassThroughCooldown > 0) continue;
+
+    const core = spider.collidable;
+    const dx = core.pos.x - playerBody.pos.x;
+    const dz = core.pos.z - playerBody.pos.z;
+    const radius = playerBody.radius + core.radius;
+    const distSq = dx * dx + dz * dz;
+    if (distSq >= radius * radius) continue;
+
+    const dist = Math.sqrt(distSq) || 0.0001;
+    const nx = dx / dist;
+    const nz = dz / dist;
+    const relVx = playerBody.vel.x - core.vel.x;
+    const relVz = playerBody.vel.z - core.vel.z;
+    const approachSpeed = relVx * nx + relVz * nz;
+    if (approachSpeed <= 1.1) continue;
+
+    const point = {
+      x: playerBody.pos.x + nx * playerBody.radius,
+      y: 0.7,
+      z: playerBody.pos.z + nz * playerBody.radius,
+    };
+    const normal = { x: -nx, y: 0, z: -nz };
+
+    if (!canDamageSpiderCore(spider)) {
+      emitSparks(point, normal, Math.floor(16 + approachSpeed * 8), Math.min(1, approachSpeed / 7));
+      spider.corePassThroughCooldown = 0.12;
+      continue;
+    }
+
+    const safePlayerRpm = Math.max(0.01, playerBody.rpm);
+    const safeEnemyRpm = Math.max(0.01, core.rpm);
+    const rpmDamage = COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
+      * approachSpeed * (playerBody.mass / core.mass)
+      * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor
+      * getSpiderCoreDamageMultiplier(spider);
+    spider.collidable.rpm = Math.max(0, spider.collidable.rpm - rpmDamage);
+    emitSparks(point, normal, Math.floor(18 + approachSpeed * 10), Math.min(1, approachSpeed / 6));
+    spider.corePassThroughCooldown = 0.16;
+  }
+}
+
 // ─── Enemy Death Check ───────────────────────────────────────────────────────
 
 function checkEnemyDeath(): void {
@@ -1332,6 +1376,7 @@ function animate(): void {
   for (const s of SiegeEntities.getAll()) syncSiegeEngineParts(s);
   for (const spider of SpiderEntities.getAll()) syncSpiderReliquaryLegs(spider, delta);
   for (const h of HiveEntities.getAll()) syncFlockPositions(h);
+  updateSpiderCorePassThroughHits();
 
   // 2c. Kill-fall trigger zones
   updateKillFallZones(delta);
