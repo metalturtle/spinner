@@ -74,3 +74,36 @@ see BOSS-PLANS.md for detailed encounter plans:
 dungeon enemies:
 
 keep dungeon theme aside:
+
+
+todays plan:
+improved spinner fight
+    enemy spinner does combo attack
+    lightning discharge
+    flash of light
+    core of spinner glowing
+    spinner may emit particle effects
+    first spinner fight drops the combo attack
+    drops lot of pickups
+spider boss:
+    shoots webs
+    web attract attack
+    may emit spinners to attack the player
+jump to space station effect:
+    space station has zombies
+    drones attack
+    turrets
+    zombie mass attack
+    octoboss
+
+next:
+    main menu
+    level editor
+    play levels
+    possibly a store for levels community made
+        possibly a rating system
+    textures uploadable
+sound effects
+level inside serpent body, serpent eats itself after attacking core
+
+octoboss

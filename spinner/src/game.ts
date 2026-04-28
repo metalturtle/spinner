@@ -13,10 +13,10 @@ import {
   defineEntityType,
   registerCollisionPair, registerProximityPair,
   entityUpdateSystem, movementSystem, collisionSystem, proximitySystem, rpmSystem,
-  resetEntityRegistrations, deregisterEntity, untagCollidable,
+  resetEntityRegistrations, deregisterEntity, untagCollidable, setMovementMaxSpeed,
 } from './systems';
 import {
-  playerBody, setupPlayer, resetPlayer,
+  playerBody, playerId, setupPlayer, resetPlayer,
   playerRpmHooks, updatePlayerVisuals, updateTopple, notifyHit as notifyPlayerHit,
   startPlayerPitFallDeath, startPlayerToppleDeath,
 } from './player';
@@ -394,6 +394,45 @@ const explosions:  Explosion[]  = [];
 const fireTorches: FireTorch[]  = [];
 const dynamicLevelLightRoots: THREE.Object3D[] = [];
 const pendingTriggeredEntities = new Map<string, LevelEntity[]>();
+const SPIDER_MOTION_DEBUG = false;
+const PLAYER_WEB_SPEED_MULT = 0.16;
+const PLAYER_WEB_VEL_DAMP = 0.42;
+let playerWebTimer = 0;
+
+type MotionBucket = 'move_x' | 'move_z';
+type SpiderMotionState = 'chase' | 'orbit' | 'collapse' | 'hop_windup' | 'hop_air' | 'hop_recover';
+
+interface MotionStats {
+  samples: number;
+  worldSpeed: number;
+  screenSpeed: number;
+  absMoveX: number;
+  absMoveZ: number;
+}
+
+const spiderMotionDebugBuckets: Record<`${SpiderMotionState}:${MotionBucket}`, MotionStats> = {
+  'chase:move_x':       { samples: 0, worldSpeed: 0, screenSpeed: 0, absMoveX: 0, absMoveZ: 0 },
+  'chase:move_z':       { samples: 0, worldSpeed: 0, screenSpeed: 0, absMoveX: 0, absMoveZ: 0 },
+  'orbit:move_x':       { samples: 0, worldSpeed: 0, screenSpeed: 0, absMoveX: 0, absMoveZ: 0 },
+  'orbit:move_z':       { samples: 0, worldSpeed: 0, screenSpeed: 0, absMoveX: 0, absMoveZ: 0 },
+  'collapse:move_x':    { samples: 0, worldSpeed: 0, screenSpeed: 0, absMoveX: 0, absMoveZ: 0 },
+  'collapse:move_z':    { samples: 0, worldSpeed: 0, screenSpeed: 0, absMoveX: 0, absMoveZ: 0 },
+  'hop_windup:move_x':  { samples: 0, worldSpeed: 0, screenSpeed: 0, absMoveX: 0, absMoveZ: 0 },
+  'hop_windup:move_z':  { samples: 0, worldSpeed: 0, screenSpeed: 0, absMoveX: 0, absMoveZ: 0 },
+  'hop_air:move_x':     { samples: 0, worldSpeed: 0, screenSpeed: 0, absMoveX: 0, absMoveZ: 0 },
+  'hop_air:move_z':     { samples: 0, worldSpeed: 0, screenSpeed: 0, absMoveX: 0, absMoveZ: 0 },
+  'hop_recover:move_x': { samples: 0, worldSpeed: 0, screenSpeed: 0, absMoveX: 0, absMoveZ: 0 },
+  'hop_recover:move_z': { samples: 0, worldSpeed: 0, screenSpeed: 0, absMoveX: 0, absMoveZ: 0 },
+};
+
+const spiderMotionDebug = {
+  hasPrevScreenPos: false,
+  prevScreenX: 0,
+  prevScreenY: 0,
+  prevWorldX: 0,
+  prevWorldZ: 0,
+  sampleTimer: 0,
+};
 
 interface AreaZone {
   contains(point: { x: number; z: number }): boolean;
@@ -1011,6 +1050,7 @@ function resetGame(): void {
   fallingVictims.length = 0;
   fallableActors.length = 0;
   playerKillFallTimer = 0;
+  playerWebTimer = 0;
   clearDynamicLevelLights();
   clearLevelLights(scene);
   setupLevelLights(scene, currentLevel);
@@ -1059,20 +1099,35 @@ function updateSiegeTurretSystem(delta: number): void {
 }
 
 function updateSpiderSystem(delta: number): void {
+  playerWebTimer = Math.max(0, playerWebTimer - delta);
   for (const spider of SpiderEntities.getAll()) {
     if (!spider.alive) continue;
-    const events = updateSpiderReliquaryAI(spider, playerBody.pos, playerBody.radius, delta);
+    const events = updateSpiderReliquaryAI(spider, playerBody.pos, playerBody.radius, playerWebTimer > 0, delta);
     for (const event of events) {
       emitSparks(
         event.point,
         { x: 0, y: 1, z: 0 },
-        event.kind === 'pulse' ? 18 : 26,
-        event.kind === 'pulse' ? 0.7 : 0.9,
+        event.kind === 'pulse' ? 18 : event.kind === 'leg_slam' ? 30 : 22,
+        event.kind === 'pulse' ? 0.7 : event.kind === 'leg_slam' ? 1.0 : 0.85,
       );
       if (!event.hitPlayer) continue;
 
       playerBody.rpm = Math.max(0, playerBody.rpm - event.damage);
       notifyPlayerHit();
+      if (event.kind === 'leg_slam' && event.knockback) {
+        const dx = playerBody.pos.x - spider.collidable.pos.x;
+        const dz = playerBody.pos.z - spider.collidable.pos.z;
+        const len = Math.hypot(dx, dz) || 1;
+        playerBody.vel.x += (dx / len) * event.knockback;
+        playerBody.vel.z += (dz / len) * event.knockback;
+      } else if (event.kind === 'web') {
+        playerWebTimer = Math.max(playerWebTimer, event.webDuration ?? 0.8);
+        playerBody.vel.x *= 0.18;
+        playerBody.vel.z *= 0.18;
+        emitPlasma(event.point, 18, 0.55);
+      } else if (event.kind === 'acid') {
+        emitGoo(event.point, 14, 0.75);
+      }
     }
   }
 }
@@ -1118,6 +1173,85 @@ function updateSpiderCorePassThroughHits(): void {
     spider.collidable.rpm = Math.max(0, spider.collidable.rpm - rpmDamage);
     emitSparks(point, normal, Math.floor(18 + approachSpeed * 10), Math.min(1, approachSpeed / 6));
     spider.corePassThroughCooldown = 0.16;
+  }
+}
+
+function sampleSpiderMotionDebug(delta: number): void {
+  if (!SPIDER_MOTION_DEBUG || delta <= 0) return;
+
+  const spider = SpiderEntities.getAll().find((entry) => entry.alive);
+  if (!spider) {
+    spiderMotionDebug.hasPrevScreenPos = false;
+    return;
+  }
+
+  const worldDx = spider.collidable.pos.x - spiderMotionDebug.prevWorldX;
+  const worldDz = spider.collidable.pos.z - spiderMotionDebug.prevWorldZ;
+  const absMoveX = Math.abs(worldDx) / delta;
+  const absMoveZ = Math.abs(worldDz) / delta;
+  let bucket: MotionBucket | null = null;
+  if (absMoveX > absMoveZ * 1.35) bucket = 'move_x';
+  else if (absMoveZ > absMoveX * 1.35) bucket = 'move_z';
+
+  const dxToPlayer = playerBody.pos.x - spider.collidable.pos.x;
+  const dzToPlayer = playerBody.pos.z - spider.collidable.pos.z;
+  const distToPlayer = Math.hypot(dxToPlayer, dzToPlayer);
+  const aliveLegs = spider.legs.filter((entry) => entry.alive).length;
+  const phase = aliveLegs >= 4 ? 0 : aliveLegs >= 2 ? 1 : 2;
+  const desiredRange = phase === 0 ? 7.2 : phase === 1 ? 6.2 : 5.0;
+
+  let state: SpiderMotionState = 'orbit';
+  if (spider.oneLegHopAir > 0) state = 'hop_air';
+  else if (spider.oneLegHopWindup > 0) state = 'hop_windup';
+  else if (spider.oneLegHopRecover > 0) state = 'hop_recover';
+  else if (spider.collapseTimer > 0) state = 'collapse';
+  else if (distToPlayer > desiredRange) state = 'chase';
+
+  const projected = new THREE.Vector3(spider.collidable.pos.x, 0, spider.collidable.pos.z).project(camera);
+  const viewport = renderer.getSize(new THREE.Vector2());
+  const screenX = (projected.x * 0.5 + 0.5) * viewport.x;
+  const screenY = (-projected.y * 0.5 + 0.5) * viewport.y;
+
+  if (bucket && spiderMotionDebug.hasPrevScreenPos) {
+    const screenDx = screenX - spiderMotionDebug.prevScreenX;
+    const screenDy = screenY - spiderMotionDebug.prevScreenY;
+    const stats = spiderMotionDebugBuckets[`${state}:${bucket}`];
+    stats.samples += 1;
+    stats.worldSpeed += Math.hypot(worldDx, worldDz) / delta;
+    stats.screenSpeed += Math.hypot(screenDx, screenDy) / delta;
+    stats.absMoveX += absMoveX;
+    stats.absMoveZ += absMoveZ;
+  }
+
+  spiderMotionDebug.prevScreenX = screenX;
+  spiderMotionDebug.prevScreenY = screenY;
+  spiderMotionDebug.prevWorldX = spider.collidable.pos.x;
+  spiderMotionDebug.prevWorldZ = spider.collidable.pos.z;
+  spiderMotionDebug.hasPrevScreenPos = true;
+  spiderMotionDebug.sampleTimer += delta;
+
+  if (spiderMotionDebug.sampleTimer < 1.0) return;
+
+  const labels = Object.keys(spiderMotionDebugBuckets) as Array<keyof typeof spiderMotionDebugBuckets>;
+  const parts: string[] = [];
+  for (const label of labels) {
+    const stats = spiderMotionDebugBuckets[label];
+    if (stats.samples === 0) continue;
+    parts.push(
+      `${label}: n=${stats.samples}, world=${(stats.worldSpeed / stats.samples).toFixed(2)}, `
+      + `|dx|=${(stats.absMoveX / stats.samples).toFixed(2)}, |dz|=${(stats.absMoveZ / stats.samples).toFixed(2)}, `
+      + `screen=${(stats.screenSpeed / stats.samples).toFixed(1)}px/s`,
+    );
+  }
+  console.log(`[spider-motion] ${parts.length > 0 ? parts.join(' | ') : 'no directional samples'}`);
+  spiderMotionDebug.sampleTimer = 0;
+  for (const label of labels) {
+    const stats = spiderMotionDebugBuckets[label];
+    stats.samples = 0;
+    stats.worldSpeed = 0;
+    stats.screenSpeed = 0;
+    stats.absMoveX = 0;
+    stats.absMoveZ = 0;
   }
 }
 
@@ -1368,6 +1502,11 @@ function animate(): void {
   updateTurretSystem(delta);
   updateSiegeTurretSystem(delta);
   updateSpiderSystem(delta);
+  if (playerWebTimer > 0) {
+    playerBody.vel.x *= PLAYER_WEB_VEL_DAMP;
+    playerBody.vel.z *= PLAYER_WEB_VEL_DAMP;
+    setMovementMaxSpeed(playerId, spinnerConfig.maxSpeed * PLAYER_WEB_SPEED_MULT);
+  }
 
   // 2. Movement (friction, clamp, position for all registered movables)
   movementSystem(delta);
@@ -1488,6 +1627,7 @@ function animate(): void {
   for (const s of BabySlugEntities.getAll()) updateSlugwormVisuals(s, time, delta);
   updateHud(playerBody.rpm, time, delta);
   updateCamera(playerBody.pos, playerBody.vel, delta);
+  sampleSpiderMotionDebug(delta);
   updateSparks(time);
   updateGooDecals(time);
   updateGibs(delta);

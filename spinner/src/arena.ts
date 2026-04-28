@@ -15,6 +15,48 @@ const DEBUG_SHOW_NORMAL_AS_ALBEDO = false;
 const lavaLightRoots: THREE.Object3D[] = [];
 type LavaRegion = { contains(point: { x: number; z: number }): boolean };
 const lavaRegions: LavaRegion[] = [];
+type ArenaBounds = { minX: number; maxX: number; minZ: number; maxZ: number };
+const currentArenaBounds: ArenaBounds = { minX: -20, maxX: 20, minZ: -20, maxZ: 20 };
+
+export function getArenaBounds(): ArenaBounds {
+  return currentArenaBounds;
+}
+
+function setArenaBoundsFromLevel(level: LevelData): void {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+
+  for (const poly of level.polygons ?? []) {
+    for (const vertex of poly.vertices) {
+      minX = Math.min(minX, vertex.x);
+      maxX = Math.max(maxX, vertex.x);
+      minZ = Math.min(minZ, vertex.y);
+      maxZ = Math.max(maxZ, vertex.y);
+    }
+  }
+
+  for (const circle of level.circles ?? []) {
+    minX = Math.min(minX, circle.center.x - circle.radius);
+    maxX = Math.max(maxX, circle.center.x + circle.radius);
+    minZ = Math.min(minZ, circle.center.y - circle.radius);
+    maxZ = Math.max(maxZ, circle.center.y + circle.radius);
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minZ) || !Number.isFinite(maxZ)) {
+    currentArenaBounds.minX = -20;
+    currentArenaBounds.maxX = 20;
+    currentArenaBounds.minZ = -20;
+    currentArenaBounds.maxZ = 20;
+    return;
+  }
+
+  currentArenaBounds.minX = minX;
+  currentArenaBounds.maxX = maxX;
+  currentArenaBounds.minZ = minZ;
+  currentArenaBounds.maxZ = maxZ;
+}
 
 function getSurfaceColor(color: string | undefined, fallback: THREE.ColorRepresentation, hasTexture: boolean): THREE.ColorRepresentation {
   if (!color) return hasTexture ? 0xffffff : fallback;
@@ -171,6 +213,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
   clearLavaEmbers();
   clearLavaLights(scene);
   clearLavaRegions();
+  setArenaBoundsFromLevel(level);
 
   // ─── Separate polygons and circles by layer ──────────────────────────────
   const polys        = level.polygons ?? [];

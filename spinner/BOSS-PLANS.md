@@ -258,6 +258,196 @@ First-pass scope:
 - no immobilize trap after impact
 - no combo chain beyond pull, impact, and repel
 
+### Attack Expansion Roadmap
+
+Status: prioritized follow-up plan
+
+Goal:
+
+- make the Spider Reliquary feel more aggressive, more distinctly spider-like, and more phaseful without losing readability
+- prioritize attacks that look impressive on screen and fit the current collision-first combat model
+
+#### Priority Summary
+
+Implement next:
+
+1. Leg Slam / Leg Shove
+2. Web Attack
+3. Acid Spit
+
+Implement later:
+
+4. Mini spider spawn
+5. Spinner egg / spinner spawn variant
+6. Core transforms into spinner after the last leg is destroyed
+
+#### 1. Leg Slam / Leg Shove
+
+Priority: very high
+
+Complexity: low to medium
+
+Why it is strong:
+
+- high visual payoff for relatively low implementation cost
+- directly uses the spider fantasy and the existing articulated legs
+- creates strong close-range punishment and lets the boss physically dominate space
+- fits naturally with the current stomp/telegraph/event architecture
+
+Recommended behavior:
+
+- if the player is near the body, one active leg commits to a heavy strike
+- the strike deals strong RPM damage
+- the player is pushed backward with a clear knockback impulse
+- use a strong contact effect: sparks, camera emphasis, and a sharp pose on the attacking leg
+
+Implementation notes:
+
+- best built as a short-range attack state emitted from the Spider Reliquary update
+- can reuse existing stomp telegraph ideas, but should feel directional and personal rather than area-denial only
+- first pass does not need per-leg target selection logic beyond choosing a plausible attacking leg on the player-facing side
+
+#### 2. Web Attack
+
+Priority: very high
+
+Complexity: medium
+
+Why it is strong:
+
+- gives the boss a signature spider mechanic
+- creates a memorable control-denial moment
+- pairs extremely well with leg slam follow-up pressure
+- reinforces that the shrine body is dangerous even when the player is not directly ramming it
+
+Recommended behavior:
+
+- the boss shoots a web projectile or web burst at the player
+- on hit, the player takes damage and becomes stuck or heavily slowed
+- the spider then closes distance to attack while the player is compromised
+- first version should be readable and dramatic rather than frequent
+
+Implementation notes:
+
+- the existing `Web Snare Attack Plan` remains the preferred structure for the full pull-and-impact version
+- first implementation can start slightly simpler:
+  - projectile lands
+  - player is slowed/rooted briefly
+  - boss advances and tries to capitalize
+- later upgrade path:
+  - full tether pull
+  - impact into the body/core
+  - repel afterward
+
+#### 3. Acid Spit
+
+Priority: high
+
+Complexity: low to medium
+
+Why it is strong:
+
+- easy to add relative to the others
+- gives the boss a ranged punish tool
+- helps prevent the fight from being purely “stay out and wait for leg openings”
+
+Recommended behavior:
+
+- spider spits acid globules toward the player
+- direct hit deals RPM damage
+- later polish can leave lingering acid puddles or hazard decals
+
+Implementation notes:
+
+- this maps cleanly onto the current projectile architecture
+- it is visually useful, but less identity-defining than the web attack, so it should complement rather than replace web behavior
+
+#### 4. Mini Spiders
+
+Priority: medium
+
+Complexity: medium to high
+
+Why it is strong:
+
+- very thematic
+- adds pressure and chaos in later phases
+- makes the fight feel like an infestation rather than a single body
+
+Risks:
+
+- can create too much noise if the arena already has many hazards
+- wants lightweight enemy logic so the fight does not become cluttered
+
+Recommended direction:
+
+- use small fast melee attackers
+- spawn in controlled bursts, not endlessly
+- best saved until the core fight loop is already satisfying
+
+#### 5. Spinner Spawn Variant
+
+Priority: medium to low
+
+Complexity: medium
+
+Why it is weaker:
+
+- relatively easy because the game already has spinner enemies
+- but it is less on-theme than mini spiders
+- risks diluting the boss identity
+
+Recommended use:
+
+- only if we want a reliquary that mechanically “manufactures” other constructs
+- otherwise prefer mini spiders for stronger thematic cohesion
+
+#### 6. Core Becomes Spinner
+
+Priority: high spectacle, later milestone
+
+Complexity: medium
+
+Why it is exciting:
+
+- excellent final phase transition
+- gives the fight a memorable last act
+- pays off the exposed core fantasy in a way players will remember
+
+Why it can come later:
+
+- it depends on the base spider fight already feeling good
+- it is easier than a whole new boss because the game already has spinner logic
+
+Implementation direction:
+
+- after the last leg is destroyed, retire the current spider-body phase
+- spawn a tuned `enemy_spinner` or boss-flavored spinner from the core location
+- preserve FX continuity:
+  - collapsing shell
+  - sparks
+  - core flare
+  - emergent spinner launch
+
+Important note:
+
+- this is relatively contained compared with inventing a whole new final-form ruleset
+- it still needs careful transition handling, but it should be treated as an easier later addition rather than a rewrite
+
+### Chosen Next Implementation Scope
+
+Implement now:
+
+1. Leg Slam / Leg Shove
+2. Web Attack
+3. Acid Spit
+
+Reasoning:
+
+- together these give the boss a strong melee punish, a signature control tool, and a ranged pressure option
+- they materially improve the encounter without requiring a full summon/ecosystem phase yet
+- the later additions remain good expansion paths once the core behavior set feels complete
+
 Why defer it for now:
 
 - the current priority is making the leg-driven locomotion feel convincing

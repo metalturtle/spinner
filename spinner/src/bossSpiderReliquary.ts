@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { scene } from './renderer';
-import { ARENA_SIZE } from './constants';
 import { collidables, type Collidable, type Vec2 } from './physics';
 import { createHpBar, updateHpBar } from './hpBar';
-import { isPointInLava } from './arena';
+import { getArenaBounds, isPointInLava } from './arena';
+import { type Projectile } from './projectile';
 import {
   nextEntityId,
   registerMovement,
@@ -47,6 +47,19 @@ export interface SpiderReliquaryConfig {
   pulseRadius: [number, number, number];
   pulseDamage: [number, number, number];
   pulseCooldown: [number, number, number];
+  legSlamRadius: number;
+  legSlamTriggerRange: number;
+  legSlamLungeDistance: number;
+  legSlamWindup: [number, number, number];
+  legSlamRecover: number;
+  legSlamDamage: [number, number, number];
+  legSlamCooldown: [number, number, number];
+  webDamage: [number, number, number];
+  webCooldown: [number, number, number];
+  webSpeed: [number, number, number];
+  acidDamage: [number, number, number];
+  acidCooldown: [number, number, number];
+  acidSpeed: [number, number, number];
   heatFactor: number;
   color: number;
 }
@@ -55,8 +68,8 @@ export const SPIDER_RELIQUARY_TIER_1: SpiderReliquaryConfig = {
   coreRpmCapacity: 620,
   coreRadius: 0.98,
   coreMass: 5.4,
-  coreMaxSpeed: [5.6, 7.6, 9.6],
-  coreAcceleration: [13.0, 16.0, 19.5],
+  coreMaxSpeed: [11.2, 15.2, 19.2],
+  coreAcceleration: [26.0, 32.0, 39.0],
   legCount: 4,
   legHp: 12,
   legRadius: 0.95,
@@ -84,11 +97,28 @@ export const SPIDER_RELIQUARY_TIER_1: SpiderReliquaryConfig = {
   pulseRadius: [3.0, 3.8, 4.6],
   pulseDamage: [12, 16, 21],
   pulseCooldown: [5.2, 4.1, 3.2],
+  legSlamRadius: 1.9,
+  legSlamTriggerRange: 3.8,
+  legSlamLungeDistance: 2.2,
+  legSlamWindup: [0.34, 0.3, 0.26],
+  legSlamRecover: 0.22,
+  legSlamDamage: [22, 30, 38],
+  legSlamCooldown: [0.9, 0.75, 0.6],
+  webDamage: [10, 14, 18],
+  webCooldown: [5.8, 4.5, 3.5],
+  webSpeed: [7.4, 8.2, 9.2],
+  acidDamage: [9, 12, 16],
+  acidCooldown: [3.8, 3.0, 2.4],
+  acidSpeed: [8.6, 9.4, 10.2],
   heatFactor: 1.05,
   color: 0x8b7351,
 };
 
-type SpiderAttackKind = 'stomp' | 'pulse';
+const ONE_LEG_HOP_WINDUP = 0.16;
+const ONE_LEG_HOP_AIR = 0.36;
+const ONE_LEG_HOP_RECOVER = 0.1;
+
+type SpiderAttackKind = 'stomp' | 'pulse' | 'leg_slam' | 'web' | 'acid';
 
 export interface SpiderReliquaryAttackEvent {
   kind: SpiderAttackKind;
@@ -96,6 +126,8 @@ export interface SpiderReliquaryAttackEvent {
   radius: number;
   damage: number;
   hitPlayer: boolean;
+  knockback?: number;
+  webDuration?: number;
 }
 
 interface SpiderAttack {
@@ -104,7 +136,11 @@ interface SpiderAttack {
   radius: number;
   damage: number;
   windup: number;
+  recover: number;
   elapsed: number;
+  facingAngle: number;
+  didLunge: boolean;
+  hitResolved: boolean;
   mesh: THREE.Mesh;
 }
 
@@ -153,12 +189,22 @@ export interface SpiderReliquaryState {
   collapseTimer: number;
   stompCooldown: number;
   pulseCooldown: number;
+  legSlamCooldown: number;
+  webCooldown: number;
+  acidCooldown: number;
   gaitTime: number;
   legCycleCursor: number;
   gaitGroupActive: 0 | 1;
   turnRate: number;
   visualPos: THREE.Vector3;
   corePassThroughCooldown: number;
+  oneLegHopWindup: number;
+  oneLegHopAir: number;
+  oneLegHopRecover: number;
+  oneLegHopDirX: number;
+  oneLegHopDirZ: number;
+  webProjectiles: Projectile[];
+  acidProjectiles: Projectile[];
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -312,9 +358,9 @@ function createAttackMesh(kind: SpiderAttackKind): THREE.Mesh {
     ? new THREE.RingGeometry(0.7, 1.0, 48)
     : new THREE.CircleGeometry(1, 40);
   const material = new THREE.MeshBasicMaterial({
-    color: kind === 'pulse' ? 0xffd26e : 0xff7042,
+    color: kind === 'pulse' ? 0xffd26e : kind === 'leg_slam' ? 0xff9b54 : 0xff7042,
     transparent: true,
-    opacity: kind === 'pulse' ? 0.18 : 0.24,
+    opacity: kind === 'pulse' ? 0.18 : kind === 'leg_slam' ? 0.22 : 0.24,
     side: THREE.DoubleSide,
     depthWrite: false,
   });
@@ -338,10 +384,10 @@ function scheduleStomp(
   phase: number,
 ): void {
   const radius = boss.config.stompRadius;
-  const limit = ARENA_SIZE - radius - 0.5;
+  const bounds = getArenaBounds();
   const point = {
-    x: clamp(target.x, -limit, limit),
-    z: clamp(target.z, -limit, limit),
+    x: clamp(target.x, bounds.minX + radius + 0.5, bounds.maxX - radius - 0.5),
+    z: clamp(target.z, bounds.minZ + radius + 0.5, bounds.maxZ - radius - 0.5),
   };
   const mesh = createAttackMesh('stomp');
   mesh.position.set(point.x, 0.05, point.z);
@@ -352,7 +398,49 @@ function scheduleStomp(
     radius,
     damage: boss.config.stompDamage[phase],
     windup: boss.config.stompWindup[phase],
+    recover: 0,
     elapsed: 0,
+    facingAngle: boss.facingAngle,
+    didLunge: false,
+    hitResolved: false,
+    mesh,
+  });
+}
+
+function scheduleLegSlam(
+  boss: SpiderReliquaryState,
+  facingAngle: number,
+  phase: number,
+): void {
+  const radius = boss.config.legSlamRadius;
+  const bounds = getArenaBounds();
+  const lungeDistance = boss.config.legSlamLungeDistance;
+  const point = {
+    x: clamp(
+      boss.collidable.pos.x + Math.sin(facingAngle) * lungeDistance,
+      bounds.minX + radius + 0.35,
+      bounds.maxX - radius - 0.35,
+    ),
+    z: clamp(
+      boss.collidable.pos.z + Math.cos(facingAngle) * lungeDistance,
+      bounds.minZ + radius + 0.35,
+      bounds.maxZ - radius - 0.35,
+    ),
+  };
+  const mesh = createAttackMesh('leg_slam');
+  mesh.position.set(point.x, 0.05, point.z);
+  mesh.scale.set(radius, radius, 1);
+  boss.attacks.push({
+    kind: 'leg_slam',
+    point,
+    radius,
+    damage: boss.config.legSlamDamage[phase],
+    windup: boss.config.legSlamWindup[phase],
+    recover: boss.config.legSlamRecover,
+    elapsed: 0,
+    facingAngle,
+    didLunge: false,
+    hitResolved: false,
     mesh,
   });
 }
@@ -368,7 +456,11 @@ function schedulePulse(boss: SpiderReliquaryState, phase: number): void {
     radius,
     damage: boss.config.pulseDamage[phase],
     windup: 0.7,
+    recover: 0,
     elapsed: 0,
+    facingAngle: boss.facingAngle,
+    didLunge: false,
+    hitResolved: false,
     mesh,
   });
 }
@@ -587,12 +679,22 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
     collapseTimer: 0,
     stompCooldown: 1.1,
     pulseCooldown: 2.4,
+    legSlamCooldown: 1.25,
+    webCooldown: 2.3,
+    acidCooldown: 1.6,
     gaitTime: Math.random() * Math.PI * 2,
     legCycleCursor: 0,
     gaitGroupActive: 0,
     turnRate: 0,
     visualPos: new THREE.Vector3(pos.x, 0, pos.z),
     corePassThroughCooldown: 0,
+    oneLegHopWindup: 0,
+    oneLegHopAir: 0,
+    oneLegHopRecover: 0,
+    oneLegHopDirX: 0,
+    oneLegHopDirZ: 0,
+    webProjectiles: [],
+    acidProjectiles: [],
   };
 
   bodyGroup.position.set(pos.x, 0, pos.z);
@@ -605,6 +707,7 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
 export function syncSpiderReliquaryLegs(boss: SpiderReliquaryState, delta: number): void {
   if (!boss.alive) return;
   const core = boss.collidable;
+  const oneLegMode = getAliveLegCount(boss) === 1;
   const phase = getPhaseIndex(boss);
   const hipY = 1.88 - (boss.collapseTimer > 0 ? 0.45 : 0);
   const bodySpeed = Math.hypot(core.vel.x, core.vel.z);
@@ -634,7 +737,8 @@ export function syncSpiderReliquaryLegs(boss: SpiderReliquaryState, delta: numbe
   const activeGroup = boss.gaitGroupActive;
   const stepThreshold = boss.config.stepThreshold
     * (boss.collapseTimer > 0 ? 0.72 : 1.0)
-    * (1.0 - turnUrgency * 0.28);
+    * (1.0 - turnUrgency * 0.28)
+    * (oneLegMode ? 1.45 : 1.0);
   const entries: Array<{
     leg: SpiderLeg;
     hip: THREE.Vector3;
@@ -665,8 +769,8 @@ export function syncSpiderReliquaryLegs(boss: SpiderReliquaryState, delta: numbe
       hipY,
       boss.visualPos.z + outward.z * leg.hipRadius,
     );
-    const strideLead = boss.config.strideLead + bodySpeed * 0.2 + turnUrgency * 0.45;
-    const plantedTurnBias = leg.stepProgress >= 1 ? 0.42 : 1.0;
+    const strideLead = (boss.config.strideLead + bodySpeed * 0.2 + turnUrgency * 0.45) * (oneLegMode ? 1.48 : 1.0);
+    const plantedTurnBias = leg.stepProgress >= 1 ? (oneLegMode ? 0.2 : 0.42) : 1.0;
     const supportFoot = new THREE.Vector3(
       boss.visualPos.x + outward.x * leg.footRadius
         + tangent.x * turnSign * turnUrgency * boss.config.plantedSway * plantedTurnBias,
@@ -689,7 +793,9 @@ export function syncSpiderReliquaryLegs(boss: SpiderReliquaryState, delta: numbe
 
     const idealSupportFoot = findSafeFootTarget(boss, hip, supportFoot, outward, tangent, leg.footPos);
     let stepTarget = findSafeFootTarget(boss, hip, strideFoot, outward, tangent, idealSupportFoot);
-    const minStride = boss.config.minStrideDistance * (1.0 + turnUrgency * 0.25);
+    const minStride = boss.config.minStrideDistance
+      * (1.0 + turnUrgency * 0.25)
+      * (oneLegMode ? 1.6 : 1.0);
     if (leg.footPos.lengthSq() > 0 && leg.footPos.distanceTo(stepTarget) < minStride) {
       const strideDir = stepTarget.clone().sub(leg.footPos);
       if (strideDir.lengthSq() < 1e-4) {
@@ -765,7 +871,7 @@ export function syncSpiderReliquaryLegs(boss: SpiderReliquaryState, delta: numbe
       if (leg.stepProgress >= 1) {
         leg.footPos.copy(leg.footTo);
         leg.plantedTime = 0;
-        leg.replantLock = 0.24;
+        leg.replantLock = oneLegMode ? 0.4 : 0.24;
       }
     }
 
@@ -831,21 +937,31 @@ export function updateSpiderReliquaryAI(
   boss: SpiderReliquaryState,
   playerPos: Vec2,
   playerRadius: number,
+  playerWebbed: boolean,
   delta: number,
 ): SpiderReliquaryAttackEvent[] {
   if (!boss.alive) return [];
 
   const phase = getPhaseIndex(boss);
   const aliveLegs = boss.legs.filter((leg) => leg.alive);
+  const oneLegMode = aliveLegs.length === 1;
   const stability = clamp(aliveLegs.length / boss.config.legCount, 0.35, 1.0);
-  const maxSpeed = boss.config.coreMaxSpeed[phase] * (0.6 + stability * 0.4);
+  const maxSpeed = oneLegMode
+    ? boss.config.coreMaxSpeed[phase] * 1.5
+    : boss.config.coreMaxSpeed[phase] * (0.6 + stability * 0.4);
   setMovementMaxSpeed(boss.id, maxSpeed);
 
   boss.gaitTime += delta;
   boss.collapseTimer = Math.max(0, boss.collapseTimer - delta);
   boss.stompCooldown = Math.max(0, boss.stompCooldown - delta);
   boss.pulseCooldown = Math.max(0, boss.pulseCooldown - delta);
+  boss.legSlamCooldown = Math.max(0, boss.legSlamCooldown - delta);
+  boss.webCooldown = Math.max(0, boss.webCooldown - delta);
+  boss.acidCooldown = Math.max(0, boss.acidCooldown - delta);
   boss.corePassThroughCooldown = Math.max(0, boss.corePassThroughCooldown - delta);
+  boss.oneLegHopWindup = Math.max(0, boss.oneLegHopWindup - delta);
+  boss.oneLegHopAir = Math.max(0, boss.oneLegHopAir - delta);
+  boss.oneLegHopRecover = Math.max(0, boss.oneLegHopRecover - delta);
 
   const body = boss.collidable;
   const dx = playerPos.x - body.pos.x;
@@ -855,15 +971,93 @@ export function updateSpiderReliquaryAI(
   const facingDelta = wrapAngle(targetAngle - boss.facingAngle) * Math.min(3.4 * delta, 1.0);
   boss.facingAngle += facingDelta;
   boss.turnRate = lerp(boss.turnRate, facingDelta / Math.max(delta, 1e-4), Math.min(8 * delta, 1));
+  const activeRam = boss.attacks.find((attack) => attack.kind === 'leg_slam');
+  const isRamming = activeRam !== undefined;
 
-  if (boss.collapseTimer > 0) {
+  if (activeRam) {
+    const ramAngleDelta = wrapAngle(activeRam.facingAngle - boss.facingAngle);
+    boss.facingAngle += ramAngleDelta * Math.min(10 * delta, 1.0);
+    const forwardX = Math.sin(activeRam.facingAngle);
+    const forwardZ = Math.cos(activeRam.facingAngle);
+    const currentSpeed = Math.hypot(body.vel.x, body.vel.z);
+    if (activeRam.elapsed < activeRam.windup) {
+      const recoilSpeed = Math.min(1.8, 0.7 + currentSpeed * 0.08);
+      body.vel.x = lerp(body.vel.x, -forwardX * recoilSpeed, Math.min(10 * delta, 1));
+      body.vel.z = lerp(body.vel.z, -forwardZ * recoilSpeed, Math.min(10 * delta, 1));
+    } else if (!activeRam.didLunge) {
+      const lungeSpeed = boss.config.coreMaxSpeed[phase] * (oneLegMode ? 1.2 : 1.08) + 4.2;
+      body.vel.x = forwardX * lungeSpeed;
+      body.vel.z = forwardZ * lungeSpeed;
+      activeRam.didLunge = true;
+    } else {
+      const recoverT = clamp((activeRam.elapsed - activeRam.windup) / Math.max(activeRam.recover, 0.001), 0, 1);
+      const recoverDamp = lerp(0.96, 0.84, recoverT);
+      body.vel.x *= recoverDamp;
+      body.vel.z *= recoverDamp;
+    }
+  } else if (oneLegMode) {
+    const nx = dx / dist;
+    const nz = dz / dist;
+    const sidewaysX = -nz;
+    const sidewaysZ = nx;
+
+    if (boss.oneLegHopAir > 0) {
+      if (boss.oneLegHopAir <= delta) {
+        body.vel.x *= 0.86;
+        body.vel.z *= 0.86;
+        boss.oneLegHopRecover = ONE_LEG_HOP_RECOVER;
+      } else {
+        body.vel.x *= 0.995;
+        body.vel.z *= 0.995;
+      }
+    } else if (boss.oneLegHopWindup > 0) {
+      body.vel.x *= 0.55;
+      body.vel.z *= 0.55;
+      if (boss.oneLegHopWindup <= delta) {
+        let dirX = nx;
+        let dirZ = nz;
+        const orbitSign = Math.sin(boss.gaitTime * 1.15) >= 0 ? 1 : -1;
+        if (dist < 2.8) {
+          dirX = nx * 0.94 + sidewaysX * orbitSign * 0.18;
+          dirZ = nz * 0.94 + sidewaysZ * orbitSign * 0.18;
+        } else if (dist < 5.4) {
+          dirX += sidewaysX * orbitSign * 0.12;
+          dirZ += sidewaysZ * orbitSign * 0.12;
+        }
+        const dirLen = Math.hypot(dirX, dirZ) || 1;
+        dirX /= dirLen;
+        dirZ /= dirLen;
+
+        const hopSpeed = boss.config.coreMaxSpeed[phase] * (phase === 2 ? 1.55 : 1.35) + 2.4;
+        body.vel.x = dirX * hopSpeed;
+        body.vel.z = dirZ * hopSpeed;
+        boss.oneLegHopDirX = dirX;
+        boss.oneLegHopDirZ = dirZ;
+        boss.oneLegHopAir = ONE_LEG_HOP_AIR;
+        boss.oneLegHopRecover = 0;
+      }
+    } else {
+      const recoveryDrag = boss.oneLegHopRecover > 0 ? 0.9 : 0.94;
+      body.vel.x *= recoveryDrag;
+      body.vel.z *= recoveryDrag;
+      const desiredRange = 3.8;
+      const shouldHop = dist > desiredRange
+        || Math.abs(boss.turnRate) > 0.65
+        || boss.collapseTimer > 0.12;
+      if (boss.oneLegHopRecover <= 0 && shouldHop) {
+        boss.oneLegHopWindup = ONE_LEG_HOP_WINDUP;
+      }
+    }
+  } else if (boss.collapseTimer > 0) {
     body.vel.x *= 0.84;
     body.vel.z *= 0.84;
   } else {
     const accel = boss.config.coreAcceleration[phase];
     const nx = dx / dist;
     const nz = dz / dist;
-    const desiredRange = phase === 0 ? 7.2 : phase === 1 ? 6.2 : 5.0;
+    const desiredRange = playerWebbed
+      ? 3.1
+      : phase === 0 ? 7.2 : phase === 1 ? 6.2 : 5.0;
     const orbitDir = Math.sin(boss.gaitTime * 1.25) >= 0 ? 1 : -1;
 
     if (dist > desiredRange) {
@@ -876,11 +1070,22 @@ export function updateSpiderReliquaryAI(
       body.vel.z -= nz * accel * 0.16 * delta;
     }
 
-    const limit = ARENA_SIZE - 4.0;
-    if (body.pos.x > limit) body.vel.x -= accel * delta * 0.7;
-    if (body.pos.x < -limit) body.vel.x += accel * delta * 0.7;
-    if (body.pos.z > limit) body.vel.z -= accel * delta * 0.7;
-    if (body.pos.z < -limit) body.vel.z += accel * delta * 0.7;
+    const bounds = getArenaBounds();
+    const minX = bounds.minX + 4.0;
+    const maxX = bounds.maxX - 4.0;
+    const minZ = bounds.minZ + 4.0;
+    const maxZ = bounds.maxZ - 4.0;
+    if (body.pos.x > maxX) body.vel.x -= accel * delta * 0.7;
+    if (body.pos.x < minX) body.vel.x += accel * delta * 0.7;
+    if (body.pos.z > maxZ) body.vel.z -= accel * delta * 0.7;
+    if (body.pos.z < minZ) body.vel.z += accel * delta * 0.7;
+  }
+
+  if (!isRamming && dist <= boss.config.legSlamTriggerRange + playerRadius && boss.legSlamCooldown <= 0) {
+    scheduleLegSlam(boss, targetAngle, phase);
+    boss.legSlamCooldown = boss.config.legSlamCooldown[phase];
+    boss.webCooldown = Math.max(boss.webCooldown, 0.9);
+    boss.acidCooldown = Math.max(boss.acidCooldown, 0.7);
   }
 
   if (aliveLegs.length > 0 && boss.stompCooldown <= 0) {
@@ -908,34 +1113,74 @@ export function updateSpiderReliquaryAI(
     const attack = boss.attacks[i];
     attack.elapsed += delta;
     const progress = clamp(attack.elapsed / attack.windup, 0, 1);
-    attack.mesh.position.x = attack.kind === 'pulse' ? boss.collidable.pos.x : attack.point.x;
-    attack.mesh.position.z = attack.kind === 'pulse' ? boss.collidable.pos.z : attack.point.z;
+    if (attack.kind === 'pulse') {
+      attack.mesh.position.x = boss.collidable.pos.x;
+      attack.mesh.position.z = boss.collidable.pos.z;
+    } else if (attack.kind === 'leg_slam') {
+      const lungeDistance = boss.config.legSlamLungeDistance;
+      attack.point.x = clamp(
+        boss.collidable.pos.x + Math.sin(attack.facingAngle) * lungeDistance,
+        getArenaBounds().minX + attack.radius + 0.35,
+        getArenaBounds().maxX - attack.radius - 0.35,
+      );
+      attack.point.z = clamp(
+        boss.collidable.pos.z + Math.cos(attack.facingAngle) * lungeDistance,
+        getArenaBounds().minZ + attack.radius + 0.35,
+        getArenaBounds().maxZ - attack.radius - 0.35,
+      );
+      attack.mesh.position.x = attack.point.x;
+      attack.mesh.position.z = attack.point.z;
+    } else {
+      attack.mesh.position.x = attack.point.x;
+      attack.mesh.position.z = attack.point.z;
+    }
 
     const scaleBoost = attack.kind === 'pulse'
       ? 0.84 + progress * 0.34
-      : 0.92 + progress * 0.12;
+      : attack.kind === 'leg_slam'
+        ? 0.78 + progress * 0.46
+        : 0.92 + progress * 0.12;
     attack.mesh.scale.set(attack.radius * scaleBoost, attack.radius * scaleBoost, 1);
 
     const material = attack.mesh.material as THREE.MeshBasicMaterial;
     material.opacity = attack.kind === 'pulse'
       ? 0.1 + progress * 0.22
-      : 0.15 + progress * 0.28;
+      : attack.kind === 'leg_slam'
+        ? 0.12 + progress * 0.3
+        : 0.15 + progress * 0.28;
 
-    if (attack.elapsed < attack.windup) continue;
+    if (!attack.hitResolved && attack.elapsed >= attack.windup) {
+      const point = attack.kind === 'pulse'
+        ? { x: boss.collidable.pos.x, z: boss.collidable.pos.z }
+        : attack.point;
+      const distToPlayer = Math.hypot(playerPos.x - point.x, playerPos.z - point.z);
+      events.push({
+        kind: attack.kind,
+        point: { x: point.x, y: attack.kind === 'leg_slam' ? 0.34 : 0.18, z: point.z },
+        radius: attack.radius,
+        damage: attack.damage,
+        hitPlayer: distToPlayer <= attack.radius + playerRadius,
+        knockback: attack.kind === 'leg_slam' ? (phase === 2 ? 39 : 31.5) : undefined,
+      });
+      attack.hitResolved = true;
+      if (attack.kind !== 'leg_slam') {
+        removeAttack(attack);
+        boss.attacks.splice(i, 1);
+        continue;
+      }
+    }
 
-    const point = attack.kind === 'pulse'
-      ? { x: boss.collidable.pos.x, z: boss.collidable.pos.z }
-      : attack.point;
-    const distToPlayer = Math.hypot(playerPos.x - point.x, playerPos.z - point.z);
-    events.push({
-      kind: attack.kind,
-      point: { x: point.x, y: 0.18, z: point.z },
-      radius: attack.radius,
-      damage: attack.damage,
-      hitPlayer: distToPlayer <= attack.radius + playerRadius,
-    });
-    removeAttack(attack);
-    boss.attacks.splice(i, 1);
+    if (attack.kind === 'leg_slam') {
+      const fadeT = clamp((attack.elapsed - attack.windup) / Math.max(attack.recover, 0.001), 0, 1);
+      material.opacity = attack.hitResolved
+        ? lerp(0.34, 0.02, fadeT)
+        : 0.12 + progress * 0.3;
+      if (attack.hitResolved && attack.elapsed >= attack.windup + attack.recover) {
+        removeAttack(attack);
+        boss.attacks.splice(i, 1);
+      }
+      continue;
+    }
   }
 
   return events;
@@ -952,6 +1197,7 @@ export function updateSpiderReliquaryVisuals(
   const body = boss.collidable;
   const rpmFrac = body.rpm / boss.config.coreRpmCapacity;
   const aliveLegs = getAliveLegCount(boss);
+  const oneLegMode = aliveLegs === 1;
   const collapseFrac = clamp(boss.collapseTimer / boss.config.collapseDuration, 0, 1);
 
   boss.bodyGroup.position.set(boss.visualPos.x, 0, boss.visualPos.z);
@@ -983,6 +1229,26 @@ export function updateSpiderReliquaryVisuals(
   const supportInstability = steppingCount / Math.max(1, supportCount);
   const meanFootLift = supportCount > 0 ? averageFootLift / supportCount : 0;
   const strideLift = clamp(meanFootLift / Math.max(boss.config.stepHeight, 0.001), 0, 1);
+  const hopCrouch = oneLegMode
+    ? smoothStep01(clamp(boss.oneLegHopWindup / ONE_LEG_HOP_WINDUP, 0, 1))
+    : 0;
+  const hopAirProgress = oneLegMode && boss.oneLegHopAir > 0
+    ? 1 - clamp(boss.oneLegHopAir / ONE_LEG_HOP_AIR, 0, 1)
+    : 0;
+  const hopArc = oneLegMode ? Math.sin(hopAirProgress * Math.PI) : 0;
+  const hopRecover = oneLegMode
+    ? clamp(boss.oneLegHopRecover / ONE_LEG_HOP_RECOVER, 0, 1)
+    : 0;
+  const activeRam = boss.attacks.find((attack) => attack.kind === 'leg_slam');
+  const ramWindup = activeRam && activeRam.elapsed < activeRam.windup
+    ? smoothStep01(clamp(activeRam.elapsed / activeRam.windup, 0, 1))
+    : 0;
+  const ramRecoverT = activeRam && activeRam.hitResolved
+    ? clamp((activeRam.elapsed - activeRam.windup) / Math.max(activeRam.recover, 0.001), 0, 1)
+    : 0;
+  const ramLunge = activeRam && activeRam.hitResolved
+    ? Math.sin((1 - ramRecoverT) * Math.PI * 0.5)
+    : 0;
 
   const wobble = Math.sin(time * (phase === 2 ? 9 : 5)) * 0.04;
   const gaitBob = Math.sin(boss.gaitTime * 2.1) * (0.065 + supportInstability * 0.04);
@@ -990,10 +1256,25 @@ export function updateSpiderReliquaryVisuals(
     - collapseFrac * 0.32
     - supportInstability * 0.08
     + strideLift * 0.24
+    - hopCrouch * 0.22
+    + hopArc * 0.82
+    - hopRecover * 0.04
+    - ramWindup * 0.1
+    + ramLunge * 0.08
     + gaitBob
     + wobble;
-  const desiredRoll = deadBiasX * 0.16 - supportBiasX * 0.11 + collapseFrac * 0.24 * Math.sin(time * 8);
-  const desiredPitch = -deadBiasZ * 0.16 + supportBiasZ * 0.11 + collapseFrac * 0.18 * Math.cos(time * 7);
+  boss.bodyRoot.position.z = -ramWindup * 0.6 + ramLunge * 1.15;
+  const hopLean = hopArc * 0.34 - hopCrouch * 0.1;
+  const desiredRoll = deadBiasX * 0.16
+    - supportBiasX * 0.11
+    + collapseFrac * 0.24 * Math.sin(time * 8)
+    + boss.oneLegHopDirX * hopLean;
+  const desiredPitch = -deadBiasZ * 0.16
+    + supportBiasZ * 0.11
+    + collapseFrac * 0.18 * Math.cos(time * 7)
+    - boss.oneLegHopDirZ * hopLean
+    - ramWindup * 0.12
+    + ramLunge * 0.28;
   boss.bodyRoot.rotation.z += (desiredRoll - boss.bodyRoot.rotation.z) * Math.min(4.8 * delta, 1);
   boss.bodyRoot.rotation.x += (desiredPitch - boss.bodyRoot.rotation.x) * Math.min(4.8 * delta, 1);
 
@@ -1033,6 +1314,14 @@ export function destroySpiderReliquary(boss: SpiderReliquaryState): void {
   untagCollidable(boss.collidable);
   const coreIdx = collidables.indexOf(boss.collidable);
   if (coreIdx !== -1) collidables.splice(coreIdx, 1);
+  for (const projectile of boss.webProjectiles) {
+    projectile.alive = false;
+    scene.remove(projectile.mesh);
+  }
+  for (const projectile of boss.acidProjectiles) {
+    projectile.alive = false;
+    scene.remove(projectile.mesh);
+  }
 
   scene.remove(boss.bodyGroup);
   scene.remove(boss.hpGroup);

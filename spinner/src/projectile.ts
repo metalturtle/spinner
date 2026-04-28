@@ -216,6 +216,57 @@ const poisonGlareMat = new THREE.ShaderMaterial({
   blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
 });
 
+// ─── Web bolt materials (white-blue) ───────────────────────────────────────
+
+const webBoltMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uSize:   { value: new THREE.Vector2(0.38, 0.34) },
+    uVelDir: { value: new THREE.Vector2(0, 1) },
+    uPerp:   { value: 0.0 },
+  },
+  vertexShader:   VERT,
+  fragmentShader: /* glsl */ `
+    varying vec2 vUV;
+    void main() {
+      vec2 uv = vUV - 0.5;
+      float edgeDist = max(abs(uv.x), abs(uv.y));
+      float edgeFade = 1.0 - smoothstep(0.35, 0.5, edgeDist);
+      uv.x *= 0.34;
+      float d = length(uv) * 2.0;
+      float core = exp(-d * 10.0);
+      float glow = exp(-d * 3.0) * 0.34;
+      float alpha = (core + glow) * edgeFade;
+      vec3 col = mix(vec3(0.95, 0.98, 1.0), vec3(0.55, 0.78, 1.0), d * 0.7);
+      gl_FragColor = vec4(col, alpha);
+    }
+  `,
+  transparent: true, depthWrite: false,
+  blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+});
+
+const webGlareMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uSize:   { value: new THREE.Vector2(2.8, 0.28) },
+    uVelDir: { value: new THREE.Vector2(0, 1) },
+    uPerp:   { value: 1.0 },
+  },
+  vertexShader:   VERT,
+  fragmentShader: /* glsl */ `
+    varying vec2 vUV;
+    void main() {
+      vec2 uv = vUV - 0.5;
+      float edgeFade = 1.0 - smoothstep(0.35, 0.5, abs(uv.x));
+      float streakY  = exp(-abs(uv.y) * 75.0);
+      float streakX  = exp(-uv.x * uv.x * 7.0);
+      float alpha    = streakY * streakX * 0.36 * edgeFade;
+      vec3 col = vec3(0.85, 0.93, 1.0);
+      gl_FragColor = vec4(col, alpha);
+    }
+  `,
+  transparent: true, depthWrite: false,
+  blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+});
+
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createProjectile(
@@ -275,6 +326,40 @@ export function createPoisonProjectile(
   glare.onBeforeRender = () => { poisonGlareMat.uniforms.uVelDir.value.set(dx, dz); };
 
   const light = new THREE.PointLight(0x33ff00, 3.0, 5, 1.5);
+  group.add(light);
+
+  group.position.set(pos.x, 0.5, pos.z);
+  scene.add(group);
+
+  return {
+    pos:      { x: pos.x, z: pos.z },
+    vel:      { x: dir.x * speed, z: dir.z * speed },
+    lifetime: PROJECTILE_LIFETIME,
+    mesh:     group,
+    alive:    true,
+    damage,
+  };
+}
+
+export function createWebProjectile(
+  pos:    Vec2,
+  dir:    Vec2,
+  speed:  number,
+  damage: number,
+): Projectile {
+  const group = new THREE.Group();
+
+  const bolt  = new THREE.Mesh(sharedGeo, webBoltMat);
+  const glare = new THREE.Mesh(sharedGeo, webGlareMat);
+  group.add(bolt);
+  group.add(glare);
+
+  const dx = dir.x;
+  const dz = dir.z;
+  bolt.onBeforeRender  = () => { webBoltMat.uniforms.uVelDir.value.set(dx, dz); };
+  glare.onBeforeRender = () => { webGlareMat.uniforms.uVelDir.value.set(dx, dz); };
+
+  const light = new THREE.PointLight(0xbfd8ff, 2.2, 4.5, 1.5);
   group.add(light);
 
   group.position.set(pos.x, 0.5, pos.z);
