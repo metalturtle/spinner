@@ -936,8 +936,8 @@ export function updateSpiderReliquaryVisuals(
   const aliveLegs = getAliveLegCount(boss);
   const collapseFrac = clamp(boss.collapseTimer / boss.config.collapseDuration, 0, 1);
 
-  boss.bodyGroup.position.set(boss.visualPos.x, 0, boss.visualPos.z);
-  boss.hpGroup.position.set(boss.visualPos.x, 0, boss.visualPos.z);
+  boss.bodyGroup.position.set(body.pos.x, 0, body.pos.z);
+  boss.hpGroup.position.set(body.pos.x, 0, body.pos.z);
   boss.bodyGroup.rotation.y = boss.facingAngle;
   updateHpBar(boss.hpBarFill, rpmFrac, 1.0);
 
@@ -947,7 +947,6 @@ export function updateSpiderReliquaryVisuals(
   let supportZ = 0;
   let supportCount = 0;
   let steppingCount = 0;
-  let averageFootLift = 0;
   for (const leg of boss.legs) {
     if (!leg.alive) {
       deadBiasX += Math.sin(leg.baseAngle + boss.facingAngle);
@@ -957,23 +956,14 @@ export function updateSpiderReliquaryVisuals(
     supportX += leg.footPos.x;
     supportZ += leg.footPos.z;
     supportCount += 1;
-    averageFootLift += leg.footPos.y;
     if (leg.stepProgress < 1) steppingCount += 1;
   }
   const supportBiasX = supportCount > 0 ? supportX / supportCount - body.pos.x : 0;
   const supportBiasZ = supportCount > 0 ? supportZ / supportCount - body.pos.z : 0;
   const supportInstability = steppingCount / Math.max(1, supportCount);
-  const meanFootLift = supportCount > 0 ? averageFootLift / supportCount : 0;
-  const strideLift = clamp(meanFootLift / Math.max(boss.config.stepHeight, 0.001), 0, 1);
 
-  const wobble = Math.sin(time * (phase === 2 ? 9 : 5)) * 0.045;
-  const gaitBob = Math.sin(boss.gaitTime * 2.2) * (0.05 + supportInstability * 0.03);
-  boss.bodyRoot.position.y = 0.92
-    - collapseFrac * 0.34
-    - supportInstability * 0.1
-    + strideLift * 0.22
-    + gaitBob
-    + wobble;
+  const wobble = Math.sin(time * (phase === 2 ? 9 : 5)) * 0.03;
+  boss.bodyRoot.position.y = 0.94 - collapseFrac * 0.34 - supportInstability * 0.06 + wobble;
   const desiredRoll = deadBiasX * 0.16 - supportBiasX * 0.11 + collapseFrac * 0.24 * Math.sin(time * 8);
   const desiredPitch = -deadBiasZ * 0.16 + supportBiasZ * 0.11 + collapseFrac * 0.18 * Math.cos(time * 7);
   boss.bodyRoot.rotation.z += (desiredRoll - boss.bodyRoot.rotation.z) * Math.min(4.8 * delta, 1);

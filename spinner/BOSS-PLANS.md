@@ -190,6 +190,79 @@ Control plan:
 - group attacks into patterns rather than thinking per-leg AI
 - prioritize phase silhouette changes over full leg realism
 
+### Web Snare Attack Plan
+
+Status: planned, intentionally deferred until locomotion feels strong
+
+Fantasy:
+
+- the reliquary lashes out with a ceremonial web tether
+- the player is dragged violently into the shrine body
+- the core/body impact deals RPM damage
+- the player is then repelled back into the arena
+
+Why it fits:
+
+- makes the boss feel more distinctly spider-like
+- turns the body/core into a dramatic danger point
+- reinforces the collision-first identity by using the player as the incoming object
+- creates a memorable special attack without relying on standard projectile combat
+
+Recommended attack flow:
+
+1. Telegraph
+- the boss braces and briefly commits to the attack
+- front leg pose tightens or lowers
+- a clear web/capture cue forms between the boss and the player
+- short but readable warning window
+
+2. Latch check
+- if the player is inside the capture lane/radius when the attack resolves, the web connects
+- treat this as a scripted capture event, not a standard projectile collision
+
+3. Pull phase
+- player motion is temporarily overridden or heavily constrained
+- the player is reeled quickly toward the boss
+- this should feel sharp and violent, not like a slow drag
+
+4. Core impact
+- when the player reaches a close radius near the shrine body/core, apply a burst of RPM damage
+- use sparks, impact flash, and core glow to sell the slam
+- the damage should come from the impact moment, not from the initial latch
+
+5. Repel
+- after impact, launch the player outward away from the boss
+- the player regains motion through the repel rather than being held in place
+
+Implementation approach:
+
+- model this as a Spider Reliquary attack state, not as a generic projectile
+- the boss update should emit a `webSnare` event on successful latch
+- `game.ts` should own the temporary player pull state and handle:
+  - pull motion
+  - impact damage
+  - repel impulse
+- avoid relying on normal collision resolution for the pulled-in impact, since that is likely to jitter or be hard to tune
+
+Recommended tuning:
+
+- low frequency, high drama
+- stronger in later phases, but still clearly telegraphed
+- fast pull, short total duration
+- never chain immediately into another unavoidable capture
+
+First-pass scope:
+
+- single-target web snare only
+- no lingering floor webs
+- no immobilize trap after impact
+- no combo chain beyond pull, impact, and repel
+
+Why defer it for now:
+
+- the current priority is making the leg-driven locomotion feel convincing
+- the web snare will land much better once the boss already feels alive and spider-like in motion
+
 
 ## 2. The Gravity Organ
 
