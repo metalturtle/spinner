@@ -1,0 +1,324 @@
+{
+  "version": 4,
+  "unit": "m",
+  "gridSize": 1,
+  "polygons": [
+    {
+      "id": "poly_mokabq6bllzlc8",
+      "name": "Room 1 - Bottom",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": -30,
+          "y": -21
+        },
+        {
+          "x": 31,
+          "y": -21
+        },
+        {
+          "x": 31,
+          "y": -20
+        },
+        {
+          "x": -30,
+          "y": -20
+        }
+      ],
+      "properties": {},
+      "color": "#5577aa"
+    },
+    {
+      "id": "poly_mokabq6c7insdn",
+      "name": "Room 1 - Top",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": -30,
+          "y": 28
+        },
+        {
+          "x": 31,
+          "y": 28
+        },
+        {
+          "x": 31,
+          "y": 29
+        },
+        {
+          "x": -30,
+          "y": 29
+        }
+      ],
+      "properties": {},
+      "color": "#5577aa"
+    },
+    {
+      "id": "poly_mokabq6dbb9n58",
+      "name": "Room 1 - Left",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": -30,
+          "y": -20
+        },
+        {
+          "x": -29,
+          "y": -20
+        },
+        {
+          "x": -29,
+          "y": 28
+        },
+        {
+          "x": -30,
+          "y": 28
+        }
+      ],
+      "properties": {},
+      "color": "#5577aa"
+    },
+    {
+      "id": "poly_mokabq6d2iw7hg",
+      "name": "Room 1 - Right",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 30,
+          "y": -20
+        },
+        {
+          "x": 31,
+          "y": -20
+        },
+        {
+          "x": 31,
+          "y": 28
+        },
+        {
+          "x": 30,
+          "y": 28
+        }
+      ],
+      "properties": {},
+      "color": "#5577aa"
+    },
+    {
+      "id": "poly_mokabq6dp7tg8p",
+      "name": "Room 1 - Floor",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": -29,
+          "y": -20
+        },
+        {
+          "x": 30,
+          "y": -20
+        },
+        {
+          "x": 30,
+          "y": 28
+        },
+        {
+          "x": -29,
+          "y": 28
+        }
+      ],
+      "properties": {},
+      "color": "#2a3a4a",
+      "textureId": "sci-fi",
+      "textureScale": 4
+    }
+  ],
+  "circles": [],
+  "entities": [
+    {
+      "id": "ent_mokac8ohg3b47j",
+      "name": "Player Spawn 1",
+      "type": "enemy_spinner_tier_2",
+      "position": {
+        "x": 2,
+        "y": 14
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokal5ndqg1xpy",
+      "name": "Player Spawn 2",
+      "type": "pickup",
+      "position": {
+        "x": -12,
+        "y": 0
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalnkhjgwdw1",
+      "name": "Pickup 3",
+      "type": "pickup",
+      "position": {
+        "x": -5,
+        "y": -3
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalo1mwbals3",
+      "name": "Pickup 4",
+      "type": "pickup",
+      "position": {
+        "x": 7,
+        "y": -8
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalog2ong3pu",
+      "name": "Pickup 5",
+      "type": "pickup",
+      "position": {
+        "x": 16,
+        "y": 2
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalou5ed3c1x",
+      "name": "Pickup 6",
+      "type": "pickup",
+      "position": {
+        "x": 3,
+        "y": 2
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalpabe17xlk",
+      "name": "Pickup 7",
+      "type": "pickup",
+      "position": {
+        "x": -4,
+        "y": -12
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalpph137023",
+      "name": "Pickup 8",
+      "type": "pickup",
+      "position": {
+        "x": -13,
+        "y": 6
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalq406gzllk",
+      "name": "Pickup 9",
+      "type": "pickup",
+      "position": {
+        "x": -17,
+        "y": 18
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalqk6q2wulv",
+      "name": "Pickup 10",
+      "type": "pickup",
+      "position": {
+        "x": 11,
+        "y": 23
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalr6fxia170",
+      "name": "Pickup 11",
+      "type": "pickup",
+      "position": {
+        "x": 26,
+        "y": 5
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalrnr4veala",
+      "name": "Pickup 12",
+      "type": "pickup",
+      "position": {
+        "x": 22,
+        "y": -11
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalse8ax30pm",
+      "name": "Pickup 13",
+      "type": "pickup",
+      "position": {
+        "x": -22,
+        "y": -14
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalswpknkqc7",
+      "name": "Pickup 14",
+      "type": "pickup",
+      "position": {
+        "x": -22,
+        "y": 9
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokaltjon8vk0k",
+      "name": "Pickup 15",
+      "type": "pickup",
+      "position": {
+        "x": 18,
+        "y": 18
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokaltyyxhvqku",
+      "name": "Pickup 16",
+      "type": "pickup",
+      "position": {
+        "x": -5,
+        "y": 23
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_moke7wmyuawe4d",
+      "name": "Player Spawn 17",
+      "type": "enemy_spinner_tier_2",
+      "position": {
+        "x": -4,
+        "y": 14
+      },
+      "rotation": 0,
+      "properties": {}
+    }
+  ]
+}

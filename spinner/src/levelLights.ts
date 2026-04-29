@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { LevelData, LevelEntity } from './levelLoader';
+import { lvPos, type LevelData, type LevelEntity } from './levelLoader';
 
 const levelLightRoots: THREE.Object3D[] = [];
 
@@ -20,6 +20,7 @@ function hasSpawnTrigger(entity: LevelEntity): boolean {
 
 export function createLevelPointLightRoot(entity: LevelEntity): THREE.Object3D {
   const props = entity.properties ?? {};
+  const pos = lvPos(entity.position);
   const color = parseColor(props.color, '#ffd080');
   const intensity = parseNumber(props.intensity, 2.0, 0);
   const range = parseNumber(props.range, 8, 0.5);
@@ -27,7 +28,7 @@ export function createLevelPointLightRoot(entity: LevelEntity): THREE.Object3D {
   const height = parseNumber(props.height, 1.5, 0);
 
   const root = new THREE.Group();
-  root.position.set(entity.position.x, height, entity.position.y);
+  root.position.set(pos.x, height, pos.z);
 
   const light = new THREE.PointLight(color, intensity, range, decay);
   light.castShadow = false;

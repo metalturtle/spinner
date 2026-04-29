@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { LevelEntity } from './levelLoader';
+import { lvPos, type LevelEntity } from './levelLoader';
 import {
   registerEmberPointEmitter,
   unregisterEmberPointEmitter,
@@ -35,6 +35,7 @@ function parseColor(value: unknown, fallback: string): THREE.Color {
 
 export function createFireTorch(scene: THREE.Scene, entity: LevelEntity): FireTorch {
   const props = entity.properties ?? {};
+  const pos = lvPos(entity.position);
   const poleHeight = parseNumber(props.poleHeight, 1.55, 0.6);
   const flameHeight = parseNumber(props.height, poleHeight + 0.28, 0.4);
   const flameSize = parseNumber(props.flameSize, 0.22, 0.08);
@@ -44,7 +45,7 @@ export function createFireTorch(scene: THREE.Scene, entity: LevelEntity): FireTo
   const decay = parseNumber(props.decay, 1.6, 0);
 
   const root = new THREE.Group();
-  root.position.set(entity.position.x, 0, entity.position.y);
+  root.position.set(pos.x, 0, pos.z);
 
   const pole = new THREE.Mesh(
     new THREE.CylinderGeometry(0.045, 0.06, poleHeight, 10),
@@ -102,7 +103,7 @@ export function createFireTorch(scene: THREE.Scene, entity: LevelEntity): FireTo
 
   registerEmberPointEmitter({
     id: entity.id,
-    position: { x: entity.position.x, y: flameHeight, z: entity.position.y },
+    position: { x: pos.x, y: flameHeight, z: pos.z },
     radius: flameSize * 0.9,
     heightJitter: flameSize * 0.9,
     surfaceEmissionRate: 24,

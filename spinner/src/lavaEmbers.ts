@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { LevelPolygon } from './levelLoader';
+import { lvZ, type LevelPolygon } from './levelLoader';
 
 const MAX_EMBERS = 2400;
 const VERTS_PER_EMBER = 2;
@@ -368,8 +368,8 @@ export function initLavaEmbers(scene: THREE.Scene): void {
 export function registerLavaEmitter(poly: LevelPolygon): void {
   if (poly.vertices.length < 3) return;
 
-  const vertices = poly.vertices.map((v) => ({ x: v.x, z: v.y }));
-  const holes = (poly.holes ?? []).map((hole) => hole.map((v) => ({ x: v.x, z: v.y })));
+  const vertices = poly.vertices.map((v) => ({ x: v.x, z: lvZ(v.y) }));
+  const holes = (poly.holes ?? []).map((hole) => hole.map((v) => ({ x: v.x, z: lvZ(v.y) })));
 
   let minX = Infinity;
   let maxX = -Infinity;

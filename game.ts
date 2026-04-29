@@ -23,10 +23,10 @@ import {
   addPlayerCapacity,
 } from './player';
 import {
-  createNormalPickup, createHyperPickup, updatePickups, spawnPickupAt, spawnGrowthPickupAt, ejectPickupAt,
+  createNormalPickup, createHyperPickup, updatePickups, compactPickups, spawnPickupAt, spawnGrowthPickupAt, ejectPickupAt,
   collectPickup, pickupRpmGain, type Pickup,
 } from './pickup';
-import { type LevelData, lvPos, lvZ } from './levelLoader';
+import { type LevelData, lvPos } from './levelLoader';
 import level1 from './levels/level1.json';
 import level2 from './levels/level2.json';
 import level3 from './levels/level3.json';
@@ -34,15 +34,15 @@ import level4 from './levels/level4.json';
 import level5 from './levels/level5.json';
 import levelActive from './levels/level-active.json';
 import { createTurret, updateTurret, applyDamageToTurret, destroyTurret, TURRET_TIER_1 } from './turret';
-import { createProjectile, updateProjectiles, type Projectile } from './projectile';
-import { createExplosion, createRobotExplosion, updateExplosions, type Explosion } from './explosion';
+import { createProjectile, updateProjectiles, compactProjectiles, type Projectile } from './projectile';
+import { createExplosion, createRobotExplosion, updateExplosions, compactExplosions, type Explosion } from './explosion';
 import {
   createObstacle, syncObstacle, obstacleHpDamage, applyDamageToObstacle, destroyObstacle,
   CRATE_CONFIG, BARREL_CONFIG, type ObstacleState,
 } from './obstacle';
 import {
   createEnemySpinner, updateEnemyAI, updateEnemyVisuals,
-  onEnemyCollision, getEnemyComboLockDuration, isEnemyDead, destroyEnemySpinner,
+  onEnemyCollision, isEnemyDead, destroyEnemySpinner,
   ENEMY_SPINNER_TIER_1, ENEMY_SPINNER_TIER_2, ENEMY_SPINNER_TIER_3, type EnemySpinnerState,
 } from './enemySpinner';
 import {
@@ -60,18 +60,18 @@ import {
   createSiegeEngine, updateSiegeEngineAI, syncSiegeEngineParts,
   updateSiegeEngineTurrets, updateSiegeEngineVisuals,
   isShieldAlive, applyDamageToSiegePart, isSiegeEngineDead, destroySiegeEngine,
-  type SiegeEngineState,
+  type SiegeEnginePart, type SiegeEngineState,
 } from './bossSiegeEngine';
 import {
   createSpiderReliquary, updateSpiderReliquaryAI, syncSpiderReliquaryLegs,
   updateSpiderReliquaryVisuals, canDamageSpiderCore, getSpiderCoreDamageMultiplier,
   applyDamageToSpiderLeg, isSpiderReliquaryDead, destroySpiderReliquary,
-  SPIDER_RELIQUARY_TIER_1, type SpiderReliquaryState,
+  SPIDER_RELIQUARY_TIER_1, type SpiderLeg, type SpiderReliquaryState,
 } from './bossSpiderReliquary';
 import {
   createOctoboss, updateOctobossAI, syncOctobossTentacles, updateOctobossVisuals,
   canDamageOctobossCore, getOctobossCoreDamageMultiplier, getOctobossTipDamage,
-  isOctobossDead, destroyOctoboss, OCTOBOSS_TIER_1, type OctobossState,
+  isOctobossDead, destroyOctoboss, OCTOBOSS_TIER_1, type OctobossState, type OctobossTentacle,
 } from './bossOctoboss';
 import {
   createRobotEnemy, updateRobotAI, updateRobotVisuals,
@@ -82,7 +82,7 @@ import {
   createHiveBoss, updateHiveAI, updateHiveChaingun, syncFlockPositions,
   updateHiveVisuals, onFlockCollision, isFlockSpinnerDead, destroyFlockSpinner,
   applyDamageToHiveCore, isHiveBossDead, destroyHiveBoss, HIVE_TIER_1,
-  type HiveBossState,
+  type FlockSpinner, type HiveBossState,
 } from './bossHive';
 import { initSparks, emitSparks, emitGoo, emitPlasma, emitBlood, updateSparks, resetSparks, computeContactInfo } from './sparks';
 import { hasPlayerWallHit } from './physics';
@@ -180,10 +180,14 @@ const HiveEntities        = defineEntityType({ create: createHiveBoss,      dest
 const BigSlugEntities     = defineEntityType({ create: createSlugworm,      destroy: destroySlugworm      });
 const BabySlugEntities    = defineEntityType({ create: createSlugworm,      destroy: destroySlugworm      });
 
+function collidableOwner<T>(collidable: Collidable): T | null {
+  return (collidable.owner as T | undefined) ?? null;
+}
+
 // ─── Collision Pair Handlers (permanent, registered once) ────────────────────
 
 registerCollisionPair('player', 'turret', (_playerCol, turretCol, hit) => {
-  const turret = TurretEntities.getAll().find(t => t.collidable === turretCol);
+  const turret = collidableOwner<ReturnType<typeof createTurret>>(turretCol);
   if (!turret?.alive) return;
   const safePlayerRpm = Math.max(0.01, playerBody.rpm);
   const safeEnemyRpm  = Math.max(0.01, turretCol.rpm);
@@ -200,7 +204,7 @@ registerCollisionPair('player', 'turret', (_playerCol, turretCol, hit) => {
 });
 
 registerCollisionPair('player', 'obstacle', (_playerCol, obsCol, hit) => {
-  const obs = ObstacleEntities.getAll().find(o => o.collidable === obsCol);
+  const obs = collidableOwner<ObstacleState>(obsCol);
   if (!obs?.alive || obs.config.type !== 'breakable') return;
   const hpDamage = obstacleHpDamage(hit.impactForce);
   if (applyDamageToObstacle(obs, hpDamage)) {
@@ -213,21 +217,14 @@ registerCollisionPair('player', 'obstacle', (_playerCol, obsCol, hit) => {
 });
 
 registerCollisionPair('player', 'enemy', (_playerCol, enemyCol, hit) => {
-  const enemy = EnemyEntities.getAll().find(e => e.collidable === enemyCol);
-  if (enemy?.alive && !isPlayerInvulnerable()) {
-    const comboLock = getEnemyComboLockDuration(enemy);
-    if (comboLock > 0) {
-      enemyComboLockTimer = Math.max(enemyComboLockTimer, comboLock);
-      setPlayerControlLocked(true);
-    }
-  }
+  const enemy = collidableOwner<EnemySpinnerState>(enemyCol);
   if (enemy?.alive) onEnemyCollision(enemy);
   const { point, normal } = computeContactInfo(_playerCol, enemyCol);
   emitSparks(point, normal, Math.floor(12 + hit.impactForce * 10), Math.min(1, hit.impactForce / 8));
 });
 
 registerCollisionPair('player', 'zombie', (_playerCol, zombieCol, hit) => {
-  const zombie = ZombieEntities.getAll().find((z) => z.collidable === zombieCol);
+  const zombie = collidableOwner<ZombieState>(zombieCol);
   if (!zombie?.alive) return;
 
   const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
@@ -247,7 +244,7 @@ registerCollisionPair('player', 'zombie', (_playerCol, zombieCol, hit) => {
 
 // ── Siege Engine: core damage (only if shield is down) ──
 registerCollisionPair('player', 'siege_core', (_playerCol, coreCol, hit) => {
-  const siege = SiegeEntities.getAll().find(s => s.collidable === coreCol);
+  const siege = collidableOwner<SiegeEngineState>(coreCol);
   if (!siege?.alive) return;
   if (isShieldAlive(siege)) return;  // shield blocks core damage
 
@@ -263,40 +260,35 @@ registerCollisionPair('player', 'siege_core', (_playerCol, coreCol, hit) => {
 
 // ── Siege Engine: sub-part HP damage ──
 registerCollisionPair('player', 'siege_part', (_playerCol, partCol, hit) => {
-  for (const siege of SiegeEntities.getAll()) {
-    if (!siege.alive) continue;
-    const part = siege.parts.find(p => p.alive && p.collidable === partCol);
-    if (!part) continue;
+  const owner = collidableOwner<{ boss: SiegeEngineState; part: SiegeEnginePart }>(partCol);
+  if (!owner?.boss.alive || !owner.part.alive) return;
 
-    const hpDamage = hit.impactForce * 0.4;
+  const hpDamage = hit.impactForce * 0.4;
 
-    // Eject pickups outward from the hit part on significant impacts
-    if (hit.impactForce > 2.0) {
-      const count = hit.impactForce > 6.0 ? 2 : 1;
-      const dx = partCol.pos.x - siege.collidable.pos.x;
-      const dz = partCol.pos.z - siege.collidable.pos.z;
-      const len = Math.sqrt(dx * dx + dz * dz) || 1;
-      for (let i = 0; i < count; i++) {
-        const spread = (Math.random() - 0.5) * 2;
-        const speed = 5 + Math.random() * 4;
-        ejectPickupAt(pickups, { x: partCol.pos.x, z: partCol.pos.z }, {
-          x: (dx / len + spread * 0.4) * speed,
-          z: (dz / len + spread * 0.4) * speed,
-        });
-      }
+  if (hit.impactForce > 2.0) {
+    const count = hit.impactForce > 6.0 ? 2 : 1;
+    const dx = partCol.pos.x - owner.boss.collidable.pos.x;
+    const dz = partCol.pos.z - owner.boss.collidable.pos.z;
+    const len = Math.sqrt(dx * dx + dz * dz) || 1;
+    for (let i = 0; i < count; i++) {
+      const spread = (Math.random() - 0.5) * 2;
+      const speed = 5 + Math.random() * 4;
+      ejectPickupAt(pickups, { x: partCol.pos.x, z: partCol.pos.z }, {
+        x: (dx / len + spread * 0.4) * speed,
+        z: (dz / len + spread * 0.4) * speed,
+      });
     }
-
-    if (applyDamageToSiegePart(siege, part, hpDamage)) {
-      explosions.push(createExplosion({ x: partCol.pos.x, z: partCol.pos.z }));
-    }
-    const { point, normal } = computeContactInfo(_playerCol, partCol);
-    emitSparks(point, normal, Math.floor(10 + hit.impactForce * 8), Math.min(1, hit.impactForce / 8));
-    return;
   }
+
+  if (applyDamageToSiegePart(owner.boss, owner.part, hpDamage)) {
+    explosions.push(createExplosion({ x: partCol.pos.x, z: partCol.pos.z }));
+  }
+  const { point, normal } = computeContactInfo(_playerCol, partCol);
+  emitSparks(point, normal, Math.floor(10 + hit.impactForce * 8), Math.min(1, hit.impactForce / 8));
 });
 
 registerCollisionPair('player', 'spider_core', (_playerCol, coreCol, hit) => {
-  const spider = SpiderEntities.getAll().find((boss) => boss.collidable === coreCol);
+  const spider = collidableOwner<SpiderReliquaryState>(coreCol);
   if (!spider?.alive) return;
 
   const { point, normal } = computeContactInfo(_playerCol, coreCol);
@@ -316,25 +308,21 @@ registerCollisionPair('player', 'spider_core', (_playerCol, coreCol, hit) => {
 });
 
 registerCollisionPair('player', 'spider_leg', (_playerCol, legCol, hit) => {
-  for (const spider of SpiderEntities.getAll()) {
-    if (!spider.alive) continue;
-    const leg = spider.legs.find((entry) => entry.alive && entry.collidable === legCol);
-    if (!leg) continue;
+  const owner = collidableOwner<{ boss: SpiderReliquaryState; leg: SpiderLeg }>(legCol);
+  if (!owner?.boss.alive || !owner.leg.alive) return;
 
-    const hpDamage = hit.impactForce * 0.55 * Math.max(0.4, playerBody.rpm / playerBody.rpmCapacity);
-    const { point, normal } = computeContactInfo(_playerCol, legCol);
-    if (applyDamageToSpiderLeg(spider, leg, hpDamage)) {
-      explosions.push(createExplosion({ x: legCol.pos.x, z: legCol.pos.z }));
-      emitSparks(point, normal, Math.floor(24 + hit.impactForce * 12), Math.min(1, 0.5 + hit.impactForce / 8));
-    } else {
-      emitSparks(point, normal, Math.floor(12 + hit.impactForce * 7), Math.min(1, hit.impactForce / 8));
-    }
-    return;
+  const hpDamage = hit.impactForce * 0.55 * Math.max(0.4, playerBody.rpm / playerBody.rpmCapacity);
+  const { point, normal } = computeContactInfo(_playerCol, legCol);
+  if (applyDamageToSpiderLeg(owner.boss, owner.leg, hpDamage)) {
+    explosions.push(createExplosion({ x: legCol.pos.x, z: legCol.pos.z }));
+    emitSparks(point, normal, Math.floor(24 + hit.impactForce * 12), Math.min(1, 0.5 + hit.impactForce / 8));
+  } else {
+    emitSparks(point, normal, Math.floor(12 + hit.impactForce * 7), Math.min(1, hit.impactForce / 8));
   }
 });
 
 registerCollisionPair('player', 'octoboss_core', (_playerCol, coreCol, hit) => {
-  const boss = OctobossEntities.getAll().find((entry) => entry.collidable === coreCol);
+  const boss = collidableOwner<OctobossState>(coreCol);
   if (!boss?.alive) return;
 
   const { point, normal } = computeContactInfo(_playerCol, coreCol);
@@ -354,24 +342,20 @@ registerCollisionPair('player', 'octoboss_core', (_playerCol, coreCol, hit) => {
 });
 
 registerCollisionPair('player', 'octoboss_tip', (_playerCol, tipCol, hit) => {
-  for (const boss of OctobossEntities.getAll()) {
-    if (!boss.alive) continue;
-    const tentacle = boss.tentacles.find((entry) => entry.collidable === tipCol);
-    if (!tentacle) continue;
+  const owner = collidableOwner<{ boss: OctobossState; tentacle: OctobossTentacle }>(tipCol);
+  if (!owner?.boss.alive) return;
 
-    const { point, normal } = computeContactInfo(_playerCol, tipCol);
-    emitSparks(point, normal, Math.floor(14 + hit.impactForce * 8), Math.min(1, 0.45 + hit.impactForce / 8));
-    const dx = playerBody.pos.x - tipCol.pos.x;
-    const dz = playerBody.pos.z - tipCol.pos.z;
-    const len = Math.hypot(dx, dz) || 1;
-    playerBody.vel.x += (dx / len) * (3.2 + hit.impactForce * 0.85);
-    playerBody.vel.z += (dz / len) * (3.2 + hit.impactForce * 0.85);
-    return;
-  }
+  const { point, normal } = computeContactInfo(_playerCol, tipCol);
+  emitSparks(point, normal, Math.floor(14 + hit.impactForce * 8), Math.min(1, 0.45 + hit.impactForce / 8));
+  const dx = playerBody.pos.x - tipCol.pos.x;
+  const dz = playerBody.pos.z - tipCol.pos.z;
+  const len = Math.hypot(dx, dz) || 1;
+  playerBody.vel.x += (dx / len) * (3.2 + hit.impactForce * 0.85);
+  playerBody.vel.z += (dz / len) * (3.2 + hit.impactForce * 0.85);
 });
 
 registerCollisionPair('player', 'robot', (_playerCol, robotCol, hit) => {
-  const robot = RobotEntities.getAll().find(r => r.collidable === robotCol);
+  const robot = collidableOwner<RobotEnemyState>(robotCol);
   if (!robot?.alive) return;
   const hpDamage = hit.impactForce * 2.5 * (playerBody.rpm / playerBody.rpmCapacity);
   applyDamageToRobot(robot, hpDamage);
@@ -380,16 +364,14 @@ registerCollisionPair('player', 'robot', (_playerCol, robotCol, hit) => {
 });
 
 registerCollisionPair('player', 'hive_flock', (_playerCol, flockCol, hit) => {
-  for (const hive of HiveEntities.getAll()) {
-    const spinner = hive.flock.find(f => f.alive && f.collidable === flockCol);
-    if (spinner) { onFlockCollision(spinner); break; }
-  }
+  const owner = collidableOwner<{ boss: HiveBossState; spinner: FlockSpinner }>(flockCol);
+  if (owner?.boss.alive && owner.spinner.alive) onFlockCollision(owner.spinner);
   const { point, normal } = computeContactInfo(_playerCol, flockCol);
   emitSparks(point, normal, Math.floor(10 + hit.impactForce * 8), Math.min(1, hit.impactForce / 8));
 });
 
 registerCollisionPair('player', 'hive_core', (_playerCol, coreCol, hit) => {
-  const hive = HiveEntities.getAll().find(h => h.collidable === coreCol);
+  const hive = collidableOwner<HiveBossState>(coreCol);
   if (!hive?.alive) return;
   const aliveCount = hive.flock.filter(f => f.alive).length;
   // Damage reduced while flock protects
@@ -401,7 +383,7 @@ registerCollisionPair('player', 'hive_core', (_playerCol, coreCol, hit) => {
 });
 
 registerCollisionPair('player', 'boss', (_playerCol, bossCol, hit) => {
-  const boss = DreadnoughtEntities.getAll().find(b => b.collidable === bossCol);
+  const boss = collidableOwner<DreadnoughtState>(bossCol);
   if (!boss?.alive) return;
 
   // Directional damage — weak point check
@@ -432,7 +414,7 @@ registerCollisionPair('player', 'boss', (_playerCol, bossCol, hit) => {
 
 // ── Big Slugworm: head = poison (drains player RPM), belly = vulnerable ──
 registerCollisionPair('player', 'slug_big', (_playerCol, slugCol, hit) => {
-  const slug = BigSlugEntities.getAll().find(s => s.collidable === slugCol);
+  const slug = collidableOwner<SlugwormState>(slugCol);
   if (!slug?.alive) return;
 
   const { point } = computeContactInfo(_playerCol, slugCol);
@@ -457,7 +439,7 @@ registerCollisionPair('player', 'slug_big', (_playerCol, slugCol, hit) => {
 
 // ── Baby Slugworm: easy kill, big goo splash ──
 registerCollisionPair('player', 'slug_baby', (_playerCol, slugCol, hit) => {
-  const slug = BabySlugEntities.getAll().find(s => s.collidable === slugCol);
+  const slug = collidableOwner<SlugwormState>(slugCol);
   if (!slug?.alive) return;
 
   const hpDamage = hit.impactForce * 4.0 * (playerBody.rpm / playerBody.rpmCapacity);
@@ -537,7 +519,6 @@ const SPIDER_MOTION_DEBUG = false;
 const PLAYER_WEB_SPEED_MULT = 0.16;
 const PLAYER_WEB_VEL_DAMP = 0.42;
 let playerWebTimer = 0;
-let enemyComboLockTimer = 0;
 
 type MotionBucket = 'move_x' | 'move_z';
 type SpiderMotionState = 'chase' | 'orbit' | 'collapse' | 'hop_windup' | 'hop_air' | 'hop_recover';
@@ -639,8 +620,8 @@ function isPointInPolygon(point: { x: number; z: number }, vertices: { x: number
 
 function buildAreaZoneFromPolygon(poly: LevelPolygon): AreaZone | null {
   if (poly.vertices.length < 3) return null;
-  const vertices = poly.vertices.map((vertex) => ({ x: vertex.x, z: lvZ(vertex.y) }));
-  const holes = (poly.holes ?? []).map((hole) => hole.map((vertex) => ({ x: vertex.x, z: lvZ(vertex.y) })));
+  const vertices = poly.vertices.map((vertex) => ({ x: vertex.x, z: vertex.y }));
+  const holes = (poly.holes ?? []).map((hole) => hole.map((vertex) => ({ x: vertex.x, z: vertex.y })));
   return {
     contains(point) {
       if (!isPointInPolygon(point, vertices)) return false;
@@ -651,7 +632,7 @@ function buildAreaZoneFromPolygon(poly: LevelPolygon): AreaZone | null {
 
 function buildAreaZoneFromCircle(circle: LevelCircle): AreaZone | null {
   if (circle.radius <= 0) return null;
-  const center = { x: circle.center.x, z: lvZ(circle.center.y) };
+  const center = { x: circle.center.x, z: circle.center.y };
   const radiusSq = circle.radius * circle.radius;
   return {
     contains(point) {
@@ -1321,7 +1302,6 @@ function resetGame(): void {
   fallableActors.length = 0;
   playerKillFallTimer = 0;
   playerWebTimer = 0;
-  enemyComboLockTimer = 0;
   clearDynamicLevelLights();
   clearLevelLights(scene);
   setupLevelLights(scene, currentLevel);
@@ -2029,8 +2009,10 @@ function updateTurretSystem(delta: number): void {
       emitPlasma({ x: playerBody.pos.x, y: 0.5, z: playerBody.pos.z }, 25, 0.9);
     }
   }
+  compactProjectiles(projectiles);
 
   updateExplosions(explosions, delta);
+  compactExplosions(explosions);
 }
 
 // ─── Siege Engine Turret System ───────────────────────────────────────────────
@@ -2616,16 +2598,9 @@ function animate(): void {
   }
 
   // 1. Entity updates (intent — player input, enemy AI, boss AI, turret aim)
-  if (enemyComboLockTimer > 0) {
-    enemyComboLockTimer = Math.max(0, enemyComboLockTimer - delta);
-    if (enemyComboLockTimer <= 0 && !isPlayerInvulnerable()) {
-      setPlayerControlLocked(false);
-    }
-  }
   tryStartPlayerCombo();
   entityUpdateSystem(delta);
-  const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
-  for (const e of EnemyEntities.getAll()) updateEnemyAI(e, playerBody.pos, playerBody.radius, playerSpeed, delta);
+  for (const e of EnemyEntities.getAll()) updateEnemyAI(e, playerBody.pos, delta);
   for (const b of DreadnoughtEntities.getAll()) updateDreadnoughtAI(b, playerBody.pos, delta);
   for (const s of SiegeEntities.getAll()) updateSiegeEngineAI(s, playerBody.pos, delta);
   for (const h of HiveEntities.getAll()) updateHiveAI(h, playerBody.pos, delta);
@@ -2723,6 +2698,7 @@ function animate(): void {
 
   // 5. Proximity pair dispatch (pickup collection)
   proximitySystem();
+  compactPickups(pickups);
 
   // 5b. Level trigger spawns
   updateTriggerSpawns();

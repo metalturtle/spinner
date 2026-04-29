@@ -46,7 +46,12 @@ export interface LevelData {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/** Convert editor Y-up coordinates into game XZ world coordinates. */
+export function lvZ(y: number): number {
+  return -y;
+}
+
 /** Convert level 2D position {x,y} to game world {x,z}. */
 export function lvPos(p: { x: number; y: number }): { x: number; z: number } {
-  return { x: p.x, z: p.y };
+  return { x: p.x, z: lvZ(p.y) };
 }

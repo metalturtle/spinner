@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { WALL_HEIGHT } from './constants';
 import { walls, zones } from './physics';
-import type { LevelData, LevelPolygon } from './levelLoader';
+import { lvZ, type LevelData, type LevelPolygon } from './levelLoader';
 import { createLavaMaterial } from './lavaSurface';
 import { clearLavaEmbers, registerLavaEmitter } from './lavaEmbers';
 import { applyWallExtrusionUVs, applyWorldUVs, getTextureScale, TextureManager } from './textureUtils';
@@ -31,18 +31,20 @@ function setArenaBoundsFromLevel(level: LevelData): void {
 
   for (const poly of level.polygons ?? []) {
     for (const vertex of poly.vertices) {
+      const z = lvZ(vertex.y);
       minX = Math.min(minX, vertex.x);
       maxX = Math.max(maxX, vertex.x);
-      minZ = Math.min(minZ, vertex.y);
-      maxZ = Math.max(maxZ, vertex.y);
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
     }
   }
 
   for (const circle of level.circles ?? []) {
+    const centerZ = lvZ(circle.center.y);
     minX = Math.min(minX, circle.center.x - circle.radius);
     maxX = Math.max(maxX, circle.center.x + circle.radius);
-    minZ = Math.min(minZ, circle.center.y - circle.radius);
-    maxZ = Math.max(maxZ, circle.center.y + circle.radius);
+    minZ = Math.min(minZ, centerZ - circle.radius);
+    maxZ = Math.max(maxZ, centerZ + circle.radius);
   }
 
   if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minZ) || !Number.isFinite(maxZ)) {
@@ -67,15 +69,15 @@ function getSurfaceColor(color: string | undefined, fallback: THREE.ColorReprese
 
 function makeShapeFromPolygon(poly: LevelPolygon): THREE.Shape {
   const shape = new THREE.Shape();
-  shape.moveTo(poly.vertices[0].x, -poly.vertices[0].y);
-  for (let i = 1; i < poly.vertices.length; i++) shape.lineTo(poly.vertices[i].x, -poly.vertices[i].y);
+  shape.moveTo(poly.vertices[0].x, poly.vertices[0].y);
+  for (let i = 1; i < poly.vertices.length; i++) shape.lineTo(poly.vertices[i].x, poly.vertices[i].y);
   shape.closePath();
 
   for (const hole of poly.holes ?? []) {
     if (hole.length < 3) continue;
     const holePath = new THREE.Path();
-    holePath.moveTo(hole[0].x, -hole[0].y);
-    for (let i = 1; i < hole.length; i++) holePath.lineTo(hole[i].x, -hole[i].y);
+    holePath.moveTo(hole[0].x, hole[0].y);
+    for (let i = 1; i < hole.length; i++) holePath.lineTo(hole[i].x, hole[i].y);
     holePath.closePath();
     shape.holes.push(holePath);
   }
@@ -99,8 +101,8 @@ function isPointInPolygon(point: { x: number; z: number }, vertices: { x: number
 
 function buildLavaRegionFromPolygon(poly: LevelPolygon): LavaRegion | null {
   if (poly.vertices.length < 3) return null;
-  const outer = poly.vertices.map((vertex) => ({ x: vertex.x, z: vertex.y }));
-  const holes = (poly.holes ?? []).map((hole) => hole.map((vertex) => ({ x: vertex.x, z: vertex.y })));
+  const outer = poly.vertices.map((vertex) => ({ x: vertex.x, z: lvZ(vertex.y) }));
+  const holes = (poly.holes ?? []).map((hole) => hole.map((vertex) => ({ x: vertex.x, z: lvZ(vertex.y) })));
   return {
     contains(point) {
       if (!isPointInPolygon(point, outer)) return false;
@@ -187,12 +189,13 @@ function addLavaLight(scene: THREE.Scene, poly: LevelPolygon): void {
   let centerZ = 0;
 
   for (const vertex of poly.vertices) {
+    const z = lvZ(vertex.y);
     minX = Math.min(minX, vertex.x);
     maxX = Math.max(maxX, vertex.x);
-    minZ = Math.min(minZ, vertex.y);
-    maxZ = Math.max(maxZ, vertex.y);
+    minZ = Math.min(minZ, z);
+    maxZ = Math.max(maxZ, z);
     centerX += vertex.x;
-    centerZ += vertex.y;
+    centerZ += z;
   }
 
   centerX /= poly.vertices.length;
@@ -284,8 +287,8 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
 
       if (isLava) {
         zones.push({
-          vertices: poly.vertices.map((v) => ({ x: v.x, z: v.y })),
-          holes: (poly.holes ?? []).map((hole) => hole.map((v) => ({ x: v.x, z: v.y }))),
+          vertices: poly.vertices.map((v) => ({ x: v.x, z: lvZ(v.y) })),
+          holes: (poly.holes ?? []).map((hole) => hole.map((v) => ({ x: v.x, z: lvZ(v.y) }))),
           drainRate: getDrainRate(poly),
         });
         registerLavaRegion(buildLavaRegionFromPolygon(poly));
@@ -302,7 +305,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
       const floorGeo = new THREE.CircleGeometry(radius, CIRCLE_FLOOR_SEGMENTS);
       const textureScale = getTextureScale(c.textureId, c.textureScale);
       if (textureScale) {
-        applyWorldUVs(floorGeo, textureScale, c.center.x, -c.center.y);
+        applyWorldUVs(floorGeo, textureScale, c.center.x, c.center.y);
       }
       const mesh = new THREE.Mesh(
         floorGeo,
@@ -317,7 +320,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
         mat.bumpScale = 0.1;
       }
       mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(c.center.x, 0, c.center.y);
+      mesh.position.set(c.center.x, 0, lvZ(c.center.y));
       mesh.receiveShadow = true;
       addArenaRoot(scene, mesh);
     }
@@ -327,8 +330,9 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
     // v1 fallback: bounding-box rectangle floor from all polygon vertices
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     for (const p of polys) for (const v of p.vertices) {
+      const z = lvZ(v.y);
       minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
-      minZ = Math.min(minZ, v.y); maxZ = Math.max(maxZ, v.y);
+      minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
     }
     if (!isFinite(minX)) { minX = -20; maxX = 20; minZ = -20; maxZ = 20; }
     const mesh = new THREE.Mesh(
@@ -364,7 +368,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
     const verts = poly.vertices;
     for (let i = 0; i < verts.length; i++) {
       const p1 = verts[i], p2 = verts[(i + 1) % verts.length];
-      walls.push({ p1: { x: p1.x, z: p1.y }, p2: { x: p2.x, z: p2.y } });
+      walls.push({ p1: { x: p1.x, z: lvZ(p1.y) }, p2: { x: p2.x, z: lvZ(p2.y) } });
     }
     if (!invisible) {
       // Visual: extrude the whole polygon shape upward (one solid mesh per polygon)
