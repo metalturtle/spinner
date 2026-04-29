@@ -122,4 +122,8 @@ sound effects
 
 refinement ideas:
     turret shooting fire arrows
-    
+    open closing doors
+    arena waves
+
+bugs:
+    sometimes entities slip through walls

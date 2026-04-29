@@ -50,7 +50,7 @@ export interface Pickup {
   radius:         number;
   mesh:           THREE.Group;
   collected:      boolean;
-  type:           'normal' | 'hyper';
+  type:           'normal' | 'hyper' | 'growth';
   floatY:         number;       // base Y for float animation
   proximityBody:  ProximityBody;
   vel:            Vec2;         // eject velocity (zero when settled)
@@ -74,12 +74,15 @@ interface PickupVisual {
   orbitSpeed:  number;
 }
 
-function makePickupVisual(type: 'normal' | 'hyper'): PickupVisual {
+function makePickupVisual(type: 'normal' | 'hyper' | 'growth'): PickupVisual {
   const isHyper = type === 'hyper';
-  const color = new THREE.Color(isHyper ? 0x00eeff : 0x00ff88);
-  const orbitRadius = isHyper ? 0.76 : 0.54;
-  const orbitWidth = isHyper ? 0.075 : 0.052;
-  const orbitSpeed = -(isHyper ? 8.2 : 6.6);
+  const isGrowth = type === 'growth';
+  const color = new THREE.Color(
+    isHyper ? 0x00eeff : isGrowth ? 0xffc05a : 0x00ff88,
+  );
+  const orbitRadius = isHyper ? 0.76 : isGrowth ? 0.62 : 0.54;
+  const orbitWidth = isHyper ? 0.075 : isGrowth ? 0.06 : 0.052;
+  const orbitSpeed = -(isHyper ? 8.2 : isGrowth ? 7.1 : 6.6);
 
   const mesh = new THREE.Group();
 
@@ -112,9 +115,9 @@ function makePickupVisual(type: 'normal' | 'hyper'): PickupVisual {
     new THREE.MeshStandardMaterial({
       color,
       emissive: color,
-      emissiveIntensity: isHyper ? 0.42 : 0.28,
+      emissiveIntensity: isHyper ? 0.42 : isGrowth ? 0.34 : 0.28,
       transparent: true,
-      opacity: isHyper ? 0.24 : 0.18,
+      opacity: isHyper ? 0.24 : isGrowth ? 0.2 : 0.18,
       roughness: 0.2,
       metalness: 0.08,
       depthWrite: false,
@@ -128,18 +131,23 @@ function makePickupVisual(type: 'normal' | 'hyper'): PickupVisual {
   const orbMat = new THREE.MeshStandardMaterial({
     color,
     emissive: color,
-    emissiveIntensity: isHyper ? 1.75 : 1.0,
+    emissiveIntensity: isHyper ? 1.75 : isGrowth ? 1.2 : 1.0,
     roughness: 0.15,
     metalness: 0.25,
   });
   const orb = new THREE.Mesh(
-    new THREE.SphereGeometry(isHyper ? 0.12 : 0.09, 18, 12),
+    new THREE.SphereGeometry(isHyper ? 0.12 : isGrowth ? 0.1 : 0.09, 18, 12),
     orbMat,
   );
   orb.position.set(orbitRadius, 0.03, 0);
   mesh.add(orb);
 
-  const light = new THREE.PointLight(color, isHyper ? 3.8 : 2.4, isHyper ? 8.5 : 6.2, 1.5);
+  const light = new THREE.PointLight(
+    color,
+    isHyper ? 3.8 : isGrowth ? 2.8 : 2.4,
+    isHyper ? 8.5 : isGrowth ? 7.0 : 6.2,
+    1.5,
+  );
   mesh.add(light);
 
   return { mesh, orbMat, trailMat, light, orbitRadius, orbitSpeed };
@@ -223,6 +231,44 @@ export function createHyperPickup(pos: Vec2): Pickup {
   return pickup;
 }
 
+export function createGrowthPickup(pos: Vec2): Pickup {
+  const visual = makePickupVisual('growth');
+  const mesh = visual.mesh;
+  mesh.position.set(pos.x, 0.9, pos.z);
+  scene.add(mesh);
+
+  const pickupPos = { x: pos.x, z: pos.z };
+  const proxBody: ProximityBody = {
+    pos: pickupPos,
+    radius: 1.0,
+    active: true,
+    owner: null as unknown,
+  };
+
+  const pickup: Pickup = {
+    pos: pickupPos,
+    radius: 1.0,
+    mesh,
+    collected: false,
+    type: 'growth',
+    floatY: 0.9,
+    proximityBody: proxBody,
+    vel: { x: 0, z: 0 },
+    settleTimer: 0,
+    orbMat: visual.orbMat,
+    trailMat: visual.trailMat,
+    light: visual.light,
+    orbitRadius: visual.orbitRadius,
+    orbitSpeed: visual.orbitSpeed,
+    orbitPhase: Math.random() * Math.PI * 2,
+  };
+
+  proxBody.owner = pickup;
+  registerProximityBody('pickup', proxBody);
+
+  return pickup;
+}
+
 // ─── Collection ─────────────────────────────────────────────────────────────
 
 /** Mark a pickup as collected and remove it from the scene. */
@@ -285,6 +331,12 @@ export function updatePickups(
       p.orbMat.emissiveIntensity = pulse * 1.9;
       p.trailMat.uniforms.uAlpha.value = 0.92 + pulse * 0.28;
       p.light.intensity = 2.4 + pulse * 1.2;
+    } else if (p.type === 'growth') {
+      const pulse = 0.78 + 0.22 * Math.sin(time * 3.8 + p.orbitPhase * 0.7);
+      p.mesh.position.y  = p.floatY + Math.sin(time * 2.2 + p.pos.x * 0.6) * 0.18;
+      p.orbMat.emissiveIntensity = pulse * 1.35;
+      p.trailMat.uniforms.uAlpha.value = 0.76 + pulse * 0.16;
+      p.light.intensity = 1.5 + pulse * 0.8;
     } else {
       p.mesh.position.y  = p.floatY + Math.sin(time * 2 + p.pos.x) * 0.15;
       const pulse = 0.82 + 0.18 * Math.sin(time * 3.4 + p.orbitPhase);
@@ -299,6 +351,10 @@ export function updatePickups(
 
 export function spawnPickupAt(pickups: Pickup[], pos: Vec2): void {
   pickups.push(createNormalPickup(pos));
+}
+
+export function spawnGrowthPickupAt(pickups: Pickup[], pos: Vec2): void {
+  pickups.push(createGrowthPickup(pos));
 }
 
 /** Spawn a pickup that flies outward from pos in the given direction, then settles. */

@@ -10,9 +10,12 @@ export interface TopResult {
   bodyMat: THREE.MeshStandardMaterial;
 }
 
+// Standard spinner top size. Other spinner variants scale relative to this.
+export const TOP_BASE_RADIUS = 1.6875;
+
 // After auto-scaling to fit the collision diameter, this multiplier sets the
-// target size in world units. Set to 2 × spinnerConfig.radius to fill the hitbox.
-const MODEL_SCALE = 1.5;
+// target size in world units. Set to 2 × TOP_BASE_RADIUS to fill the hitbox.
+const MODEL_SCALE = TOP_BASE_RADIUS * 2;
 
 const SPINNER_URL = new URL('../models/spinner.glb', import.meta.url).href;
 

@@ -10,7 +10,7 @@ import { createTop } from './top';
 import { updateSpinnerVisuals, type SpinnerTiltState } from './spinnerVisuals';
 import {
   nextEntityId, registerUpdate, registerMovement, registerRpm, setMovementMaxSpeed,
-  tagCollidable, registerProximityBody, type ProximityBody,
+  tagCollidable, registerProximityBody, getCollidableType, type ProximityBody,
 } from './systems';
 import { keys, shiftHeld } from './input';
 
@@ -20,6 +20,41 @@ const HIT_FLASH_DUR = 0.15;
 const BODY_COLOR    = new THREE.Color(0xe94560);
 const PIT_FALL_DURATION = 1.0;
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function isSpinnerDuelType(type: string | undefined): boolean {
+  return type === 'enemy' || type === 'hive_flock';
+}
+
+function computeSpinnerDuelLoss(enemy: Collidable, impactForce: number): { playerLoss: number; enemyLoss: number } {
+  const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
+  const enemySpeed = Math.hypot(enemy.vel.x, enemy.vel.z);
+  const playerFrac = clamp(playerBody.rpm / Math.max(playerBody.rpmCapacity, 1), 0.05, 1.5);
+  const enemyFrac = clamp(enemy.rpm / Math.max(enemy.rpmCapacity, 1), 0.05, 1.5);
+  const rpmEdge = clamp(playerFrac - enemyFrac, -0.4, 0.4);
+  const sharedCapacity = Math.sqrt(playerBody.rpmCapacity * enemy.rpmCapacity);
+  const cappedImpact = clamp(impactForce, 0.65, spinnerConfig.duelImpactCap);
+  const clashBase = COLLISION_DAMAGE_RATIO * sharedCapacity * cappedImpact;
+  const playerIntent = clamp(playerSpeed / Math.max(spinnerConfig.duelSpeedReference, 0.001), 0, 1.35);
+  const enemyIntent = clamp(enemySpeed / Math.max(spinnerConfig.duelSpeedReference, 0.001), 0, 1.35);
+  const playerRpmMult = 1 + Math.max(0, rpmEdge) * spinnerConfig.duelRpmInfluenceScale;
+  const enemyRpmMult = 1 + Math.max(0, -rpmEdge) * spinnerConfig.duelRpmInfluenceScale;
+  const sharedLoss = clashBase * spinnerConfig.duelSharedDamageScale * (0.7 + Math.abs(rpmEdge) * 0.2);
+  const playerAttack = clashBase * spinnerConfig.duelVelocityDamageScale * playerIntent * playerRpmMult;
+  const enemyAttack = clashBase * spinnerConfig.duelVelocityDamageScale * enemyIntent * enemyRpmMult;
+  const playerRecoil = clashBase * 0.03 * playerIntent;
+  const enemyRecoil = clashBase * 0.03 * enemyIntent;
+  const minLoss = Math.max(0.3, clashBase * 0.02);
+  const maxLoss = clashBase * 1.6;
+
+  return {
+    playerLoss: clamp(sharedLoss + enemyAttack + playerRecoil, minLoss, maxLoss),
+    enemyLoss: clamp(sharedLoss + playerAttack + enemyRecoil, minLoss, maxLoss),
+  };
+}
+
 // ─── Player Body ─────────────────────────────────────────────────────────────
 
 export const playerBody: Collidable = {
@@ -28,7 +63,7 @@ export const playerBody: Collidable = {
   radius:      spinnerConfig.radius,
   mass:        spinnerConfig.mass,
   isStatic:    false,
-  rpm:         spinnerConfig.rpmCapacity * RPM_SOFT_CAP_RATIO,
+  rpm:         spinnerConfig.rpmCapacity * spinnerConfig.startingRpmRatio,
   rpmCapacity: spinnerConfig.rpmCapacity,
   heatFactor:  1.0,
 };
@@ -91,9 +126,10 @@ export function setupPlayer(): void {
 export function resetPlayer(): void {
   playerBody.pos.x = 0;  playerBody.pos.z = 0;
   playerBody.vel.x = 0;  playerBody.vel.z = 0;
-  playerBody.rpm         = spinnerConfig.rpmCapacity * RPM_SOFT_CAP_RATIO;
+  playerBody.rpm         = spinnerConfig.rpmCapacity * spinnerConfig.startingRpmRatio;
   playerBody.rpmCapacity = spinnerConfig.rpmCapacity;
   playerBody.radius      = spinnerConfig.radius;
+  playerProximity.radius = playerBody.radius;
   playerBody.mass        = spinnerConfig.mass;
   playerTilt.tiltX = 0;  playerTilt.tiltZ = 0;
   hitFlashTimer  = 0;
@@ -140,6 +176,16 @@ export function playerRpmHooks(delta: number, playerWallHit: boolean, circleHits
     if (!playerIsA && !playerIsB) continue;
 
     const enemy = collidables[playerIsA ? hit.j : hit.i];
+    const enemyType = getCollidableType(enemy);
+    if (isSpinnerDuelType(enemyType)) {
+      const { playerLoss, enemyLoss } = computeSpinnerDuelLoss(enemy, hit.impactForce);
+      playerBody.rpm = Math.max(0, playerBody.rpm - playerLoss);
+      if (!enemy.isStatic) {
+        enemy.rpm = Math.max(0, enemy.rpm - enemyLoss);
+      }
+      continue;
+    }
+
     const safePlayerRpm = Math.max(0.01, playerBody.rpm);
     const safeEnemyRpm  = Math.max(0.01, enemy.rpm);
 
@@ -163,7 +209,20 @@ export function playerRpmHooks(delta: number, playerWallHit: boolean, circleHits
     playerBody.rpm -= RPM_OVERDRAIN * delta;
   }
 
-  playerBody.rpm = Math.max(0, playerBody.rpm);
+  playerBody.rpm = clamp(playerBody.rpm, 0, spinnerConfig.maxRpmCapacity);
+}
+
+export function addPlayerCapacity(amount: number): number {
+  const prevCapacity = spinnerConfig.rpmCapacity;
+  const nextCapacity = clamp(prevCapacity + amount, prevCapacity, spinnerConfig.maxRpmCapacity);
+  const gained = nextCapacity - prevCapacity;
+  if (gained <= 0) return 0;
+
+  spinnerConfig.rpmCapacity = nextCapacity;
+  playerBody.rpmCapacity = nextCapacity;
+  playerBody.rpm += gained + spinnerConfig.growthPickupRpmGain;
+  playerBody.rpm = clamp(playerBody.rpm, 0, spinnerConfig.maxRpmCapacity);
+  return gained;
 }
 
 // ─── Visuals ─────────────────────────────────────────────────────────────────

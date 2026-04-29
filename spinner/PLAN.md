@@ -503,6 +503,115 @@
 
 ---
 
+## Phase 19: Spinner Duel Rebalance
+
+> Goal: make spinner-vs-spinner fights feel like sustained beyblade clashes
+> instead of binary math checks where a small RPM lead instantly decides the
+> outcome.
+
+### 19a: Rebalance collision damage shape
+- [ ] Replace raw `attackerRpm / defenderRpm` scaling with a softer RPM advantage curve
+- [ ] Compute RPM advantage from `rpm / rpmCapacity` fraction, not raw current RPM
+- [ ] Clamp the RPM advantage multiplier so being ahead helps, but never guarantees a one-hit win
+- [ ] Clamp or soften `impactForce` contribution so a single fast collision cannot delete a spinner
+- [ ] Prefer `sqrt(attackerCapacity * defenderCapacity)` or similar shared scaling over direct `attackerCapacity` scaling
+
+### 19b: Make clashes less punishing for the winner
+- [ ] Change spinner-vs-spinner damage from two huge independent hits into a "shared clash cost + winner bonus damage" model
+- [ ] Ensure a winning hit still costs some RPM, but not a giant chunk of the victor's resource
+- [ ] Tune normal equal-tier fights to last around 4-7 meaningful clashes
+- [ ] Tune strong winning hits to feel decisive without being instant kills
+
+### 19c: Distinguish contact types
+- [ ] Add separate outcomes for head-on clash, side scrape, and rear punish
+- [ ] Head-on clash: both tops lose moderate RPM and get knocked apart
+- [ ] Side scrape: lower burst damage, higher sustained RPM drain, more sparks
+- [ ] Rear punish: best damage efficiency, strongest destabilize effect
+- [ ] Use tangential contact speed as gameplay input, not just visual spark input
+
+### 19d: Add stability / wobble pressure
+- [ ] Introduce a stability stat or temporary destabilized state for spinners
+- [ ] Large impacts increase wobble and reduce steering control briefly
+- [ ] Low RPM increases wobble, but should not automatically multiply incoming damage into a death spiral
+- [ ] Let skilled follow-up positioning matter more than raw RPM difference
+
+### 19e: Rework enemy spinner behavior for duels
+- [ ] Replace simple `chase -> charge -> recover` behavior with orbit, feint, cut-in, and recover states
+- [ ] Enemy should look for side and rear angles instead of always driving straight at the player
+- [ ] Add one true "rival spinner" tier with RPM/mass close enough to the player to support real duels
+- [ ] Keep weaker fodder spinners as fast-kill enemies, but do not use them as the main duel tuning target
+
+### 19f: Immediate tuning targets
+- [ ] At `100 RPM` vs `150 RPM`, the lower-RPM spinner should be disadvantaged, not doomed
+- [ ] Killing an enemy spinner should usually be RPM-positive or roughly neutral for the player unless the player won recklessly
+- [ ] Equal-tier spinners should trade several hits before one breaks
+- [ ] Low-RPM play should feel tense and unstable rather than mathematically hopeless
+
+---
+
+## Phase 20: Continuous Adventure RPM Progression
+
+> Goal: make the game feel like a continuous adventure run where the player
+> starts weak, grows stronger through combat and pickups, and can keep climbing
+> instead of hovering near a fixed soft cap. The player should feel like a
+> small top early and a monster later in the run.
+
+### 20a: Shift the run fantasy
+- [ ] Start the player at low RPM and low power relative to the late game
+- [ ] Remove the feeling that the player begins near their final combat form
+- [ ] Let progression come from surviving fights, collecting pickups, and defeating enemies
+- [ ] Keep only a high safety ceiling or hard cap for sanity, UI, and tuning, such as `2000 RPM`
+
+### 20b: Separate current RPM from long-run power growth
+- [ ] Decide which values persist and grow through the run:
+- [ ] `current RPM` should be the moment-to-moment fuel and health pool
+- [ ] `rpmCapacity` should become the main long-run power stat that increases over time
+- [ ] Tune formulas so higher capacity improves resilience and offense, but does not recreate the old one-shot problem
+- [ ] Review whether some pickups should raise only current RPM while others raise capacity permanently for the run
+
+### 20c: Progression structure
+- [ ] Early run: low RPM, low impact, scrappy survival fights
+- [ ] Mid run: enough RPM and capacity to sustain combo play, movement aggression, and repeated duels
+- [ ] Late run: high-speed, high-spark, boss-capable spinner with visibly stronger collision presence
+- [ ] Enemy pacing and drops should assume this upward curve instead of a mostly flat player power level
+
+### 20d: Pickups and rewards for a continuous climb
+- [ ] Normal pickups should refill current RPM and keep the player alive between fights
+- [ ] Elite kills, minibosses, or milestone rewards should grant permanent run growth such as `+capacity`, `+mass`, or combat perks
+- [ ] Spinner enemy kills should feel rewarding enough that winning a duel usually advances the run instead of draining it
+- [ ] Diminishing returns should soften runaway growth, but should not act like an invisible ceiling
+- [ ] Add a hard upper bound only as a tuning guardrail, not as the main progression fantasy
+
+### 20e: Recommended numeric direction
+- [ ] Start far below the current default setup; player should open a run feeling vulnerable, not already overbuilt
+- [ ] Use broad progression bands rather than a narrow `70-150 RPM` live range
+- [ ] Example tuning target:
+- [ ] Early game survivable band: roughly `80-250`
+- [ ] Mid game strong band: roughly `250-700`
+- [ ] Late game dominant band: roughly `700-1400`
+- [ ] Absolute tuning cap: around `2000`
+
+### 20f: System changes needed
+- [ ] Revisit HUD scaling so high RPM values remain readable deep into a run
+- [ ] Revisit spinner visuals so spin glow, wobble, and emissive behavior still look good at very high RPM
+- [ ] Revisit enemy tiers so early enemies are threatening at low player RPM, while late encounters still pressure a high-RPM player
+- [ ] Revisit pickup formulas so growth remains exciting over a long session
+- [ ] Revisit boss balance assuming the player can arrive at a wide range of RPM/capacity values
+
+### 20g: Guardrails
+- [ ] Bigger RPM should be exciting, but not the only axis of growth
+- [ ] Progression should improve survivability and collision presence without collapsing duel skill expression
+- [ ] A stronger player should still care about positioning, collision angle, and stamina management
+- [ ] If current RPM grows much faster than capacity, rebalance formulas to avoid returning to one-shot behavior
+
+### 20h: Implementation order
+- [ ] First: lock the new spinner-vs-spinner damage model so progression does not amplify a broken formula
+- [ ] Second: lower the player's starting RPM/capacity and define the desired early-game feel
+- [ ] Third: define which rewards increase current RPM versus permanent run capacity
+- [ ] Fourth: tune drops, pickups, and enemy tiers around a full run curve from weak start to high-RPM endgame
+
+---
+
 ## Constants Reference
 
 ### World Constants (`constants.ts`)

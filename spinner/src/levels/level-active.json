@@ -4,1397 +4,310 @@
   "gridSize": 1,
   "polygons": [
     {
-      "id": "poly_moe9wddb8w8ttm",
+      "id": "poly_mokabq6bllzlc8",
       "name": "Room 1 - Bottom",
       "layer": "wall",
       "vertices": [
         {
-          "x": -3,
-          "y": -10
+          "x": -30,
+          "y": -21
         },
         {
-          "x": 20,
-          "y": -10
+          "x": 31,
+          "y": -21
         },
         {
-          "x": 20,
-          "y": -9
+          "x": 31,
+          "y": -20
         },
         {
-          "x": -3,
-          "y": -9
+          "x": -30,
+          "y": -20
         }
       ],
       "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "color": "#5577aa"
     },
     {
-      "id": "poly_moe9wddcp1it7k",
+      "id": "poly_mokabq6c7insdn",
+      "name": "Room 1 - Top",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": -30,
+          "y": 28
+        },
+        {
+          "x": 31,
+          "y": 28
+        },
+        {
+          "x": 31,
+          "y": 29
+        },
+        {
+          "x": -30,
+          "y": 29
+        }
+      ],
+      "properties": {},
+      "color": "#5577aa"
+    },
+    {
+      "id": "poly_mokabq6dbb9n58",
       "name": "Room 1 - Left",
       "layer": "wall",
       "vertices": [
         {
-          "x": -3,
-          "y": -9
+          "x": -30,
+          "y": -20
         },
         {
-          "x": -2,
-          "y": -9
+          "x": -29,
+          "y": -20
         },
         {
-          "x": -2,
-          "y": 16
+          "x": -29,
+          "y": 28
         },
         {
-          "x": -3,
-          "y": 16
+          "x": -30,
+          "y": 28
         }
       ],
       "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "color": "#5577aa"
     },
     {
-      "id": "poly_moe9wddchm70vv",
+      "id": "poly_mokabq6d2iw7hg",
       "name": "Room 1 - Right",
       "layer": "wall",
       "vertices": [
         {
-          "x": 19,
-          "y": 1
+          "x": 30,
+          "y": -20
         },
         {
-          "x": 20,
-          "y": 1
+          "x": 31,
+          "y": -20
         },
         {
-          "x": 20,
-          "y": 16
+          "x": 31,
+          "y": 28
         },
         {
-          "x": 19,
-          "y": 16
+          "x": 30,
+          "y": 28
         }
       ],
       "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "color": "#5577aa"
     },
     {
-      "id": "poly_moe9wddc32d4bd",
+      "id": "poly_mokabq6dp7tg8p",
       "name": "Room 1 - Floor",
       "layer": "floor",
       "vertices": [
         {
-          "x": -2,
-          "y": -9
+          "x": -29,
+          "y": -20
         },
         {
-          "x": 19,
-          "y": -9
+          "x": 30,
+          "y": -20
         },
         {
-          "x": 19,
-          "y": 16
+          "x": 30,
+          "y": 28
         },
         {
-          "x": -2,
-          "y": 16
+          "x": -29,
+          "y": 28
         }
       ],
       "properties": {},
       "color": "#2a3a4a",
-      "textureId": "scifi-tile",
-      "textureScale": 4,
-      "useReliefMap": true
-    },
-    {
-      "id": "poly_moean2aezq5f3y",
-      "name": "Room 6 - Bottom",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": 20,
-          "y": 16
-        },
-        {
-          "x": 30,
-          "y": 16
-        },
-        {
-          "x": 30,
-          "y": 17
-        },
-        {
-          "x": 20,
-          "y": 17
-        }
-      ],
-      "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
-    },
-    {
-      "id": "poly_moean2afwlwe7f",
-      "name": "Room 6 - Top",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": 8,
-          "y": 36
-        },
-        {
-          "x": 30,
-          "y": 36
-        },
-        {
-          "x": 30,
-          "y": 37
-        },
-        {
-          "x": 8,
-          "y": 37
-        }
-      ],
-      "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
-    },
-    {
-      "id": "poly_moean2afrsh4uo",
-      "name": "Room 6 - Left",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": 8,
-          "y": 17
-        },
-        {
-          "x": 9,
-          "y": 17
-        },
-        {
-          "x": 9,
-          "y": 36
-        },
-        {
-          "x": 8,
-          "y": 36
-        }
-      ],
-      "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
-    },
-    {
-      "id": "poly_moean2afsn1f5k",
-      "name": "Room 6 - Right",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": 29,
-          "y": 17
-        },
-        {
-          "x": 30,
-          "y": 17
-        },
-        {
-          "x": 30,
-          "y": 36
-        },
-        {
-          "x": 29,
-          "y": 36
-        }
-      ],
-      "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
-    },
-    {
-      "id": "poly_moean2afeu2bns",
-      "name": "Room 6 - Floor",
-      "layer": "floor",
-      "vertices": [
-        {
-          "x": 9,
-          "y": 16
-        },
-        {
-          "x": 16,
-          "y": 16
-        },
-        {
-          "x": 16,
-          "y": 36
-        },
-        {
-          "x": 9,
-          "y": 36
-        }
-      ],
-      "properties": {},
-      "color": "#2a3a4a",
-      "textureId": "rock_wall_16_diff_1k",
-      "textureScale": 4
-    },
-    {
-      "id": "poly_moeaojqpyhk350",
-      "name": "Room 1 - Top - Rect 11 1",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": -3,
-          "y": 16
-        },
-        {
-          "x": 10,
-          "y": 16
-        },
-        {
-          "x": 10,
-          "y": 17
-        },
-        {
-          "x": -3,
-          "y": 17
-        },
-        {
-          "x": -3,
-          "y": 16
-        }
-      ],
-      "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
-    },
-    {
-      "id": "poly_moeaojqpbbk25n",
-      "name": "Room 1 - Top - Rect 11 2",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": 15,
-          "y": 16
-        },
-        {
-          "x": 20,
-          "y": 16
-        },
-        {
-          "x": 20,
-          "y": 17
-        },
-        {
-          "x": 15,
-          "y": 17
-        },
-        {
-          "x": 15,
-          "y": 16
-        }
-      ],
-      "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
-    },
-    {
-      "id": "poly_moebfrkgw8ksz2",
-      "name": "Room 16 - Wall - Rect 17",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": 269.24901823376456,
-          "y": -8
-        },
-        {
-          "x": 270.24901823376456,
-          "y": -8
-        },
-        {
-          "x": 270.303497059804,
-          "y": -7.168813735199979
-        },
-        {
-          "x": 271.2480370766039,
-          "y": -2.4202904068485633
-        },
-        {
-          "x": 272.8043030913399,
-          "y": 2.164321434366739
-        },
-        {
-          "x": 274.9456669610214,
-          "y": 6.506577808748208
-        },
-        {
-          "x": 277.63548935613994,
-          "y": 10.532181505829286
-        },
-        {
-          "x": 280.8277466697553,
-          "y": 14.17225333024468
-        },
-        {
-          "x": 284.46781849417073,
-          "y": 17.364510643860083
-        },
-        {
-          "x": 288.4934221912518,
-          "y": 20.054333038978605
-        },
-        {
-          "x": 292.83567856563326,
-          "y": 22.195696908660103
-        },
-        {
-          "x": 297.4202904068486,
-          "y": 23.7519629233961
-        },
-        {
-          "x": 302.1688137352,
-          "y": 24.69650294019602
-        },
-        {
-          "x": 307,
-          "y": 25.013155617496423
-        },
-        {
-          "x": 311.8311862648,
-          "y": 24.69650294019602
-        },
-        {
-          "x": 316.5797095931514,
-          "y": 23.7519629233961
-        },
-        {
-          "x": 321.16432143436674,
-          "y": 22.195696908660103
-        },
-        {
-          "x": 325.5065778087482,
-          "y": 20.054333038978605
-        },
-        {
-          "x": 329.53218150582927,
-          "y": 17.364510643860083
-        },
-        {
-          "x": 333.17225333024464,
-          "y": 14.172253330244672
-        },
-        {
-          "x": 336.36451064386006,
-          "y": 10.532181505829278
-        },
-        {
-          "x": 339.0543330389786,
-          "y": 6.506577808748208
-        },
-        {
-          "x": 341.1956969086601,
-          "y": 2.1643214343667356
-        },
-        {
-          "x": 342.7519629233961,
-          "y": -2.420290406848574
-        },
-        {
-          "x": 343.696502940196,
-          "y": -7.168813735199979
-        },
-        {
-          "x": 344.0131556174964,
-          "y": -12
-        },
-        {
-          "x": 343.696502940196,
-          "y": -16.831186264800024
-        },
-        {
-          "x": 342.7519629233961,
-          "y": -21.579709593151424
-        },
-        {
-          "x": 341.1956969086601,
-          "y": -26.16432143436676
-        },
-        {
-          "x": 339.0543330389786,
-          "y": -30.50657780874823
-        },
-        {
-          "x": 336.36451064386006,
-          "y": -34.532181505829286
-        },
-        {
-          "x": 333.17225333024464,
-          "y": -38.172253330244686
-        },
-        {
-          "x": 329.53218150582927,
-          "y": -41.364510643860086
-        },
-        {
-          "x": 325.5065778087482,
-          "y": -44.054333038978605
-        },
-        {
-          "x": 321.16432143436674,
-          "y": -46.195696908660096
-        },
-        {
-          "x": 316.5797095931514,
-          "y": -47.75196292339611
-        },
-        {
-          "x": 311.8311862648,
-          "y": -48.69650294019602
-        },
-        {
-          "x": 307,
-          "y": -49.01315561749642
-        },
-        {
-          "x": 302.1688137352,
-          "y": -48.69650294019602
-        },
-        {
-          "x": 297.4202904068486,
-          "y": -47.75196292339611
-        },
-        {
-          "x": 292.83567856563326,
-          "y": -46.195696908660096
-        },
-        {
-          "x": 288.49342219125174,
-          "y": -44.05433303897859
-        },
-        {
-          "x": 284.46781849417073,
-          "y": -41.36451064386007
-        },
-        {
-          "x": 280.8277466697553,
-          "y": -38.17225333024467
-        },
-        {
-          "x": 277.63548935613994,
-          "y": -34.53218150582927
-        },
-        {
-          "x": 274.9456669610214,
-          "y": -30.506577808748215
-        },
-        {
-          "x": 272.8043030913399,
-          "y": -26.164321434366734
-        },
-        {
-          "x": 271.2480370766039,
-          "y": -21.579709593151414
-        },
-        {
-          "x": 270.5359885668985,
-          "y": -18
-        },
-        {
-          "x": 269.51858043162514,
-          "y": -18
-        },
-        {
-          "x": 270.28211125031487,
-          "y": -21.838528638253933
-        },
-        {
-          "x": 271.8804235588286,
-          "y": -26.54700486673182
-        },
-        {
-          "x": 274.079641557237,
-          "y": -31.00657780874822
-        },
-        {
-          "x": 276.84213601584867,
-          "y": -35.14094293483799
-        },
-        {
-          "x": 280.1206398885688,
-          "y": -38.879360111431225
-        },
-        {
-          "x": 283.859057065162,
-          "y": -42.157863984151305
-        },
-        {
-          "x": 287.99342219125174,
-          "y": -44.92035844276303
-        },
-        {
-          "x": 292.4529951332682,
-          "y": -47.11957644117138
-        },
-        {
-          "x": 297.16147136174607,
-          "y": -48.71788874968517
-        },
-        {
-          "x": 302.0382875429799,
-          "y": -49.68794780156982
-        },
-        {
-          "x": 307,
-          "y": -50.01315561749642
-        },
-        {
-          "x": 311.9617124570201,
-          "y": -49.68794780156982
-        },
-        {
-          "x": 316.83852863825393,
-          "y": -48.71788874968517
-        },
-        {
-          "x": 321.54700486673187,
-          "y": -47.11957644117138
-        },
-        {
-          "x": 326.0065778087482,
-          "y": -44.92035844276303
-        },
-        {
-          "x": 330.140942934838,
-          "y": -42.15786398415132
-        },
-        {
-          "x": 333.8793601114312,
-          "y": -38.879360111431225
-        },
-        {
-          "x": 337.1578639841513,
-          "y": -35.14094293483801
-        },
-        {
-          "x": 339.920358442763,
-          "y": -31.006577808748233
-        },
-        {
-          "x": 342.1195764411714,
-          "y": -26.547004866731847
-        },
-        {
-          "x": 343.7178887496852,
-          "y": -21.838528638253944
-        },
-        {
-          "x": 344.6879478015698,
-          "y": -16.961712457020077
-        },
-        {
-          "x": 345.0131556174964,
-          "y": -12
-        },
-        {
-          "x": 344.6879478015698,
-          "y": -7.03828754297993
-        },
-        {
-          "x": 343.7178887496852,
-          "y": -2.161471361746054
-        },
-        {
-          "x": 342.1195764411714,
-          "y": 2.5470048667318252
-        },
-        {
-          "x": 339.920358442763,
-          "y": 7.006577808748208
-        },
-        {
-          "x": 337.1578639841513,
-          "y": 11.140942934837998
-        },
-        {
-          "x": 333.8793601114312,
-          "y": 14.879360111431222
-        },
-        {
-          "x": 330.140942934838,
-          "y": 18.157863984151316
-        },
-        {
-          "x": 326.0065778087482,
-          "y": 20.92035844276304
-        },
-        {
-          "x": 321.54700486673187,
-          "y": 23.11957644117139
-        },
-        {
-          "x": 316.83852863825393,
-          "y": 24.717888749685173
-        },
-        {
-          "x": 311.9617124570201,
-          "y": 25.68794780156982
-        },
-        {
-          "x": 307,
-          "y": 26.013155617496423
-        },
-        {
-          "x": 302.0382875429799,
-          "y": 25.68794780156982
-        },
-        {
-          "x": 297.16147136174607,
-          "y": 24.717888749685173
-        },
-        {
-          "x": 292.4529951332682,
-          "y": 23.11957644117139
-        },
-        {
-          "x": 287.9934221912518,
-          "y": 20.920358442763046
-        },
-        {
-          "x": 283.859057065162,
-          "y": 18.157863984151316
-        },
-        {
-          "x": 280.1206398885688,
-          "y": 14.879360111431222
-        },
-        {
-          "x": 276.8421360158487,
-          "y": 11.140942934838009
-        },
-        {
-          "x": 274.079641557237,
-          "y": 7.006577808748208
-        },
-        {
-          "x": 271.8804235588286,
-          "y": 2.547004866731829
-        },
-        {
-          "x": 270.28211125031487,
-          "y": -2.1614713617460435
-        },
-        {
-          "x": 269.3120521984302,
-          "y": -7.03828754297993
-        },
-        {
-          "x": 269.24901823376456,
-          "y": -8
-        }
-      ],
-      "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
-    },
-    {
-      "id": "poly_moebnynp8p2q1q",
-      "name": "Rect 17",
-      "layer": "floor",
-      "vertices": [
-        {
-          "x": 16,
-          "y": 17
-        },
-        {
-          "x": 29,
-          "y": 17
-        },
-        {
-          "x": 29,
-          "y": 36
-        },
-        {
-          "x": 16,
-          "y": 36
-        }
-      ],
-      "properties": {
-        "newKey": "",
-        "surfaceType": "lava"
-      },
-      "color": "#3388ff"
-    },
-    {
-      "id": "poly_moegrdxc76pi46",
-      "name": "Rect 18",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": -22,
-          "y": -3
-        },
-        {
-          "x": -5,
-          "y": -3
-        },
-        {
-          "x": -5,
-          "y": 14
-        },
-        {
-          "x": -22,
-          "y": 14
-        }
-      ],
-      "properties": {},
-      "color": "#3388ff",
-      "textureId": "rock_wall_16_diff_1k",
-      "textureScale": 4
-    },
-    {
-      "id": "poly_moflzzs7nbivun",
-      "name": "Rect 18",
-      "layer": "floor",
-      "vertices": [
-        {
-          "x": 97,
-          "y": -9
-        },
-        {
-          "x": 99,
-          "y": -9
-        },
-        {
-          "x": 99,
-          "y": 1
-        },
-        {
-          "x": 97,
-          "y": 1
-        }
-      ],
-      "properties": {},
-      "color": "#3388ff",
-      "textureId": "rock_wall_16_diff_1k",
-      "textureScale": 4
-    },
-    {
-      "id": "poly_mofo22funzbr82",
-      "name": "Room 12 - Top - Rect 19 1",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": 20,
-          "y": 1
-        },
-        {
-          "x": 49,
-          "y": 1
-        },
-        {
-          "x": 49,
-          "y": 2
-        },
-        {
-          "x": 20,
-          "y": 2
-        },
-        {
-          "x": 20,
-          "y": 1
-        }
-      ],
-      "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
-    },
-    {
-      "id": "poly_mofo22fupn2iip",
-      "name": "Room 12 - Top - Rect 19 2",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": 56,
-          "y": 1
-        },
-        {
-          "x": 100,
-          "y": 1
-        },
-        {
-          "x": 100,
-          "y": 2
-        },
-        {
-          "x": 56,
-          "y": 2
-        },
-        {
-          "x": 56,
-          "y": 1
-        }
-      ],
-      "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
-    },
-    {
-      "id": "poly_mofo2dc7c0ewj2",
-      "name": "Room 12 - Bottom - Rect 20 1",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": 20,
-          "y": -10
-        },
-        {
-          "x": 49,
-          "y": -10
-        },
-        {
-          "x": 49,
-          "y": -9
-        },
-        {
-          "x": 20,
-          "y": -9
-        },
-        {
-          "x": 20,
-          "y": -10
-        }
-      ],
-      "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
-    },
-    {
-      "id": "poly_mofo2dc7jrgcvz",
-      "name": "Room 12 - Bottom - Rect 20 2",
-      "layer": "wall",
-      "vertices": [
-        {
-          "x": 56,
-          "y": -10
-        },
-        {
-          "x": 100,
-          "y": -10
-        },
-        {
-          "x": 100,
-          "y": -9
-        },
-        {
-          "x": 56,
-          "y": -9
-        },
-        {
-          "x": 56,
-          "y": -10
-        }
-      ],
-      "properties": {},
-      "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
-    },
-    {
-      "id": "poly_mofo2pzqjm9lyk",
-      "name": "Room 12 - Floor - Rect 21 1",
-      "layer": "floor",
-      "vertices": [
-        {
-          "x": 19,
-          "y": -8
-        },
-        {
-          "x": 49,
-          "y": -8
-        },
-        {
-          "x": 49,
-          "y": 2
-        },
-        {
-          "x": 19,
-          "y": 2
-        },
-        {
-          "x": 19,
-          "y": -8
-        }
-      ],
-      "properties": {},
-      "color": "#2a3a4a",
-      "textureId": "rock_wall_16_diff_1k",
-      "textureScale": 4
-    },
-    {
-      "id": "poly_mofo2pzqe36qsh",
-      "name": "Room 12 - Floor - Rect 21 2",
-      "layer": "floor",
-      "vertices": [
-        {
-          "x": 56,
-          "y": -9
-        },
-        {
-          "x": 97,
-          "y": -9
-        },
-        {
-          "x": 97,
-          "y": 1
-        },
-        {
-          "x": 56,
-          "y": 1
-        },
-        {
-          "x": 56,
-          "y": -9
-        }
-      ],
-      "properties": {},
-      "color": "#2a3a4a",
-      "textureId": "rock_wall_16_diff_1k",
-      "textureScale": 4
-    },
-    {
-      "id": "poly_mofo3j84xk6rnt",
-      "name": "Polygon 22",
-      "layer": "floor",
-      "vertices": [
-        {
-          "x": 49,
-          "y": 1
-        },
-        {
-          "x": 50,
-          "y": 0
-        },
-        {
-          "x": 49,
-          "y": -1
-        },
-        {
-          "x": 50,
-          "y": -4
-        },
-        {
-          "x": 49,
-          "y": -6
-        },
-        {
-          "x": 50,
-          "y": -8
-        },
-        {
-          "x": 49,
-          "y": -10
-        }
-      ],
-      "properties": {},
-      "color": "#3388ff",
-      "textureId": "rock_wall_16_diff_1k",
-      "textureScale": 4
-    },
-    {
-      "id": "poly_mofo3vni0f9ftw",
-      "name": "Polygon 23",
-      "layer": "floor",
-      "vertices": [
-        {
-          "x": 56,
-          "y": 2
-        },
-        {
-          "x": 55,
-          "y": 1
-        },
-        {
-          "x": 56,
-          "y": -1
-        },
-        {
-          "x": 55,
-          "y": -2
-        },
-        {
-          "x": 54,
-          "y": -4
-        },
-        {
-          "x": 55,
-          "y": -5
-        },
-        {
-          "x": 55,
-          "y": -7
-        },
-        {
-          "x": 54,
-          "y": -10
-        },
-        {
-          "x": 56,
-          "y": -10
-        }
-      ],
-      "properties": {},
-      "color": "#ff5533",
-      "textureId": "rock_wall_16_diff_1k",
-      "textureScale": 4
-    },
-    {
-      "id": "poly_mofppg2kh1vf20",
-      "name": "Rect 25",
-      "layer": "trigger",
-      "vertices": [
-        {
-          "x": 50,
-          "y": -10
-        },
-        {
-          "x": 55,
-          "y": -10
-        },
-        {
-          "x": 55,
-          "y": 1
-        },
-        {
-          "x": 50,
-          "y": 1
-        }
-      ],
-      "properties": {
-        "triggerAction": "kill_fall"
-      },
-      "color": "#ff5533"
-    },
-    {
-      "id": "poly_mofr50635r4jwn",
-      "name": "Rect 26",
-      "layer": "trigger",
-      "vertices": [
-        {
-          "x": 81,
-          "y": -9
-        },
-        {
-          "x": 85,
-          "y": -9
-        },
-        {
-          "x": 85,
-          "y": 1
-        },
-        {
-          "x": 81,
-          "y": 1
-        }
-      ],
-      "properties": {
-        "triggerId": "arena_wave_1"
-      },
-      "color": "#33cc66"
-    },
-    {
-      "id": "poly_moio5euwvmefw3",
-      "name": "Rect 26",
-      "layer": "floor",
-      "vertices": [
-        {
-          "x": 99,
-          "y": -49
-        },
-        {
-          "x": 204,
-          "y": -50
-        },
-        {
-          "x": 204,
-          "y": 50
-        },
-        {
-          "x": 99,
-          "y": 50
-        }
-      ],
-      "properties": {},
-      "color": "#3388ff",
       "textureId": "sci-fi",
       "textureScale": 4
     }
   ],
-  "circles": [
-    {
-      "id": "circ_moebekzzces3pr",
-      "name": "Room 16 - Floor",
-      "layer": "floor",
-      "center": {
-        "x": 293,
-        "y": 1
-      },
-      "radius": 37.01315561749642,
-      "properties": {},
-      "color": "#2a3a4a",
-      "textureId": "rock_wall_16_diff_1k",
-      "textureScale": 4
-    }
-  ],
+  "circles": [],
   "entities": [
     {
-      "id": "ent_moe9wy488gfxv3",
-      "name": "Spawn 1",
-      "type": "spawn",
+      "id": "ent_mokac8ohg3b47j",
+      "name": "Player Spawn 1",
+      "type": "enemy_spinner_tier_3",
+      "position": {
+        "x": 2,
+        "y": 14
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokal5ndqg1xpy",
+      "name": "Player Spawn 2",
+      "type": "pickup",
+      "position": {
+        "x": -12,
+        "y": 0
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalnkhjgwdw1",
+      "name": "Pickup 3",
+      "type": "pickup",
+      "position": {
+        "x": -5,
+        "y": -3
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalo1mwbals3",
+      "name": "Pickup 4",
+      "type": "pickup",
       "position": {
         "x": 7,
+        "y": -8
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalog2ong3pu",
+      "name": "Pickup 5",
+      "type": "pickup",
+      "position": {
+        "x": 16,
+        "y": 2
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalou5ed3c1x",
+      "name": "Pickup 6",
+      "type": "pickup",
+      "position": {
+        "x": 3,
+        "y": 2
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalpabe17xlk",
+      "name": "Pickup 7",
+      "type": "pickup",
+      "position": {
+        "x": -4,
+        "y": -12
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalpph137023",
+      "name": "Pickup 8",
+      "type": "pickup",
+      "position": {
+        "x": -13,
         "y": 6
       },
       "rotation": 0,
       "properties": {}
     },
     {
-      "id": "ent_moe9x29gdxwni6",
-      "name": "Light_point 2",
-      "type": "light_point",
+      "id": "ent_mokalq406gzllk",
+      "name": "Pickup 9",
+      "type": "pickup",
       "position": {
-        "x": 5,
-        "y": 2
-      },
-      "rotation": 0,
-      "properties": {
-        "color": "#ff0000",
-        "intensity": "40.0",
-        "range": "8",
-        "decay": "0.8",
-        "height": "1.5"
-      }
-    },
-    {
-      "id": "ent_moeb6nvwser792",
-      "name": "Spawn 3",
-      "type": "light_point",
-      "position": {
-        "x": -10,
-        "y": 2
-      },
-      "rotation": 0,
-      "properties": {
-        "intensity": "20.0"
-      }
-    },
-    {
-      "id": "ent_moen6dmub30vfl",
-      "name": "Player Spawn 5",
-      "type": "octoboss",
-      "position": {
-        "x": 134,
-        "y": -4
-      },
-      "rotation": 0,
-      "properties": {
-        "spawnTrigger": "arena_wave_1"
-      }
-    },
-    {
-      "id": "ent_mofm4ma1vititk",
-      "name": "Fire Torch 5",
-      "type": "fire_torch",
-      "position": {
-        "x": -1,
-        "y": 11
-      },
-      "rotation": 0,
-      "properties": {
-        "color": "#ff9a3c",
-        "intensity": "20.4",
-        "range": "9.5",
-        "decay": "1.6",
-        "height": "1.8",
-        "poleHeight": "1.55",
-        "flameSize": "0.22"
-      }
-    },
-    {
-      "id": "ent_mofmjfzqu1x9hf",
-      "name": "Robot 6",
-      "type": "zombie",
-      "position": {
-        "x": 39,
-        "y": -4
+        "x": -17,
+        "y": 18
       },
       "rotation": 0,
       "properties": {}
     },
     {
-      "id": "ent_mofmp1zowoiak5",
-      "name": "Waypoint 7",
-      "type": "fire_torch",
+      "id": "ent_mokalqk6q2wulv",
+      "name": "Pickup 10",
+      "type": "pickup",
       "position": {
-        "x": 24,
-        "y": -2
-      },
-      "rotation": 0,
-      "properties": {
-        "intensity": "20.0",
-        "decay": "0.5"
-      }
-    },
-    {
-      "id": "ent_mofmp48paeh9ah",
-      "name": "Waypoint 8",
-      "type": "fire_torch",
-      "position": {
-        "x": 28,
-        "y": -10
-      },
-      "rotation": 0,
-      "properties": {
-        "intensity": "20.0",
-        "decay": "0.8"
-      }
-    },
-    {
-      "id": "ent_mofmp65x3x5crh",
-      "name": "Waypoint 9",
-      "type": "fire_torch",
-      "position": {
-        "x": 40,
-        "y": -2
-      },
-      "rotation": 0,
-      "properties": {
-        "intensity": "20",
-        "decay": "0.8"
-      }
-    },
-    {
-      "id": "ent_mofmp7h7hw9cq1",
-      "name": "Waypoint 10",
-      "type": "fire_torch",
-      "position": {
-        "x": 57,
-        "y": -10
-      },
-      "rotation": 0,
-      "properties": {
-        "intensity": "20.0",
-        "decay": "0.5"
-      }
-    },
-    {
-      "id": "ent_mofmp9rjwaiphs",
-      "name": "Waypoint 11",
-      "type": "fire_torch",
-      "position": {
-        "x": 72,
-        "y": -1
-      },
-      "rotation": 0,
-      "properties": {
-        "intensity": "20.0",
-        "decay": "0.5"
-      }
-    },
-    {
-      "id": "ent_mofmpaqel7cvtv",
-      "name": "Waypoint 12",
-      "type": "fire_torch",
-      "position": {
-        "x": 90,
-        "y": -10
-      },
-      "rotation": 0,
-      "properties": {
-        "intensity": "20",
-        "decay": "0.5"
-      }
-    },
-    {
-      "id": "ent_mofoyuglo4gu6x",
-      "name": "Trigger 13",
-      "type": "trigger",
-      "position": {
-        "x": 84,
-        "y": -5
-      },
-      "rotation": 0,
-      "properties": {
-        "spawnTrigger": "arena_wave_1"
-      }
-    },
-    {
-      "id": "ent_moio61d4lmvnj6",
-      "name": "Point Light 14",
-      "type": "light_point",
-      "position": {
-        "x": 121,
-        "y": 22
-      },
-      "rotation": 0,
-      "properties": {
-        "color": "#ffd080",
-        "intensity": "20.0",
-        "range": "8",
-        "decay": "1.5",
-        "height": "1.5"
-      }
-    },
-    {
-      "id": "ent_moio6aj4eda1en",
-      "name": "Point Light 15",
-      "type": "light_point",
-      "position": {
-        "x": 179,
+        "x": 11,
         "y": 23
       },
       "rotation": 0,
-      "properties": {
-        "color": "#ffd080",
-        "intensity": "20.0",
-        "range": "8",
-        "decay": "1.5",
-        "height": "1.5"
-      }
+      "properties": {}
     },
     {
-      "id": "ent_moio6bkwwxr6bn",
-      "name": "Point Light 16",
-      "type": "light_point",
+      "id": "ent_mokalr6fxia170",
+      "name": "Pickup 11",
+      "type": "pickup",
       "position": {
-        "x": 118,
-        "y": -26
+        "x": 26,
+        "y": 5
       },
       "rotation": 0,
-      "properties": {
-        "color": "#ffd080",
-        "intensity": "20.0",
-        "range": "8",
-        "decay": "1.5",
-        "height": "1.5"
-      }
+      "properties": {}
     },
     {
-      "id": "ent_moio6cejruhrhq",
-      "name": "Point Light 17",
-      "type": "light_point",
+      "id": "ent_mokalrnr4veala",
+      "name": "Pickup 12",
+      "type": "pickup",
       "position": {
-        "x": 181,
-        "y": -26
+        "x": 22,
+        "y": -11
       },
       "rotation": 0,
-      "properties": {
-        "color": "#ffd080",
-        "intensity": "20.0",
-        "range": "8",
-        "decay": "1.5",
-        "height": "1.5"
-      }
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalse8ax30pm",
+      "name": "Pickup 13",
+      "type": "pickup",
+      "position": {
+        "x": -22,
+        "y": -14
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokalswpknkqc7",
+      "name": "Pickup 14",
+      "type": "pickup",
+      "position": {
+        "x": -22,
+        "y": 9
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokaltjon8vk0k",
+      "name": "Pickup 15",
+      "type": "pickup",
+      "position": {
+        "x": 18,
+        "y": 18
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mokaltyyxhvqku",
+      "name": "Pickup 16",
+      "type": "pickup",
+      "position": {
+        "x": -5,
+        "y": 23
+      },
+      "rotation": 0,
+      "properties": {}
     }
   ]
 }

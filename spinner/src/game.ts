@@ -5,7 +5,7 @@ import {
   RPM_HALF_POINT_RATIO, COLLISION_DAMAGE_RATIO,
   PICKUP_RPM_BOOST, HYPER_BOOST,
 } from './constants';
-import { spinnerConfig } from './spinnerConfig';
+import { spinnerConfig, resetSpinnerConfig } from './spinnerConfig';
 import { runCollisions, collidables, walls, zones, type Collidable, type Segment, type Vec2 } from './physics';
 import { initHud, updateHud, setHudVisible, type ComboHudState } from './hud';
 import { initCamera, updateCamera } from './camera';
@@ -20,9 +20,10 @@ import {
   playerRpmHooks, updatePlayerVisuals, updateTopple, notifyHit as notifyPlayerHit,
   startPlayerPitFallDeath, startPlayerToppleDeath,
   setPlayerControlLocked, setPlayerInvulnerable, isPlayerInvulnerable,
+  addPlayerCapacity,
 } from './player';
 import {
-  createNormalPickup, createHyperPickup, updatePickups, spawnPickupAt, ejectPickupAt,
+  createNormalPickup, createHyperPickup, updatePickups, spawnPickupAt, spawnGrowthPickupAt, ejectPickupAt,
   collectPickup, pickupRpmGain, type Pickup,
 } from './pickup';
 import { type LevelData, lvPos } from './levelLoader';
@@ -41,8 +42,8 @@ import {
 } from './obstacle';
 import {
   createEnemySpinner, updateEnemyAI, updateEnemyVisuals,
-  onEnemyCollision, isEnemyDead, destroyEnemySpinner,
-  ENEMY_SPINNER_TIER_1, type EnemySpinnerState,
+  onEnemyCollision, getEnemyComboLockDuration, isEnemyDead, destroyEnemySpinner,
+  ENEMY_SPINNER_TIER_1, ENEMY_SPINNER_TIER_2, ENEMY_SPINNER_TIER_3, type EnemySpinnerState,
 } from './enemySpinner';
 import {
   createZombieEnemy, updateZombieAI, updateZombieVisuals,
@@ -213,6 +214,13 @@ registerCollisionPair('player', 'obstacle', (_playerCol, obsCol, hit) => {
 
 registerCollisionPair('player', 'enemy', (_playerCol, enemyCol, hit) => {
   const enemy = EnemyEntities.getAll().find(e => e.collidable === enemyCol);
+  if (enemy?.alive && !isPlayerInvulnerable()) {
+    const comboLock = getEnemyComboLockDuration(enemy);
+    if (comboLock > 0) {
+      enemyComboLockTimer = Math.max(enemyComboLockTimer, comboLock);
+      setPlayerControlLocked(true);
+    }
+  }
   if (enemy?.alive) onEnemyCollision(enemy);
   const { point, normal } = computeContactInfo(_playerCol, enemyCol);
   emitSparks(point, normal, Math.floor(12 + hit.impactForce * 10), Math.min(1, hit.impactForce / 8));
@@ -468,8 +476,10 @@ registerProximityPair('player', 'pickup', (_playerProx, pickupProx) => {
   if (pickup.type === 'normal') {
     const halfPoint = spinnerConfig.rpmCapacity * RPM_HALF_POINT_RATIO;
     playerBody.rpm += pickupRpmGain(playerBody.rpm, halfPoint, PICKUP_RPM_BOOST);
-  } else {
+  } else if (pickup.type === 'hyper') {
     playerBody.rpm += HYPER_BOOST;
+  } else {
+    addPlayerCapacity(spinnerConfig.growthPickupCapacityGain);
   }
   collectPickup(pickup);
 });
@@ -527,6 +537,7 @@ const SPIDER_MOTION_DEBUG = false;
 const PLAYER_WEB_SPEED_MULT = 0.16;
 const PLAYER_WEB_VEL_DAMP = 0.42;
 let playerWebTimer = 0;
+let enemyComboLockTimer = 0;
 
 type MotionBucket = 'move_x' | 'move_z';
 type SpiderMotionState = 'chase' | 'orbit' | 'collapse' | 'hop_windup' | 'hop_air' | 'hop_recover';
@@ -914,6 +925,21 @@ function isEntityFallable(ent: LevelEntity): boolean {
 
 function spawnLevelEntity(ent: LevelEntity): void {
   const pos = lvPos(ent.position);
+  const spawnEnemySpinnerEntity = (config: typeof ENEMY_SPINNER_TIER_1): void => {
+    const enemy = EnemyEntities.spawn(pos, config);
+    if (isEntityFallable(ent)) {
+      registerFallableActor(enemy.collidable, () => {
+        const roots = deactivateEnemySpinnerForFall(enemy);
+        enqueueFallingVictim(createFallingVictim(
+          roots,
+          enemy.topResult.tiltGroup,
+          () => EnemyEntities.destroy(enemy),
+          enemy.topResult.spinGroup,
+        ));
+      });
+    }
+  };
+
   switch (ent.type) {
     case 'pickup':
       pickups.push(createNormalPickup(pos));
@@ -996,19 +1022,17 @@ function spawnLevelEntity(ent: LevelEntity): void {
     case 'turret':
       TurretEntities.spawn(pos, TURRET_TIER_1);
       break;
-    case 'enemy_spinner': {
-      const enemy = EnemyEntities.spawn(pos, ENEMY_SPINNER_TIER_1);
-      if (isEntityFallable(ent)) {
-        registerFallableActor(enemy.collidable, () => {
-          const roots = deactivateEnemySpinnerForFall(enemy);
-          enqueueFallingVictim(createFallingVictim(
-            roots,
-            enemy.topResult.tiltGroup,
-            () => EnemyEntities.destroy(enemy),
-            enemy.topResult.spinGroup,
-          ));
-        });
-      }
+    case 'enemy_spinner':
+    case 'enemy_spinner_tier_2': {
+      spawnEnemySpinnerEntity(ENEMY_SPINNER_TIER_2);
+      break;
+    }
+    case 'enemy_spinner_tier_1': {
+      spawnEnemySpinnerEntity(ENEMY_SPINNER_TIER_1);
+      break;
+    }
+    case 'enemy_spinner_tier_3': {
+      spawnEnemySpinnerEntity(ENEMY_SPINNER_TIER_3);
       break;
     }
     case 'zombie': {
@@ -1257,6 +1281,7 @@ function resetGame(): void {
 
   // Clear ECS registrations and reset player
   resetEntityRegistrations();
+  resetSpinnerConfig();
   resetPlayer();
   setupPlayer();
   comboState.phase = 'idle';
@@ -1296,6 +1321,7 @@ function resetGame(): void {
   fallableActors.length = 0;
   playerKillFallTimer = 0;
   playerWebTimer = 0;
+  enemyComboLockTimer = 0;
   clearDynamicLevelLights();
   clearLevelLights(scene);
   setupLevelLights(scene, currentLevel);
@@ -2325,6 +2351,7 @@ function checkEnemyDeath(): void {
       EnemyEntities.destroy(enemy);
       explosions.push(createExplosion(deathPos));
       spawnPickupAt(pickups, deathPos);
+      spawnGrowthPickupAt(pickups, { x: deathPos.x + 0.75, z: deathPos.z });
     }
   }
 }
@@ -2589,9 +2616,16 @@ function animate(): void {
   }
 
   // 1. Entity updates (intent — player input, enemy AI, boss AI, turret aim)
+  if (enemyComboLockTimer > 0) {
+    enemyComboLockTimer = Math.max(0, enemyComboLockTimer - delta);
+    if (enemyComboLockTimer <= 0 && !isPlayerInvulnerable()) {
+      setPlayerControlLocked(false);
+    }
+  }
   tryStartPlayerCombo();
   entityUpdateSystem(delta);
-  for (const e of EnemyEntities.getAll()) updateEnemyAI(e, playerBody.pos, delta);
+  const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
+  for (const e of EnemyEntities.getAll()) updateEnemyAI(e, playerBody.pos, playerBody.radius, playerSpeed, delta);
   for (const b of DreadnoughtEntities.getAll()) updateDreadnoughtAI(b, playerBody.pos, delta);
   for (const s of SiegeEntities.getAll()) updateSiegeEngineAI(s, playerBody.pos, delta);
   for (const h of HiveEntities.getAll()) updateHiveAI(h, playerBody.pos, delta);

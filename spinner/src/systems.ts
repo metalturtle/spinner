@@ -89,6 +89,10 @@ export function untagCollidable(collidable: Collidable): void {
   collidableTypes.delete(collidable);
 }
 
+export function getCollidableType(collidable: Collidable): string | undefined {
+  return collidableTypes.get(collidable);
+}
+
 /** Register a handler for collisions between two entity types. Order-independent. */
 export function registerCollisionPair(
   typeA: string, typeB: string, handler: CollisionHandler

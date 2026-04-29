@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { scene } from './renderer';
 import { ARENA_SIZE } from './constants';
 import { collidables, zones, type Collidable, type Vec2, type FloorZone } from './physics';
-import { createTop, type TopResult } from './top';
+import { createTop, TOP_BASE_RADIUS, type TopResult } from './top';
 import { updateSpinnerVisuals, type SpinnerTiltState } from './spinnerVisuals';
 import { createHpBar, updateHpBar } from './hpBar';
 import {
@@ -52,7 +52,7 @@ export interface DreadnoughtState extends SpinnerTiltState {
 export function createDreadnought(pos: Vec2, config: DreadnoughtConfig): DreadnoughtState {
   // Larger top — scale the standard top mesh
   const topResult = createTop(config.color);
-  const scale = config.radius / 0.5;     // standard top is built for radius ~0.5
+  const scale = config.radius / TOP_BASE_RADIUS;
   topResult.spinGroup.scale.set(scale, scale, scale);
   topResult.tiltGroup.position.set(pos.x, 0, pos.z);
   scene.add(topResult.tiltGroup);
