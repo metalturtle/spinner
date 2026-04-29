@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { renderer, scene, camera } from './renderer';
-import { createArena, isPointInLava } from './arena';
+import { createArena, getArenaBounds, isPointInLava } from './arena';
 import {
   RPM_HALF_POINT_RATIO, COLLISION_DAMAGE_RATIO,
   PICKUP_RPM_BOOST, HYPER_BOOST,
@@ -440,6 +440,43 @@ setupPlayer();
 const pickups:     Pickup[]     = [];
 const projectiles: Projectile[] = [];
 const explosions:  Explosion[]  = [];
+const octobossParasiteOwners = new Map<number, number>();
+const octobossDroneOwners = new Map<number, number>();
+
+const OCTOBOSS_PARASITE_TIER = {
+  ...ENEMY_SPINNER_TIER_1,
+  rpmCapacity: 46,
+  radius: 0.42,
+  mass: 0.72,
+  maxSpeed: 10.4,
+  acceleration: 15.2,
+  heatFactor: 0.62,
+  chargeRange: 4.9,
+  chargeBoost: 1.4,
+  recoveryTime: 0.95,
+  color: 0xc98448,
+};
+
+const OCTOBOSS_DRONE_TIER = {
+  ...ROBOT_TIER_1,
+  hp: 9,
+  radius: 0.5,
+  mass: 0.16,
+  heatFactor: 0.42,
+  maxSpeed: 6.7,
+  acceleration: 14.5,
+  attackRange: 11.0,
+  preferredRange: 8.2,
+  strafeTime: 3.0,
+  prepareTime: 0.82,
+  cooldownTime: 1.45,
+  projectileDamage: 7,
+  barrelTurnSpeed: 3.2,
+  color: 0xd19b68,
+};
+
+const OCTOBOSS_PARASITE_CAP = [4, 4, 5];
+const OCTOBOSS_DRONE_CHANCE = [0.28, 0.44, 0.58];
 const fireTorches: FireTorch[]  = [];
 const dynamicLevelLightRoots: THREE.Object3D[] = [];
 const pendingTriggeredEntities = new Map<string, LevelEntity[]>();
@@ -1115,6 +1152,8 @@ function resetGame(): void {
 
   gameOver = false;
   gameOverOverlay.style.display = 'none';
+  octobossParasiteOwners.clear();
+  octobossDroneOwners.clear();
 
   // Clear all pickups (level + dynamic drops) — meshes still in scene need removal
   for (const p of pickups) { if (!p.collected) scene.remove(p.mesh); }
@@ -1845,6 +1884,97 @@ function updateOctobossSystem(delta: number): void {
   }
 }
 
+function getOctobossSummonPhase(boss: OctobossState): number {
+  const frac = boss.collidable.rpm / boss.config.coreRpmCapacity;
+  if (frac > 0.66) return 0;
+  if (frac > 0.33) return 1;
+  return 2;
+}
+
+function countActiveOctobossParasites(bossId: number): number {
+  let count = 0;
+  for (const enemy of EnemyEntities.getAll()) {
+    if (!enemy.alive) continue;
+    if (octobossParasiteOwners.get(enemy.id) === bossId) count += 1;
+  }
+  return count;
+}
+
+function countActiveOctobossDrones(bossId: number): number {
+  let count = 0;
+  for (const robot of RobotEntities.getAll()) {
+    if (!robot.alive) continue;
+    if (octobossDroneOwners.get(robot.id) === bossId) count += 1;
+  }
+  return count;
+}
+
+function sampleOctobossSummonPoint(
+  boss: OctobossState,
+  minRadius: number,
+  maxRadius: number,
+): Vec2 | null {
+  const bounds = getArenaBounds();
+  for (let attempt = 0; attempt < 18; attempt++) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = minRadius + Math.random() * (maxRadius - minRadius);
+    const point = {
+      x: boss.collidable.pos.x + Math.cos(angle) * radius,
+      z: boss.collidable.pos.z + Math.sin(angle) * radius,
+    };
+    if (point.x < bounds.minX + 1.5 || point.x > bounds.maxX - 1.5) continue;
+    if (point.z < bounds.minZ + 1.5 || point.z > bounds.maxZ - 1.5) continue;
+    if (isPointInLava(point)) continue;
+    if (distanceSq(point, playerBody.pos) < 10) continue;
+    return point;
+  }
+  return null;
+}
+
+function spawnOctobossRetractPickups(boss: OctobossState): void {
+  const phase = getOctobossSummonPhase(boss);
+  const count = phase >= 2 ? 5 : 4;
+  const baseAngle = Math.atan2(playerBody.pos.x - boss.collidable.pos.x, playerBody.pos.z - boss.collidable.pos.z);
+  const eyePos = {
+    x: boss.collidable.pos.x + Math.sin(boss.facingAngle) * boss.config.coreRadius * 0.82,
+    z: boss.collidable.pos.z + Math.cos(boss.facingAngle) * boss.config.coreRadius * 0.82,
+  };
+
+  emitPlasma({ x: eyePos.x, y: 2.4, z: eyePos.z }, 8 + count * 2, 0.42);
+
+  for (let i = 0; i < count; i++) {
+    const angle = baseAngle + (i - (count - 1) * 0.5) * 0.34 + (Math.random() - 0.5) * 0.22;
+    const speed = 4.8 + Math.random() * 2.4 + phase * 0.45;
+    ejectPickupAt(pickups, eyePos, {
+      x: Math.sin(angle) * speed,
+      z: Math.cos(angle) * speed,
+    });
+  }
+}
+
+function spawnOctobossChaseWave(boss: OctobossState): void {
+  const phase = getOctobossSummonPhase(boss);
+  const targetParasites = OCTOBOSS_PARASITE_CAP[phase];
+  const activeParasites = countActiveOctobossParasites(boss.id);
+  for (let i = activeParasites; i < targetParasites; i++) {
+    const spawnPos = sampleOctobossSummonPoint(boss, 4.4, 8.4);
+    if (!spawnPos) break;
+    const parasite = EnemyEntities.spawn(spawnPos, OCTOBOSS_PARASITE_TIER);
+    octobossParasiteOwners.set(parasite.id, boss.id);
+    parasite.collidable.vel.x = (spawnPos.x - boss.collidable.pos.x) * 0.45;
+    parasite.collidable.vel.z = (spawnPos.z - boss.collidable.pos.z) * 0.45;
+  }
+
+  if (countActiveOctobossDrones(boss.id) > 0) return;
+  if (Math.random() >= OCTOBOSS_DRONE_CHANCE[phase]) return;
+
+  const dronePos = sampleOctobossSummonPoint(boss, 5.8, 9.6);
+  if (!dronePos) return;
+
+  const drone = RobotEntities.spawn(dronePos, OCTOBOSS_DRONE_TIER);
+  octobossDroneOwners.set(drone.id, boss.id);
+}
+
 function updateOctobossDrillContacts(delta: number): void {
   if (isPlayerInvulnerable()) return;
 
@@ -2015,6 +2145,7 @@ function checkEnemyDeath(): void {
   for (const enemy of [...EnemyEntities.getAll()]) {
     if (isEnemyDead(enemy)) {
       const deathPos = { x: enemy.collidable.pos.x, z: enemy.collidable.pos.z };
+      octobossParasiteOwners.delete(enemy.id);
       EnemyEntities.destroy(enemy);
       explosions.push(createExplosion(deathPos));
       spawnPickupAt(pickups, deathPos);
@@ -2087,6 +2218,7 @@ function checkRobotDeath(): void {
   for (const robot of [...RobotEntities.getAll()]) {
     if (isRobotDead(robot)) {
       const deathPos = { x: robot.collidable.pos.x, z: robot.collidable.pos.z };
+      octobossDroneOwners.delete(robot.id);
       RobotEntities.destroy(robot);
       explosions.push(createRobotExplosion(deathPos));
       spawnPickupAt(pickups, deathPos);
@@ -2139,6 +2271,12 @@ function checkOctobossDeath(): void {
   for (const boss of [...OctobossEntities.getAll()]) {
     if (!isOctobossDead(boss)) continue;
     const deathPos = { x: boss.collidable.pos.x, z: boss.collidable.pos.z };
+    for (const [enemyId, ownerId] of octobossParasiteOwners) {
+      if (ownerId === boss.id) octobossParasiteOwners.delete(enemyId);
+    }
+    for (const [robotId, ownerId] of octobossDroneOwners) {
+      if (ownerId === boss.id) octobossDroneOwners.delete(robotId);
+    }
     OctobossEntities.destroy(boss);
     explosions.push(createExplosion(deathPos));
     explosions.push(createExplosion({ x: deathPos.x + 1.1, z: deathPos.z + 0.9 }));

@@ -67,10 +67,10 @@ export const OCTOBOSS_TIER_1: OctobossConfig = {
   coreMaxSpeed: [6.4, 7.3, 8.6],
   coreAcceleration: [14.5, 17.0, 20.0],
   desiredRange: [10.8, 9.6, 8.2],
-  coilDuration: [1.8, 1.45, 1.15],
+  coilDuration: [2.75, 2.25, 1.85],
   extendDuration: [0.7, 0.58, 0.46],
   chaseDuration: [3.4, 3.0, 2.5],
-  retractDuration: [1.15, 0.96, 0.8],
+  retractDuration: [1.65, 1.35, 1.1],
   coiledReachScale: 0.16,
   chaseReachScale: 1.0,
   coiledThicknessScale: 0.58,
@@ -108,7 +108,7 @@ export const OCTOBOSS_TIER_1: OctobossConfig = {
 };
 
 type OctobossAttackKind = 'idle' | 'jab' | 'sweep' | 'double';
-type OctobossTentacleMode = 'coiled' | 'extending' | 'chasing' | 'retracting';
+export type OctobossTentacleMode = 'coiled' | 'extending' | 'chasing' | 'retracting';
 
 interface Telegraph {
   mesh: THREE.Mesh;
@@ -256,6 +256,22 @@ function setTentacleMode(
   boss.tentacleMode = mode;
   boss.tentacleModeDuration = getModeDuration(boss, mode, phase);
   boss.tentacleModeTimer = boss.tentacleModeDuration;
+}
+
+function updateEyeTracking(
+  boss: OctobossState,
+  playerPos: Vec2,
+  delta: number,
+): void {
+  const eyeYaw = boss.facingAngle * 0.45;
+  const dx = playerPos.x - boss.collidable.pos.x;
+  const dz = playerPos.z - boss.collidable.pos.z;
+  const relAngle = wrapAngle(Math.atan2(dx, dz) - eyeYaw);
+  const targetX = clamp(Math.sin(relAngle) * 1.15, -1, 1);
+  const targetY = clamp(-Math.cos(relAngle) * 1.05, -1, 1);
+  const blend = Math.min(10.5 * delta, 1);
+  boss.gazeLocalX = lerp(boss.gazeLocalX, targetX, blend);
+  boss.gazeLocalZ = lerp(boss.gazeLocalZ, targetY, blend);
 }
 
 function updateTentaclePhaseScales(boss: OctobossState): void {
@@ -597,51 +613,53 @@ export function createOctoboss(pos: Vec2, config: OctobossConfig): OctobossState
       emissiveIntensity: 0.1,
     }),
   );
-  shellMesh.position.y = 1.9;
-  shellMesh.scale.set(1.0, 0.82, 0.92);
+  shellMesh.position.set(0, 1.98, 0.18);
+  shellMesh.scale.set(0.94, 0.8, 0.76);
   shellMesh.castShadow = true;
   shellMesh.receiveShadow = true;
   bodyRoot.add(shellMesh);
 
   const eyeWhiteMesh = new THREE.Mesh(
-    new THREE.SphereGeometry(0.42, 16, 12),
+    new THREE.SphereGeometry(0.74, 18, 14),
     new THREE.MeshStandardMaterial({
-      color: 0xf6e1bc,
-      roughness: 0.26,
-      metalness: 0.08,
+      color: 0xf6f6f1,
+      emissive: 0x141414,
+      emissiveIntensity: 0.04,
+      roughness: 0.22,
+      metalness: 0.04,
     }),
   );
-  eyeWhiteMesh.position.y = 2.08;
-  eyeWhiteMesh.scale.set(1.0, 0.58, 0.9);
+  eyeWhiteMesh.position.set(0, 2.02, 0.5);
+  eyeWhiteMesh.scale.set(1.0, 0.92, 1.0);
   eyeWhiteMesh.castShadow = true;
   bodyRoot.add(eyeWhiteMesh);
 
   const irisMesh = new THREE.Mesh(
-    new THREE.SphereGeometry(0.2, 14, 10),
+    new THREE.SphereGeometry(0.3, 16, 12),
     new THREE.MeshStandardMaterial({
-      color: 0xff9c4f,
-      emissive: 0x9a3e11,
-      emissiveIntensity: 0.42,
-      roughness: 0.24,
-      metalness: 0.2,
+      color: 0x050505,
+      emissive: 0x000000,
+      emissiveIntensity: 0.0,
+      roughness: 0.14,
+      metalness: 0.1,
     }),
   );
-  irisMesh.position.set(0, 2.17, 0);
-  irisMesh.scale.set(1.0, 0.3, 1.0);
+  irisMesh.position.set(0, 2.04, 1.17);
+  irisMesh.scale.set(1.0, 0.46, 0.9);
   bodyRoot.add(irisMesh);
 
   const pupilMesh = new THREE.Mesh(
     new THREE.SphereGeometry(0.1, 12, 10),
     new THREE.MeshStandardMaterial({
-      color: 0x14100c,
-      emissive: 0x5a2507,
-      emissiveIntensity: 0.18,
-      roughness: 0.18,
-      metalness: 0.05,
+      color: 0x000000,
+      emissive: 0x000000,
+      emissiveIntensity: 0.0,
+      roughness: 0.08,
+      metalness: 0.02,
     }),
   );
-  pupilMesh.position.set(0, 2.24, 0);
-  pupilMesh.scale.set(1.0, 0.55, 1.0);
+  pupilMesh.position.set(0, 2.05, 1.28);
+  pupilMesh.scale.set(1.0, 0.62, 0.82);
   bodyRoot.add(pupilMesh);
 
   const shieldMesh = new THREE.Mesh(
@@ -1006,8 +1024,8 @@ export function updateOctobossAI(
   playerPos: Vec2,
   playerVel: Vec2,
   delta: number,
-): void {
-  if (!boss.alive) return;
+): OctobossTentacleMode | null {
+  if (!boss.alive) return null;
 
   const phase = getPhaseIndex(boss);
   const body = boss.collidable;
@@ -1070,15 +1088,20 @@ export function updateOctobossAI(
     if (body.pos.z < bounds.minZ + margin) body.vel.z += accel * 0.8 * delta;
   }
 
+  let enteredMode: OctobossTentacleMode | null = null;
   if (boss.tentacleModeTimer <= 0) {
     if (boss.tentacleMode === 'coiled') {
       setTentacleMode(boss, 'extending', phase);
+      enteredMode = 'extending';
     } else if (boss.tentacleMode === 'extending') {
       setTentacleMode(boss, 'chasing', phase);
+      enteredMode = 'chasing';
     } else if (boss.tentacleMode === 'chasing') {
       setTentacleMode(boss, 'retracting', phase);
+      enteredMode = 'retracting';
     } else {
       setTentacleMode(boss, 'coiled', phase);
+      enteredMode = 'coiled';
     }
     updateTentaclePhaseScales(boss);
     boss.exposeTimer = boss.tentacleMode === 'retracting' ? boss.tentacleModeTimer : 0;
@@ -1086,11 +1109,9 @@ export function updateOctobossAI(
 
   updateTelegraphs(boss, delta);
 
-  const localX = Math.sin(targetAngle - boss.facingAngle);
-  const localZ = Math.cos(targetAngle - boss.facingAngle);
-  boss.gazeLocalX = clamp(localX, -1, 1);
-  boss.gazeLocalZ = clamp(localZ, -1, 1);
+  updateEyeTracking(boss, playerPos, delta);
   updateTentacleTargets(boss, playerPos, playerVel, delta);
+  return enteredMode;
 }
 
 export function syncOctobossTentacles(
@@ -1181,17 +1202,20 @@ export function updateOctobossVisuals(
   boss.bodyRoot.rotation.z += ((-tilt * 0.65) - boss.bodyRoot.rotation.z) * Math.min(5.2 * delta, 1);
   boss.baseSpinGroup.rotation.y += delta * (phase === 2 ? 4.8 : phase === 1 ? 4.0 : 3.4);
 
-  const eyeCenterY = 2.12 + hover * 0.08;
+  const eyeCenterY = 2.02 + hover * 0.08;
   boss.eyeWhiteMesh.position.y = eyeCenterY;
+  boss.eyeWhiteMesh.position.z = 0.5;
+  const irisOffsetX = boss.gazeLocalX * 0.34;
+  const irisOffsetY = boss.gazeLocalZ * 0.24;
   boss.irisMesh.position.set(
-    boss.gazeLocalX * 0.14,
-    eyeCenterY + 0.1,
-    boss.gazeLocalZ * 0.12,
+    irisOffsetX,
+    eyeCenterY + 0.02 + irisOffsetY,
+    1.17,
   );
   boss.pupilMesh.position.set(
-    boss.gazeLocalX * 0.19,
-    eyeCenterY + 0.17,
-    boss.gazeLocalZ * 0.16,
+    irisOffsetX * 1.08,
+    eyeCenterY + 0.03 + irisOffsetY * 1.08,
+    1.28,
   );
 
   const shielded = !canDamageOctobossCore(boss);
@@ -1208,12 +1232,17 @@ export function updateOctobossVisuals(
   shellMat.emissiveIntensity = 0.08 + exposeFrac * 0.45 + (1 - rpmFrac) * 0.14;
   shellMat.color.setHex(exposeFrac > 0 ? 0xb28a54 : 0x9a7d56);
 
+  const eyeWhiteMat = boss.eyeWhiteMesh.material as THREE.MeshStandardMaterial;
+  eyeWhiteMat.color.setHex(exposeFrac > 0 ? 0xffefe0 : 0xf6f6f1);
+  eyeWhiteMat.emissiveIntensity = 0.04 + exposeFrac * 0.08;
+
   const irisMat = boss.irisMesh.material as THREE.MeshStandardMaterial;
-  irisMat.emissiveIntensity = 0.38 + exposeFrac * 0.85;
-  irisMat.color.setHex(exposeFrac > 0 ? 0xffd087 : 0xff9c4f);
+  irisMat.emissiveIntensity = exposeFrac * 0.03;
+  irisMat.color.setHex(exposeFrac > 0 ? 0x080808 : 0x050505);
 
   const pupilMat = boss.pupilMesh.material as THREE.MeshStandardMaterial;
-  pupilMat.emissiveIntensity = 0.15 + exposeFrac * 0.55;
+  pupilMat.emissiveIntensity = 0;
+  pupilMat.color.setHex(0x000000);
 
   updateHpBar(boss.hpBarFill, rpmFrac, 1.4);
 }
