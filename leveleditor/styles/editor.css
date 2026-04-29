@@ -53,6 +53,16 @@ body {
   background: rgba(70, 70, 110, 0.8);
 }
 
+#toolbar .btn-play {
+  background: rgba(46, 115, 103, 0.78);
+  border-color: rgba(116, 225, 203, 0.34);
+  color: #eafffb;
+}
+
+#toolbar .btn-play:hover {
+  background: rgba(58, 146, 130, 0.92);
+}
+
 .tool-btn {
   display: flex;
   align-items: center;

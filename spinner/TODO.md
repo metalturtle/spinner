@@ -107,3 +107,19 @@ sound effects
 level inside serpent body, serpent eats itself after attacking core
 
 octoboss
+
+
+today:
+    main menu
+        start game
+        level editor
+        tutorial (shows controls)
+    main menu should be toggle, if false then go to game directly
+level creation
+optimisation
+refinement
+sound effects
+
+refinement ideas:
+    turret shooting fire arrows
+    

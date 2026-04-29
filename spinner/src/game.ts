@@ -7,7 +7,7 @@ import {
 } from './constants';
 import { spinnerConfig } from './spinnerConfig';
 import { runCollisions, collidables, walls, zones, type Collidable, type Segment, type Vec2 } from './physics';
-import { initHud, updateHud, type ComboHudState } from './hud';
+import { initHud, updateHud, setHudVisible, type ComboHudState } from './hud';
 import { initCamera, updateCamera } from './camera';
 import {
   defineEntityType,
@@ -106,7 +106,49 @@ import { consumeSpecialPressed } from './input';
 
 // ─── Level-driven state ──────────────────────────────────────────────────────
 
-let currentLevel: LevelData = levelActive as LevelData;
+type LevelChoiceId = 'active' | 'level1' | 'level2' | 'level3' | 'level4' | 'level5';
+const DEBUG_SKIP_MAIN_MENU = true;
+
+const bundledLevels: Record<Exclude<LevelChoiceId, 'active'>, LevelData> = {
+  level1: level1 as LevelData,
+  level2: level2 as LevelData,
+  level3: level3 as LevelData,
+  level4: level4 as LevelData,
+  level5: level5 as LevelData,
+};
+
+const bundledActiveLevel = levelActive as LevelData;
+const levelChoices: Array<{ id: LevelChoiceId; label: string }> = [
+  { id: 'active', label: 'Active Level (Editor)' },
+  { id: 'level1', label: 'Level 1' },
+  { id: 'level2', label: 'Level 2' },
+  { id: 'level3', label: 'Level 3' },
+  { id: 'level4', label: 'Level 4' },
+  { id: 'level5', label: 'Level 5' },
+];
+
+function parseLevelChoice(value: string | null): LevelChoiceId {
+  if (!value) return 'active';
+  return levelChoices.some((choice) => choice.id === value) ? value as LevelChoiceId : 'active';
+}
+
+async function loadRuntimeActiveLevel(): Promise<LevelData> {
+  try {
+    const response = await fetch(`/api/active-level?ts=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(await response.text());
+    return await response.json() as LevelData;
+  } catch (error) {
+    console.warn('Falling back to bundled active level:', error);
+    return bundledActiveLevel;
+  }
+}
+
+async function resolveLevel(choice: LevelChoiceId): Promise<LevelData> {
+  if (choice === 'active') return loadRuntimeActiveLevel();
+  return bundledLevels[choice];
+}
+
+let currentLevel: LevelData = bundledActiveLevel;
 
 
 // ─── Scene Setup ─────────────────────────────────────────────────────────────
@@ -114,6 +156,7 @@ let currentLevel: LevelData = levelActive as LevelData;
 createArena(scene, currentLevel);
 setupLevelLights(scene, currentLevel);
 initHud();
+setHudVisible(false);
 initCamera();
 initSparks(scene);
 initTrails(scene);
@@ -1097,26 +1140,103 @@ function updateTriggerSpawns(): void {
   }
 }
 
-spawnAll(currentLevel);
+const initialUrl = new URL(window.location.href);
+let selectedLevelId: LevelChoiceId = DEBUG_SKIP_MAIN_MENU
+  ? 'active'
+  : parseLevelChoice(initialUrl.searchParams.get('level'));
+const shouldAutostart = DEBUG_SKIP_MAIN_MENU || initialUrl.searchParams.get('autostart') === '1';
 
-// ─── Game Over Overlay ───────────────────────────────────────────────────────
+function replaceGameUrl(clearAutostart: boolean): void {
+  const url = new URL(window.location.href);
+  url.searchParams.set('level', selectedLevelId);
+  if (clearAutostart) url.searchParams.delete('autostart');
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function guessSiblingAppUrl(targetPort: string): string {
+  const url = new URL(window.location.href);
+  if (url.port) {
+    url.port = targetPort;
+  }
+  url.pathname = '/';
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
+function getEditorUrl(): string {
+  const configured = import.meta.env.VITE_EDITOR_URL?.trim();
+  return configured || guessSiblingAppUrl('5174');
+}
+
+// ─── Overlays ────────────────────────────────────────────────────────────────
+
+const menuOverlay = document.createElement('div');
+menuOverlay.className = 'app-overlay menu-overlay';
+menuOverlay.innerHTML = `
+  <div class="overlay-card">
+    <div class="overlay-kicker">Spinner</div>
+    <h1>Choose Your Arena</h1>
+    <p class="overlay-copy">Jump into a bundled level or load the editor's active map, then tear through it at full RPM.</p>
+    <label class="overlay-field">
+      <span>Level</span>
+      <select class="overlay-select" id="menu-level-select">
+        ${levelChoices.map((choice) => `<option value="${choice.id}">${choice.label}</option>`).join('')}
+      </select>
+    </label>
+    <div class="overlay-actions">
+      <button type="button" class="overlay-btn overlay-btn-primary" id="menu-start-btn">Start Run</button>
+      <button type="button" class="overlay-btn" id="menu-editor-btn">Open Level Editor</button>
+    </div>
+    <p class="overlay-meta" id="menu-status">WASD to move, Shift to sprint, X for combo, M to return to the menu.</p>
+  </div>
+`;
+document.body.appendChild(menuOverlay);
+
+const levelSelectEl = menuOverlay.querySelector<HTMLSelectElement>('#menu-level-select')!;
+const menuStartBtn = menuOverlay.querySelector<HTMLButtonElement>('#menu-start-btn')!;
+const menuEditorBtn = menuOverlay.querySelector<HTMLButtonElement>('#menu-editor-btn')!;
+const menuStatusEl = menuOverlay.querySelector<HTMLParagraphElement>('#menu-status')!;
 
 const gameOverOverlay = document.createElement('div');
-gameOverOverlay.style.cssText = [
-  'position:fixed', 'inset:0', 'display:none',
-  'align-items:center', 'justify-content:center', 'flex-direction:column',
-  'background:rgba(0,0,0,0.65)', 'z-index:10',
-].join(';');
+gameOverOverlay.className = 'app-overlay gameover-overlay';
 gameOverOverlay.innerHTML = `
-  <div style="font-size:3.5rem;font-weight:bold;color:#e94560;font-family:monospace;letter-spacing:.1em">GAME OVER</div>
-  <div style="margin-top:1rem;font-size:1.1rem;color:#aaa;font-family:monospace">Press R to restart</div>
+  <div class="overlay-card overlay-card-compact">
+    <div class="overlay-kicker">Run Ended</div>
+    <h2>Game Over</h2>
+    <p class="overlay-copy">Press R to restart the current level or head back to the menu to switch maps.</p>
+    <div class="overlay-actions">
+      <button type="button" class="overlay-btn overlay-btn-primary" id="gameover-restart-btn">Restart</button>
+      <button type="button" class="overlay-btn" id="gameover-menu-btn">Main Menu</button>
+    </div>
+  </div>
 `;
 document.body.appendChild(gameOverOverlay);
 
+const gameOverRestartBtn = gameOverOverlay.querySelector<HTMLButtonElement>('#gameover-restart-btn')!;
+const gameOverMenuBtn = gameOverOverlay.querySelector<HTMLButtonElement>('#gameover-menu-btn')!;
+
 // ─── Shared State ────────────────────────────────────────────────────────────
 
-let time     = 0;
+let time = 0;
 let gameOver = false;
+let menuVisible = true;
+let startInFlight = false;
+
+function setMenuVisible(visible: boolean): void {
+  menuVisible = visible;
+  menuOverlay.style.display = visible ? 'flex' : 'none';
+  gameOverOverlay.style.display = !visible && gameOver ? 'flex' : 'none';
+  setHudVisible(!visible);
+}
+
+function setMenuBusy(busy: boolean, label?: string): void {
+  startInFlight = busy;
+  levelSelectEl.disabled = busy;
+  menuStartBtn.disabled = busy;
+  menuEditorBtn.disabled = busy;
+  if (label) menuStatusEl.textContent = label;
+}
 
 // ─── Reset ───────────────────────────────────────────────────────────────────
 
@@ -1182,8 +1302,64 @@ function resetGame(): void {
   spawnAll(currentLevel);
 }
 
+async function startSelectedLevel(): Promise<void> {
+  if (startInFlight) return;
+
+  setMenuBusy(true, selectedLevelId === 'active'
+    ? 'Loading the editor level...'
+    : 'Loading the arena...');
+
+  try {
+    currentLevel = await resolveLevel(selectedLevelId);
+    createArena(scene, currentLevel);
+    resetGame();
+    gameOver = false;
+    replaceGameUrl(true);
+    setMenuVisible(false);
+  } catch (error) {
+    console.error('Failed to start level:', error);
+    setMenuBusy(false, 'Could not load that level. Check the console for details.');
+    return;
+  }
+
+  setMenuBusy(false, 'WASD to move, Shift to sprint, X for combo, M to return to the menu.');
+}
+
+function returnToMenu(): void {
+  resetGame();
+  replaceGameUrl(true);
+  setMenuVisible(true);
+}
+
+levelSelectEl.value = selectedLevelId;
+levelSelectEl.addEventListener('change', () => {
+  selectedLevelId = parseLevelChoice(levelSelectEl.value);
+  replaceGameUrl(true);
+  menuStatusEl.textContent = selectedLevelId === 'active'
+    ? 'Starts from the editor\'s synced active level when available.'
+    : 'Loads a bundled combat arena.';
+});
+
+menuStartBtn.addEventListener('click', () => {
+  void startSelectedLevel();
+});
+
+menuEditorBtn.addEventListener('click', () => {
+  window.location.assign(getEditorUrl());
+});
+
+gameOverRestartBtn.addEventListener('click', () => {
+  if (!gameOver) return;
+  resetGame();
+});
+
+gameOverMenuBtn.addEventListener('click', () => {
+  returnToMenu();
+});
+
 window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() === 'r' && gameOver) resetGame();
+  if (e.key.toLowerCase() === 'm' && !menuVisible) returnToMenu();
 });
 
 type ComboPhase = 'idle' | 'active' | 'returning' | 'recovering';
@@ -2377,6 +2553,12 @@ function checkHiveDeath(): void {
 
 // ─── Timer ───────────────────────────────────────────────────────────────────
 
+resetGame();
+setMenuVisible(!DEBUG_SKIP_MAIN_MENU);
+if (shouldAutostart) {
+  void startSelectedLevel();
+}
+
 const timer = new THREE.Timer();
 
 // ─── Game Loop ───────────────────────────────────────────────────────────────
@@ -2386,6 +2568,14 @@ function animate(): void {
   timer.update();
   const delta = Math.min(timer.getDelta(), 0.05);
   time += delta;
+
+  if (menuVisible) {
+    for (const obs of ObstacleEntities.getAll()) syncObstacle(obs);
+    updatePlayerVisuals(time, 0);
+    updateCamera(playerBody.pos, playerBody.vel, delta, false);
+    renderer.render(scene, camera);
+    return;
+  }
 
   if (gameOver) {
     updateFallingVictims(delta);

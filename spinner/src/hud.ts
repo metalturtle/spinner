@@ -7,6 +7,7 @@ let fpsEl!: HTMLDivElement;
 let comboWrapEl!: HTMLDivElement;
 let comboFillEl!: HTMLDivElement;
 let comboLabelEl!: HTMLDivElement;
+let wrapEl!: HTMLDivElement;
 let smoothedFps = 60;
 
 export interface ComboHudState {
@@ -17,8 +18,8 @@ export interface ComboHudState {
 }
 
 export function initHud(): void {
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'position:fixed;bottom:24px;left:28px;pointer-events:none;z-index:5';
+  wrapEl = document.createElement('div');
+  wrapEl.style.cssText = 'position:fixed;bottom:24px;left:28px;pointer-events:none;z-index:5';
 
   el = document.createElement('div');
   el.style.cssText = 'font:bold 2.6rem monospace;letter-spacing:.05em;transition:color .15s';
@@ -40,12 +41,17 @@ export function initHud(): void {
   fpsEl = document.createElement('div');
   fpsEl.style.cssText = 'font:600 0.8rem monospace;opacity:0.75;color:#cfd8dc;margin-top:10px';
 
-  wrap.appendChild(el);
-  wrap.appendChild(labelEl);
-  wrap.appendChild(comboWrapEl);
-  wrap.appendChild(comboLabelEl);
-  wrap.appendChild(fpsEl);
-  document.body.appendChild(wrap);
+  wrapEl.appendChild(el);
+  wrapEl.appendChild(labelEl);
+  wrapEl.appendChild(comboWrapEl);
+  wrapEl.appendChild(comboLabelEl);
+  wrapEl.appendChild(fpsEl);
+  document.body.appendChild(wrapEl);
+}
+
+export function setHudVisible(visible: boolean): void {
+  if (!wrapEl) return;
+  wrapEl.style.display = visible ? '' : 'none';
 }
 
 export function updateHud(rpm: number, time: number, delta: number, combo: ComboHudState): void {

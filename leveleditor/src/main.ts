@@ -72,6 +72,46 @@ const entityTypeSuggestions = document.getElementById('entity-type-suggestions')
 const roomConfig = document.getElementById('room-config')!;
 const regpolyConfig = document.getElementById('regpoly-config')!;
 const wallThicknessInput = document.getElementById('wall-thickness') as HTMLInputElement;
+const playButton = document.getElementById('btn-play') as HTMLButtonElement;
+
+function guessGameUrl(): string {
+  const url = new URL(window.location.href);
+  if (url.port) {
+    url.port = '5173';
+  }
+  url.pathname = '/';
+  url.search = '?level=active&autostart=1';
+  url.hash = '';
+  return url.toString();
+}
+
+function getGameUrl(): string {
+  const configured = import.meta.env.VITE_GAME_URL?.trim();
+  if (!configured) return guessGameUrl();
+
+  const url = new URL(configured, window.location.href);
+  url.searchParams.set('level', 'active');
+  url.searchParams.set('autostart', '1');
+  return url.toString();
+}
+
+async function playActiveLevel(): Promise<void> {
+  playButton.disabled = true;
+  playButton.textContent = 'Saving...';
+
+  try {
+    const mode = await saveLevel(editor.levelData);
+    if (mode !== 'server') {
+      alert('The editor could not sync /api/active-level, so the level was downloaded instead. Start the game from a dev server to use Play Active.');
+      return;
+    }
+
+    window.location.assign(getGameUrl());
+  } finally {
+    playButton.disabled = false;
+    playButton.textContent = 'Play Active';
+  }
+}
 
 function renderEntityTypeControls(): void {
   entityTypeDropdown.innerHTML = [
@@ -214,6 +254,9 @@ document.getElementById('btn-save')!.addEventListener('click', async () => {
   await saveLevel(editor.levelData);
 });
 document.getElementById('btn-load')!.addEventListener('click', () => loadLevel(editor.levelData));
+playButton.addEventListener('click', () => {
+  void playActiveLevel();
+});
 
 // Status bar updates
 const statusPos = document.getElementById('status-pos')!;

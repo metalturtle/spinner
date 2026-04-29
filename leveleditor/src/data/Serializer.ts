@@ -1,7 +1,7 @@
 import { LevelData } from './LevelData';
 import type { LevelDataSnapshot } from './LevelData';
 
-export async function saveLevel(levelData: LevelData): Promise<void> {
+export async function saveLevel(levelData: LevelData): Promise<'server' | 'download'> {
   const snapshot = levelData.toSnapshot();
   const json = JSON.stringify(snapshot, null, 2);
 
@@ -16,7 +16,7 @@ export async function saveLevel(levelData: LevelData): Promise<void> {
       throw new Error(await response.text());
     }
 
-    return;
+    return 'server';
   } catch (error) {
     console.warn('Falling back to download save:', error);
     const blob = new Blob([json], { type: 'application/json' });
@@ -26,6 +26,7 @@ export async function saveLevel(levelData: LevelData): Promise<void> {
     a.download = 'level-active.json';
     a.click();
     URL.revokeObjectURL(url);
+    return 'download';
   }
 }
 

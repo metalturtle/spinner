@@ -12,6 +12,7 @@ const FLOOR_COLOR   = 0x445566;
 const CIRCLE_FLOOR_SEGMENTS = 48;
 const CIRCLE_FLOOR_INSET = 0.05;
 const DEBUG_SHOW_NORMAL_AS_ALBEDO = false;
+const arenaRoots: THREE.Object3D[] = [];
 const lavaLightRoots: THREE.Object3D[] = [];
 type LavaRegion = { contains(point: { x: number; z: number }): boolean };
 const lavaRegions: LavaRegion[] = [];
@@ -163,6 +164,18 @@ function clearLavaLights(scene: THREE.Scene): void {
   }
 }
 
+function clearArenaRoots(scene: THREE.Scene): void {
+  while (arenaRoots.length > 0) {
+    const root = arenaRoots.pop()!;
+    scene.remove(root);
+  }
+}
+
+function addArenaRoot(scene: THREE.Scene, root: THREE.Object3D): void {
+  arenaRoots.push(root);
+  scene.add(root);
+}
+
 function addLavaLight(scene: THREE.Scene, poly: LevelPolygon): void {
   if (poly.vertices.length < 3) return;
 
@@ -211,8 +224,11 @@ function addLavaLight(scene: THREE.Scene, poly: LevelPolygon): void {
 
 export function createArena(scene: THREE.Scene, level: LevelData): void {
   clearLavaEmbers();
+  clearArenaRoots(scene);
   clearLavaLights(scene);
   clearLavaRegions();
+  walls.length = 0;
+  zones.length = 0;
   setArenaBoundsFromLevel(level);
 
   // ─── Separate polygons and circles by layer ──────────────────────────────
@@ -264,7 +280,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.y = isLava ? 0.02 : 0;
       mesh.receiveShadow = true;
-      scene.add(mesh);
+      addArenaRoot(scene, mesh);
 
       if (isLava) {
         zones.push({
@@ -303,7 +319,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.set(c.center.x, 0, c.center.y);
       mesh.receiveShadow = true;
-      scene.add(mesh);
+      addArenaRoot(scene, mesh);
     }
   }
 
@@ -322,7 +338,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
     mesh.receiveShadow = true;
-    scene.add(mesh);
+    addArenaRoot(scene, mesh);
   }
 
   // ─── Walls from layer='wall' polygons ────────────────────────────────────
@@ -352,7 +368,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
     }
     if (!invisible) {
       // Visual: extrude the whole polygon shape upward (one solid mesh per polygon)
-      scene.add(extrudeWallPoly(poly, wallMat));
+      addArenaRoot(scene, extrudeWallPoly(poly, wallMat));
     }
   }
 
