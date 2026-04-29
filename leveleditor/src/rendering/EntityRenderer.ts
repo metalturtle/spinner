@@ -56,6 +56,11 @@ export class EntityRenderer {
       return;
     }
 
+    if (entity.type === 'octoboss') {
+      this.buildOctobossVisual(group, entity, color);
+      return;
+    }
+
     this.buildDefaultVisual(group, entity, color);
   }
 
@@ -197,6 +202,84 @@ export class EntityRenderer {
     const glow = this.createLightDisc(glowRange, flameColor, 0.12);
     glow.position.set(x, y + flameHeight, -0.02);
     group.add(glow);
+  }
+
+  private buildOctobossVisual(group: THREE.Group, entity: EntityData, color: number): void {
+    const x = entity.position.x;
+    const y = entity.position.y;
+
+    const coreGeo = new THREE.CircleGeometry(0.36, 28);
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0x5b4632, depthTest: false });
+    const core = new THREE.Mesh(coreGeo, coreMat);
+    core.position.set(x, y, 0);
+    core.userData = { type: 'entity', id: entity.id };
+    group.add(core);
+
+    const ringGeo = new THREE.RingGeometry(0.28, 0.48, 28);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.set(x, y, 0.01);
+    ring.userData = { type: 'entity', id: entity.id };
+    group.add(ring);
+
+    const eyeGeo = new THREE.CircleGeometry(0.16, 20);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xf4e2bf, depthTest: false });
+    const eye = new THREE.Mesh(eyeGeo, eyeMat);
+    eye.position.set(x, y + 0.02, 0.02);
+    eye.scale.set(1.0, 0.72, 1.0);
+    eye.userData = { type: 'entity', id: entity.id };
+    group.add(eye);
+
+    const pupilGeo = new THREE.CircleGeometry(0.055, 16);
+    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x1b130d, depthTest: false });
+    const pupil = new THREE.Mesh(pupilGeo, pupilMat);
+    pupil.position.set(x, y + 0.02, 0.03);
+    pupil.userData = { type: 'entity', id: entity.id };
+    group.add(pupil);
+
+    const leftTentacleGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x - 0.22, y - 0.05, 0),
+      new THREE.Vector3(x - 0.68, y - 0.26, 0),
+      new THREE.Vector3(x - 1.04, y - 0.54, 0),
+    ]);
+    const rightTentacleGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x + 0.22, y - 0.05, 0),
+      new THREE.Vector3(x + 0.68, y - 0.26, 0),
+      new THREE.Vector3(x + 1.04, y - 0.54, 0),
+    ]);
+    const tentacleMat = new THREE.LineBasicMaterial({ color: 0xa57545, depthTest: false });
+    group.add(new THREE.Line(leftTentacleGeo, tentacleMat));
+    group.add(new THREE.Line(rightTentacleGeo, tentacleMat.clone()));
+
+    const drillGeo = new THREE.CircleGeometry(0.08, 12);
+    const drillMat = new THREE.MeshBasicMaterial({ color: 0xffd18a, depthTest: false });
+    const leftDrill = new THREE.Mesh(drillGeo, drillMat);
+    leftDrill.position.set(x - 1.04, y - 0.54, 0.01);
+    leftDrill.userData = { type: 'entity', id: entity.id };
+    group.add(leftDrill);
+
+    const rightDrill = new THREE.Mesh(drillGeo, drillMat.clone());
+    rightDrill.position.set(x + 1.04, y - 0.54, 0.01);
+    rightDrill.userData = { type: 'entity', id: entity.id };
+    group.add(rightDrill);
+
+    const rad = (entity.rotation * Math.PI) / 180;
+    const arrowLen = 0.75;
+    const arrowGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x, y, 0),
+      new THREE.Vector3(
+        x + Math.cos(rad) * arrowLen,
+        y + Math.sin(rad) * arrowLen,
+        0
+      ),
+    ]);
+    const arrowMat = new THREE.LineBasicMaterial({ color, depthTest: false });
+    group.add(new THREE.Line(arrowGeo, arrowMat));
   }
 
   private createLightDisc(radius: number, color: number, opacity: number): THREE.Mesh {

@@ -68,6 +68,11 @@ import {
   SPIDER_RELIQUARY_TIER_1, type SpiderReliquaryState,
 } from './bossSpiderReliquary';
 import {
+  createOctoboss, updateOctobossAI, syncOctobossTentacles, updateOctobossVisuals,
+  canDamageOctobossCore, getOctobossCoreDamageMultiplier, getOctobossTipDamage,
+  isOctobossDead, destroyOctoboss, OCTOBOSS_TIER_1, type OctobossState,
+} from './bossOctoboss';
+import {
   createRobotEnemy, updateRobotAI, updateRobotVisuals,
   applyDamageToRobot, isRobotDead, destroyRobotEnemy, ROBOT_TIER_1,
   type RobotEnemyState,
@@ -125,6 +130,7 @@ const ObstacleEntities    = defineEntityType({ create: createObstacle,      dest
 const DreadnoughtEntities = defineEntityType({ create: createDreadnought,   destroy: destroyDreadnought   });
 const SiegeEntities       = defineEntityType({ create: createSiegeEngine,   destroy: destroySiegeEngine   });
 const SpiderEntities      = defineEntityType({ create: createSpiderReliquary, destroy: destroySpiderReliquary });
+const OctobossEntities    = defineEntityType({ create: createOctoboss,      destroy: destroyOctoboss      });
 const RobotEntities       = defineEntityType({ create: createRobotEnemy,    destroy: destroyRobotEnemy    });
 const HiveEntities        = defineEntityType({ create: createHiveBoss,      destroy: destroyHiveBoss      });
 const BigSlugEntities     = defineEntityType({ create: createSlugworm,      destroy: destroySlugworm      });
@@ -272,6 +278,43 @@ registerCollisionPair('player', 'spider_leg', (_playerCol, legCol, hit) => {
     } else {
       emitSparks(point, normal, Math.floor(12 + hit.impactForce * 7), Math.min(1, hit.impactForce / 8));
     }
+    return;
+  }
+});
+
+registerCollisionPair('player', 'octoboss_core', (_playerCol, coreCol, hit) => {
+  const boss = OctobossEntities.getAll().find((entry) => entry.collidable === coreCol);
+  if (!boss?.alive) return;
+
+  const { point, normal } = computeContactInfo(_playerCol, coreCol);
+  if (!canDamageOctobossCore(boss)) {
+    emitSparks(point, normal, Math.floor(18 + hit.impactForce * 10), Math.min(1, hit.impactForce / 7));
+    return;
+  }
+
+  const safePlayerRpm = Math.max(0.01, playerBody.rpm);
+  const safeEnemyRpm = Math.max(0.01, coreCol.rpm);
+  const rpmDamage = COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
+    * hit.impactForce * (playerBody.mass / coreCol.mass)
+    * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor
+    * getOctobossCoreDamageMultiplier(boss);
+  boss.collidable.rpm = Math.max(0, boss.collidable.rpm - rpmDamage);
+  emitSparks(point, normal, Math.floor(22 + hit.impactForce * 12), Math.min(1, hit.impactForce / 6));
+});
+
+registerCollisionPair('player', 'octoboss_tip', (_playerCol, tipCol, hit) => {
+  for (const boss of OctobossEntities.getAll()) {
+    if (!boss.alive) continue;
+    const tentacle = boss.tentacles.find((entry) => entry.collidable === tipCol);
+    if (!tentacle) continue;
+
+    const { point, normal } = computeContactInfo(_playerCol, tipCol);
+    emitSparks(point, normal, Math.floor(14 + hit.impactForce * 8), Math.min(1, 0.45 + hit.impactForce / 8));
+    const dx = playerBody.pos.x - tipCol.pos.x;
+    const dz = playerBody.pos.z - tipCol.pos.z;
+    const len = Math.hypot(dx, dz) || 1;
+    playerBody.vel.x += (dx / len) * (3.2 + hit.impactForce * 0.85);
+    playerBody.vel.z += (dz / len) * (3.2 + hit.impactForce * 0.85);
     return;
   }
 });
@@ -692,6 +735,18 @@ function deactivateSpiderForFall(boss: SpiderReliquaryState): THREE.Object3D[] {
   return [boss.bodyGroup, boss.hpGroup, ...boss.legs.filter((leg) => leg.alive).map((leg) => leg.group)];
 }
 
+function deactivateOctobossForFall(boss: OctobossState): THREE.Object3D[] {
+  boss.alive = false;
+  boss.collidable.vel.x = 0;
+  boss.collidable.vel.z = 0;
+  deregisterEntity(boss.id);
+  removeCollidableFromGameplay(boss.collidable);
+  for (const tentacle of boss.tentacles) {
+    removeCollidableFromGameplay(tentacle.collidable);
+  }
+  return [boss.bodyGroup, boss.hpGroup, ...boss.tentacles.map((tentacle) => tentacle.group)];
+}
+
 function deactivateHiveForFall(boss: HiveBossState): THREE.Object3D[] {
   boss.alive = false;
   boss.collidable.vel.x = 0;
@@ -839,6 +894,20 @@ function spawnLevelEntity(ent: LevelEntity): void {
             roots,
             spider.bodyGroup,
             () => SpiderEntities.destroy(spider),
+          ));
+        });
+      }
+      break;
+    }
+    case 'octoboss': {
+      const octoboss = OctobossEntities.spawn(pos, OCTOBOSS_TIER_1);
+      if (isEntityFallable(ent)) {
+        registerFallableActor(octoboss.collidable, () => {
+          const roots = deactivateOctobossForFall(octoboss);
+          enqueueFallingVictim(createFallingVictim(
+            roots,
+            octoboss.bodyGroup,
+            () => OctobossEntities.destroy(octoboss),
           ));
         });
       }
@@ -1023,6 +1092,7 @@ function resetGame(): void {
   DreadnoughtEntities.destroyAll();
   SiegeEntities.destroyAll();
   SpiderEntities.destroyAll();
+  OctobossEntities.destroyAll();
   RobotEntities.destroyAll();
   HiveEntities.destroyAll();
   BigSlugEntities.destroyAll();
@@ -1328,6 +1398,23 @@ function buildComboTargets(): ComboTarget[] {
         },
       });
     }
+  }
+
+  for (const boss of OctobossEntities.getAll()) {
+    if (!boss.alive || !canDamageOctobossCore(boss)) continue;
+    targets.push({
+      id: makeComboTargetId('octoboss-core', boss.collidable),
+      collidable: boss.collidable,
+      getPos: () => cloneVec2(boss.collidable.pos),
+      isValid: () => boss.alive && canDamageOctobossCore(boss),
+      applyDamage: (damage) => {
+        if (!boss.alive || !canDamageOctobossCore(boss)) return;
+        boss.collidable.rpm = Math.max(
+          0,
+          boss.collidable.rpm - damage * getOctobossCoreDamageMultiplier(boss),
+        );
+      },
+    });
   }
 
   for (const robot of RobotEntities.getAll()) {
@@ -1751,6 +1838,54 @@ function updateSpiderSystem(delta: number): void {
   }
 }
 
+function updateOctobossSystem(delta: number): void {
+  for (const boss of OctobossEntities.getAll()) {
+    if (!boss.alive) continue;
+    updateOctobossAI(boss, playerBody.pos, playerBody.vel, delta);
+  }
+}
+
+function updateOctobossDrillContacts(delta: number): void {
+  if (isPlayerInvulnerable()) return;
+
+  for (const boss of OctobossEntities.getAll()) {
+    if (!boss.alive) continue;
+    for (const tentacle of boss.tentacles) {
+      const tip = tentacle.collidable;
+      const dx = playerBody.pos.x - tip.pos.x;
+      const dz = playerBody.pos.z - tip.pos.z;
+      const radius = playerBody.radius + tip.radius;
+      const distSq = dx * dx + dz * dz;
+      if (distSq >= radius * radius) continue;
+
+      const dist = Math.sqrt(distSq) || 0.0001;
+      const nx = dx / dist;
+      const nz = dz / dist;
+      const contactPoint = {
+        x: playerBody.pos.x - nx * playerBody.radius * 0.45,
+        y: 0.52,
+        z: playerBody.pos.z - nz * playerBody.radius * 0.45,
+      };
+
+      playerBody.vel.x *= 0.78;
+      playerBody.vel.z *= 0.78;
+      playerBody.vel.x -= nx * 8.5 * delta;
+      playerBody.vel.z -= nz * 8.5 * delta;
+      playerBody.vel.x += -nz * tentacle.side * 2.8 * delta;
+      playerBody.vel.z += nx * tentacle.side * 2.8 * delta;
+
+      emitSparks(contactPoint, { x: -nx, y: 0, z: -nz }, 10, 0.85);
+      emitPlasma(contactPoint, 4, 0.18);
+
+      if (tentacle.hitCooldown > 0) continue;
+
+      playerBody.rpm = Math.max(0, playerBody.rpm - getOctobossTipDamage(boss) * 0.32);
+      notifyPlayerHit();
+      tentacle.hitCooldown = 0.1;
+    }
+  }
+}
+
 function updateSpiderCorePassThroughHits(): void {
   for (const spider of SpiderEntities.getAll()) {
     if (!spider.alive || spider.corePassThroughCooldown > 0) continue;
@@ -2000,6 +2135,23 @@ function checkSpiderDeath(): void {
   }
 }
 
+function checkOctobossDeath(): void {
+  for (const boss of [...OctobossEntities.getAll()]) {
+    if (!isOctobossDead(boss)) continue;
+    const deathPos = { x: boss.collidable.pos.x, z: boss.collidable.pos.z };
+    OctobossEntities.destroy(boss);
+    explosions.push(createExplosion(deathPos));
+    explosions.push(createExplosion({ x: deathPos.x + 1.1, z: deathPos.z + 0.9 }));
+    explosions.push(createExplosion({ x: deathPos.x - 1.0, z: deathPos.z - 0.85 }));
+    explosions.push(createExplosion({ x: deathPos.x + 0.35, z: deathPos.z - 1.35 }));
+    spawnPickupAt(pickups, deathPos);
+    spawnPickupAt(pickups, { x: deathPos.x + 2, z: deathPos.z });
+    spawnPickupAt(pickups, { x: deathPos.x - 2, z: deathPos.z });
+    spawnPickupAt(pickups, { x: deathPos.x, z: deathPos.z + 2 });
+    spawnPickupAt(pickups, { x: deathPos.x, z: deathPos.z - 2 });
+  }
+}
+
 // ─── Hive Chaingun System ────────────────────────────────────────────────────
 
 function updateHiveSystem(delta: number): void {
@@ -2122,6 +2274,7 @@ function animate(): void {
   updateTurretSystem(delta);
   updateSiegeTurretSystem(delta);
   updateSpiderSystem(delta);
+  updateOctobossSystem(delta);
   if (playerWebTimer > 0) {
     playerBody.vel.x *= PLAYER_WEB_VEL_DAMP;
     playerBody.vel.z *= PLAYER_WEB_VEL_DAMP;
@@ -2135,6 +2288,7 @@ function animate(): void {
   // 2b. Sync siege engine sub-parts to core position (before collision)
   for (const s of SiegeEntities.getAll()) syncSiegeEngineParts(s);
   for (const spider of SpiderEntities.getAll()) syncSpiderReliquaryLegs(spider, delta);
+  for (const boss of OctobossEntities.getAll()) syncOctobossTentacles(boss, delta);
   for (const h of HiveEntities.getAll()) syncFlockPositions(h);
   updateSpiderCorePassThroughHits();
 
@@ -2203,6 +2357,7 @@ function animate(): void {
 
   // 4. Collision pair dispatch (turret HP, obstacle HP, enemy recovery)
   collisionSystem(circleHits);
+  updateOctobossDrillContacts(delta);
 
   // 5. Proximity pair dispatch (pickup collection)
   proximitySystem();
@@ -2219,6 +2374,7 @@ function animate(): void {
   checkBossDeath();
   checkSiegeDeath();
   checkSpiderDeath();
+  checkOctobossDeath();
   checkRobotDeath();
   checkZombieDeath();
   checkHiveDeath();
@@ -2242,6 +2398,7 @@ function animate(): void {
   for (const b of DreadnoughtEntities.getAll()) updateDreadnoughtVisuals(b, time, delta);
   for (const s of SiegeEntities.getAll()) updateSiegeEngineVisuals(s, time, delta);
   for (const spider of SpiderEntities.getAll()) updateSpiderReliquaryVisuals(spider, time, delta);
+  for (const boss of OctobossEntities.getAll()) updateOctobossVisuals(boss, time, delta);
   for (const r of RobotEntities.getAll()) updateRobotVisuals(r, playerBody.pos, time, delta);
   for (const h of HiveEntities.getAll()) updateHiveVisuals(h, playerBody.pos, time, delta);
   for (const s of BigSlugEntities.getAll()) updateSlugwormVisuals(s, time, delta);
