@@ -16,6 +16,12 @@ The aim is not just to make enemies stronger. The aim is to make them dangerous 
 
 This should build on the recent shift toward velocity-led collision damage instead of undoing it.
 
+RPM rule for spinner enemies:
+
+- enemy spinner RPM should mostly be a combat resource
+- normal movement, orbiting, and dashing should not drain RPM on their own
+- RPM loss should come from clashes, scrapes, special contact effects, or explicit scripted costs
+
 
 ## Current State
 
@@ -68,6 +74,8 @@ Examples:
 - a dash changes burst speed and hit severity
 - a combo changes how many follow-up collisions the enemy can chain
 - a heat aura changes whether prolonged contact is safe
+
+This keeps spinner threat expressive without making enemies quietly self-destruct while performing their own attack pattern.
 
 ### 3. Readability Before Complexity
 

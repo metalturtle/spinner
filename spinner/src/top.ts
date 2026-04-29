@@ -1,5 +1,9 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+
+export interface SpinnerMotionVisuals {
+  speedHalo: THREE.Mesh;
+  speedHaloMat: THREE.MeshBasicMaterial;
+}
 
 export interface TopResult {
   /** Positioned in the world; receives tilt rotations (X/Z). */
@@ -8,111 +12,200 @@ export interface TopResult {
   spinGroup: THREE.Group;
   /** Body material — exposed so game code can drive hit-flash emissive. */
   bodyMat: THREE.MeshStandardMaterial;
+  /** Optional shared visuals animated by spinnerVisuals.ts. */
+  motionVisuals?: SpinnerMotionVisuals;
 }
 
 // Standard spinner top size. Other spinner variants scale relative to this.
 export const TOP_BASE_RADIUS = 1.6875;
 
-// After auto-scaling to fit the collision diameter, this multiplier sets the
-// target size in world units. Set to 2 × TOP_BASE_RADIUS to fill the hitbox.
-const MODEL_SCALE = TOP_BASE_RADIUS * 2;
+const WHITE = new THREE.Color(0xffffff);
+const CORE_BLUE = new THREE.Color(0xdff7ff);
+const BODY_SEGMENTS = 40;
 
-const SPINNER_URL = new URL('../models/spinner.glb', import.meta.url).href;
+function createFanBladeGeometry(): THREE.ExtrudeGeometry {
+  const bladeShape = new THREE.Shape();
+  bladeShape.moveTo(-0.16, -0.18);
+  bladeShape.lineTo(0.34, -0.2);
+  bladeShape.lineTo(0.84, -0.04);
+  bladeShape.lineTo(1.02, 0.26);
+  bladeShape.lineTo(0.56, 0.32);
+  bladeShape.lineTo(0.2, 0.18);
+  bladeShape.lineTo(-0.02, 0.06);
+  bladeShape.closePath();
 
-// ─── Shared GLTF cache — load once, clone per instance ──────────────────────
-
-let cachedGltf: { scene: THREE.Group } | null = null;
-const pendingCallbacks: Array<(scene: THREE.Group) => void> = [];
-
-function getSpinnerScene(cb: (scene: THREE.Group) => void): void {
-  if (cachedGltf) {
-    // Already loaded — clone immediately
-    cb(cachedGltf.scene.clone(true));
-    return;
-  }
-  pendingCallbacks.push(cb);
-  if (pendingCallbacks.length > 1) return; // already loading
-
-  const loader = new GLTFLoader();
-  loader.load(
-    SPINNER_URL,
-    (gltf) => {
-      cachedGltf = { scene: gltf.scene };
-
-      // Deliver to all waiting callers
-      for (const fn of pendingCallbacks) fn(gltf.scene.clone(true));
-      pendingCallbacks.length = 0;
-    },
-    undefined,
-    (err) => console.error('[top] Failed to load spinner model:', err),
-  );
+  const geometry = new THREE.ExtrudeGeometry(bladeShape, {
+    depth: 0.14,
+    bevelEnabled: false,
+    curveSegments: 4,
+  });
+  geometry.rotateX(Math.PI / 2);
+  geometry.translate(0, 0.14, -0.07);
+  return geometry;
 }
 
-// ─── Public factory ──────────────────────────────────────────────────────────
+const SHARED_FAN_BLADE_GEOMETRY = createFanBladeGeometry();
 
 export function createTop(color: number = 0xe94560): TopResult {
   const tiltGroup = new THREE.Group();
   const spinGroup = new THREE.Group();
   tiltGroup.add(spinGroup);
 
-  // ── Placeholder (shown until GLB arrives) ─────────────────────────────────
-  const bodyGeo = new THREE.ConeGeometry(0.5, 1.2, 32);
-  const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.6 });
-  const placeholder = new THREE.Mesh(bodyGeo, bodyMat);
-  placeholder.rotation.x = Math.PI;
-  placeholder.position.y = 0.6;
-  placeholder.castShadow = true;
-  spinGroup.add(placeholder);
+  const baseColor = new THREE.Color(color);
+  const accentColor = baseColor.clone().lerp(WHITE, 0.28);
+  const coreColor = baseColor.clone().lerp(CORE_BLUE, 0.55);
 
-  // ── Local point light — illuminates nearby floor / objects ────────────────
-  const light = new THREE.PointLight(color, 2.0, 6, 1.5);
-  light.position.y = 1.0;
-  tiltGroup.add(light);
-
-  // ── Async GLB insertion ───────────────────────────────────────────────────
-  getSpinnerScene((model) => {
-    spinGroup.remove(placeholder);
-
-    // Compute native bounding box and center the model
-    const box    = new THREE.Box3().setFromObject(model);
-    const center = box.getCenter(new THREE.Vector3());
-    const size   = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-
-    // Move model origin to its visual center
-    model.position.set(-center.x, -center.y, -center.z);
-
-    // Wrap in a group so we can scale without fighting the model's own transforms
-    const root = new THREE.Group();
-    root.add(model);
-
-    // Auto-scale: model's largest dimension → MODEL_SCALE world units
-    const autoScale = (maxDim > 0) ? (1.0 / maxDim) * MODEL_SCALE : MODEL_SCALE;
-    root.scale.setScalar(autoScale);
-
-    // Sit just above the floor
-    root.position.y = 0.5;
-
-    // Keep original materials (for textures) but sync emissive from bodyMat
-    const modelMats: THREE.MeshStandardMaterial[] = [];
-    model.traverse((child) => {
-      const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      mesh.castShadow = true;
-      const mat = mesh.material;
-      if (mat instanceof THREE.MeshStandardMaterial) modelMats.push(mat);
-    });
-
-    // Propagate bodyMat emissive → model materials each frame (hit flash, overcharge, etc.)
-    root.onBeforeRender = () => {
-      for (const m of modelMats) {
-        m.emissive.copy(bodyMat.emissive);
-        m.emissiveIntensity = bodyMat.emissiveIntensity;
-      }
-    };
-
-    spinGroup.add(root);
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: baseColor.clone(),
+    roughness: 0.32,
+    metalness: 0.88,
+  });
+  const trimMat = new THREE.MeshStandardMaterial({
+    color: accentColor.clone(),
+    roughness: 0.22,
+    metalness: 0.96,
+  });
+  const shadowMat = new THREE.MeshStandardMaterial({
+    color: 0x141922,
+    roughness: 0.48,
+    metalness: 0.74,
+  });
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: coreColor.clone(),
+    roughness: 0.18,
+    metalness: 0.78,
+    emissive: coreColor.clone().multiplyScalar(0.14),
+    emissiveIntensity: 0.5,
+  });
+  const speedHaloMat = new THREE.MeshBasicMaterial({
+    color: accentColor.clone(),
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    depthWrite: false,
   });
 
-  return { tiltGroup, spinGroup, bodyMat };
+  const root = new THREE.Group();
+  root.position.y = 0.48;
+  spinGroup.add(root);
+
+  const lowerBody = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.62, 0.46, 0.24, BODY_SEGMENTS),
+    bodyMat,
+  );
+  lowerBody.position.y = 0.02;
+  lowerBody.castShadow = true;
+  root.add(lowerBody);
+
+  const neck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.28, 0.42, 0.18, 24),
+    bodyMat,
+  );
+  neck.position.y = 0.2;
+  neck.castShadow = true;
+  root.add(neck);
+
+  const centerCap = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.28, 0.24, 24),
+    trimMat,
+  );
+  centerCap.position.y = 0.38;
+  centerCap.castShadow = true;
+  root.add(centerCap);
+
+  const core = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.16, 0),
+    coreMat,
+  );
+  core.position.y = 0.56;
+  core.castShadow = true;
+  root.add(core);
+
+  const bladeLift = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.3, 0.52, 0.14, 24),
+    trimMat,
+  );
+  bladeLift.position.y = 0.18;
+  bladeLift.castShadow = true;
+  root.add(bladeLift);
+
+  const tipStem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.11, 0.2, 16),
+    trimMat,
+  );
+  tipStem.position.y = -0.16;
+  tipStem.castShadow = true;
+  root.add(tipStem);
+
+  const tip = new THREE.Mesh(
+    new THREE.ConeGeometry(0.14, 0.28, 16),
+    shadowMat,
+  );
+  tip.position.y = -0.4;
+  tip.castShadow = true;
+  root.add(tip);
+
+  for (let i = 0; i < 3; i += 1) {
+    const blade = new THREE.Mesh(SHARED_FAN_BLADE_GEOMETRY, trimMat);
+    const bladePivot = new THREE.Group();
+    bladePivot.rotation.y = (i / 3) * Math.PI * 2;
+    blade.position.set(0.14, 0.18, 0);
+    blade.rotation.y = -0.52;
+    blade.castShadow = true;
+    bladePivot.add(blade);
+    root.add(bladePivot);
+
+    const bladeRoot = new THREE.Mesh(
+      new THREE.BoxGeometry(0.34, 0.12, 0.28),
+      shadowMat,
+    );
+    bladeRoot.position.set(0.22, 0.12, 0.02);
+    bladeRoot.rotation.y = -0.28;
+    bladeRoot.castShadow = true;
+    bladePivot.add(bladeRoot);
+
+    const bladeFin = new THREE.Mesh(
+      new THREE.BoxGeometry(0.34, 0.08, 0.16),
+      bodyMat,
+    );
+    bladeFin.position.set(0.78, 0.29, 0.14);
+    bladeFin.rotation.y = 0.38;
+    bladeFin.castShadow = true;
+    bladePivot.add(bladeFin);
+  }
+
+  const speedHalo = new THREE.Mesh(
+    new THREE.RingGeometry(0.86, 1.28, 48),
+    speedHaloMat,
+  );
+  speedHalo.rotation.x = -Math.PI / 2;
+  speedHalo.position.y = -0.32;
+  root.add(speedHalo);
+
+  const syncColor = new THREE.Color();
+  const glowColor = new THREE.Color();
+  const emissiveBoost = new THREE.Color();
+  root.onBeforeRender = () => {
+    syncColor.copy(bodyMat.color).lerp(WHITE, 0.24);
+    trimMat.color.copy(syncColor);
+    trimMat.emissive.copy(bodyMat.emissive).multiplyScalar(0.52);
+    trimMat.emissiveIntensity = bodyMat.emissiveIntensity * 0.75;
+
+    glowColor.copy(bodyMat.color).lerp(CORE_BLUE, 0.35);
+    coreMat.color.copy(glowColor);
+    coreMat.emissive.copy(glowColor).multiplyScalar(0.22 + bodyMat.emissiveIntensity * 0.18);
+    emissiveBoost.copy(bodyMat.emissive).multiplyScalar(0.22);
+    coreMat.emissive.add(emissiveBoost);
+    coreMat.emissiveIntensity = 0.55 + bodyMat.emissiveIntensity * 0.35;
+
+    speedHaloMat.color.copy(syncColor);
+  };
+
+  return {
+    tiltGroup,
+    spinGroup,
+    bodyMat,
+    motionVisuals: { speedHalo, speedHaloMat },
+  };
 }

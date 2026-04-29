@@ -6,7 +6,7 @@ import {
 } from './constants';
 import { spinnerConfig } from './spinnerConfig';
 import { collidables, isPointInFloorZone, zones, type Collidable, type CircleHit } from './physics';
-import { createTop } from './top';
+import { createTop, TOP_BASE_RADIUS } from './top';
 import { updateSpinnerVisuals, type SpinnerTiltState } from './spinnerVisuals';
 import {
   nextEntityId, registerUpdate, registerMovement, registerRpm, setMovementMaxSpeed,
@@ -78,8 +78,15 @@ export const playerProximity: ProximityBody = {
 
 // ─── Mesh ────────────────────────────────────────────────────────────────────
 
-const { tiltGroup, spinGroup, bodyMat } = createTop();
+const topResult = createTop();
+const { tiltGroup, spinGroup, bodyMat } = topResult;
 scene.add(tiltGroup);
+
+function syncPlayerTopScale(): void {
+  spinGroup.scale.setScalar(spinnerConfig.radius / TOP_BASE_RADIUS);
+}
+
+syncPlayerTopScale();
 
 // ─── Tilt / animation state ──────────────────────────────────────────────────
 
@@ -138,6 +145,7 @@ export function resetPlayer(): void {
   deathMode      = 'none';
   playerControlLocked = false;
   playerInvulnerable = false;
+  syncPlayerTopScale();
   tiltGroup.position.set(0, 0, 0);
   tiltGroup.rotation.set(0, 0, 0);
 }
@@ -243,7 +251,7 @@ export function updatePlayerVisuals(time: number, delta: number): void {
   updateSpinnerVisuals(playerTilt, {
     vel: playerBody.vel, maxSpeed: spinnerConfig.maxSpeed, spinSpeed: spinnerConfig.spinSpeed,
     rpmFrac: normalFrac, spinFrac, baseColor: BODY_COLOR,
-    tiltGroup, spinGroup, bodyMat,
+    tiltGroup, spinGroup, bodyMat, motionVisuals: topResult.motionVisuals,
   }, time, delta);
 
   // Player-specific emissive

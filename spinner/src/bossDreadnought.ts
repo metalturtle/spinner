@@ -348,7 +348,7 @@ export function updateDreadnoughtVisuals(boss: DreadnoughtState, time: number, d
     rpmFrac,
     spinFrac: rpmFrac,
     baseColor: boss.baseColor,
-    tiltGroup, spinGroup, bodyMat,
+    tiltGroup, spinGroup, bodyMat, motionVisuals: boss.topResult.motionVisuals,
   }, time, delta);
 
   // ── Emissive effects ──

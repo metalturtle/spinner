@@ -595,6 +595,7 @@ export function updateHiveVisuals(
       tiltGroup,
       spinGroup,
       bodyMat,
+      motionVisuals: spinner.topResult.motionVisuals,
     }, time, delta);
 
     // Critical pulse when low RPM

@@ -14,6 +14,7 @@ export const RPM_SOFT_CAP_RATIO   = 0.70;  // overdrain + overcharge threshold =
 export const RPM_HYPER_RATIO      = 1.30;  // overcharge visual ceiling         = capacity × 1.30
 export const RPM_HALF_POINT_RATIO = 1.00;  // pickup diminishing-returns pivot  = capacity × 1.00
 export const COLLISION_DAMAGE_RATIO = 0.05; // base collision damage             = attacker capacity × 0.05
+export const SPINNER_SIZE_SCALE     = 0.75; // shared player/enemy top size multiplier
 
 // ─── RPM flat world rules — do NOT scale with capacity ───────────────────────
 export const RPM_OVERDRAIN         = 0;    // extra drain/s above soft cap threshold

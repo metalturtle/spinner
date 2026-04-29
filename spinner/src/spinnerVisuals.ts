@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Vec2 } from './physics';
+import type { SpinnerMotionVisuals } from './top';
 
 // ─── Shared visual constants for all spinners ────────────────────────────────
 
@@ -25,6 +26,7 @@ export interface SpinnerVisualInput {
   tiltGroup: THREE.Group;
   spinGroup: THREE.Group;
   bodyMat:   THREE.MeshStandardMaterial;
+  motionVisuals?: SpinnerMotionVisuals;
 }
 
 // ─── Update ──────────────────────────────────────────────────────────────────
@@ -41,7 +43,18 @@ export function updateSpinnerVisuals(
   time:  number,
   delta: number,
 ): void {
-  const { vel, maxSpeed, spinSpeed, rpmFrac, spinFrac, baseColor, tiltGroup, spinGroup, bodyMat } = input;
+  const {
+    vel,
+    maxSpeed,
+    spinSpeed,
+    rpmFrac,
+    spinFrac,
+    baseColor,
+    tiltGroup,
+    spinGroup,
+    bodyMat,
+    motionVisuals,
+  } = input;
   const speed = Math.sqrt(vel.x ** 2 + vel.z ** 2);
 
   // Tilt toward movement direction
@@ -66,4 +79,14 @@ export function updateSpinnerVisuals(
 
   // Body colour desaturation
   bodyMat.color.copy(baseColor).lerp(GREY, 1 - Math.min(1, rpmFrac));
+
+  if (motionVisuals) {
+    const haloStrength = Math.max(0, spinFrac * 0.18 + speedFrac * 0.2 - 0.04);
+    const haloPulse = 0.94 + Math.sin(time * Math.PI * 10) * 0.06;
+    const haloScale = 1 + speedFrac * 0.16 + Math.max(0, spinFrac - 0.75) * 0.08;
+
+    motionVisuals.speedHalo.visible = haloStrength > 0.015;
+    motionVisuals.speedHalo.scale.setScalar(haloScale * haloPulse);
+    motionVisuals.speedHaloMat.opacity = Math.min(0.52, haloStrength);
+  }
 }

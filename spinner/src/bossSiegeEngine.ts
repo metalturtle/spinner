@@ -431,7 +431,7 @@ export function updateSiegeEngineVisuals(
     rpmFrac,
     spinFrac: rpmFrac,
     baseColor: boss.baseColor,
-    tiltGroup, spinGroup, bodyMat,
+    tiltGroup, spinGroup, bodyMat, motionVisuals: boss.topResult.motionVisuals,
   }, time, delta);
 
   // Phase-based emissive

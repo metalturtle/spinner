@@ -136,7 +136,7 @@
     {
       "id": "ent_mokac8ohg3b47j",
       "name": "Player Spawn 1",
-      "type": "enemy_spinner_tier_3",
+      "type": "enemy_spinner_tier_2",
       "position": {
         "x": 2,
         "y": 14
@@ -305,6 +305,17 @@
       "position": {
         "x": -5,
         "y": 23
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_moke7wmyuawe4d",
+      "name": "Player Spawn 17",
+      "type": "enemy_spinner_tier_2",
+      "position": {
+        "x": -4,
+        "y": 14
       },
       "rotation": 0,
       "properties": {}
