@@ -66,6 +66,11 @@ export class EntityRenderer {
       return;
     }
 
+    if (entity.type === 'laser_spinner') {
+      this.buildLaserSpinnerVisual(group, entity, color);
+      return;
+    }
+
     this.buildDefaultVisual(group, entity, color);
   }
 
@@ -85,7 +90,7 @@ export class EntityRenderer {
     mesh.userData = { type: 'entity', id: entity.id };
     group.add(mesh);
 
-    const rad = (entity.rotation * Math.PI) / 180;
+    const rad = ((entity.rotation ?? 0) * Math.PI) / 180;
     const arrowLen = 0.6;
     const arrowGeo = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(entity.position.x, entity.position.y, 0),
@@ -217,7 +222,7 @@ export class EntityRenderer {
     const travel = this.readNumber(entity.properties.travel, 1.8, 0);
     const thickness = this.readNumber(entity.properties.thickness, 0.45, 0.08);
     const startOpen = entity.properties.startOpen === 'true';
-    const rad = (entity.rotation * Math.PI) / 180;
+    const rad = ((entity.rotation ?? 0) * Math.PI) / 180;
     const dirX = Math.cos(rad);
     const dirY = Math.sin(rad);
     const normalX = -dirY;
@@ -269,6 +274,42 @@ export class EntityRenderer {
       new THREE.Vector3(x + normalX * (height * 0.18), y + normalY * (height * 0.18), 0.02),
     ]);
     group.add(new THREE.Line(frameGeo, new THREE.LineBasicMaterial({ color: 0x2f394a, depthTest: false })));
+  }
+
+  private buildLaserSpinnerVisual(group: THREE.Group, entity: EntityData, color: number): void {
+    const x = entity.position.x;
+    const y = entity.position.y;
+    const body = new THREE.Mesh(
+      new THREE.CircleGeometry(0.48, 24),
+      new THREE.MeshBasicMaterial({ color, depthTest: false }),
+    );
+    body.position.set(x, y, 0);
+    body.userData = { type: 'entity', id: entity.id };
+    group.add(body);
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.56, 0.8, 28),
+      new THREE.MeshBasicMaterial({
+        color: 0xffe0ba,
+        transparent: true,
+        opacity: 0.72,
+        depthTest: false,
+      }),
+    );
+    ring.position.set(x, y, -0.01);
+    ring.userData = { type: 'entity', id: entity.id };
+    group.add(ring);
+
+    const rad = ((entity.rotation ?? 0) * Math.PI) / 180;
+    const beamLen = 1.1;
+    const beamGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x, y, 0.02),
+      new THREE.Vector3(x + Math.cos(rad) * beamLen, y + Math.sin(rad) * beamLen, 0.02),
+    ]);
+    group.add(new THREE.Line(
+      beamGeo,
+      new THREE.LineBasicMaterial({ color: 0xfff0d4, transparent: true, opacity: 0.9, depthTest: false }),
+    ));
   }
 
   private buildOctobossVisual(group: THREE.Group, entity: EntityData, color: number): void {

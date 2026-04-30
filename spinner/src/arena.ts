@@ -145,6 +145,11 @@ function isInvisibleWall(poly: LevelPolygon): boolean {
   return raw === true || raw === 'true' || raw === '1';
 }
 
+function isMirrorWall(poly: LevelPolygon): boolean {
+  const raw = poly.properties?.mirror;
+  return raw === true || raw === 'true' || raw === '1';
+}
+
 function extrudeWallPoly(poly: LevelPolygon, mat: THREE.MeshStandardMaterial): THREE.Mesh {
   const shape = makeShapeFromPolygon(poly);
   const geo = new THREE.ExtrudeGeometry(shape, { depth: WALL_HEIGHT, bevelEnabled: false });
@@ -345,6 +350,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
   // ─── Walls from layer='wall' polygons ────────────────────────────────────
   for (const poly of wallPolys) {
     const invisible = isInvisibleWall(poly);
+    const mirror = isMirrorWall(poly);
     const hasTexture = Boolean(poly.textureId);
     const normalMap = TextureManager.getNormal(poly.textureId, poly.useReliefMap);
     const map = DEBUG_SHOW_NORMAL_AS_ALBEDO && normalMap ? normalMap : TextureManager.get(poly.textureId);
@@ -353,9 +359,9 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
       map,
       normalMap: DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap,
       bumpMap: TextureManager.getBump(poly.textureId, poly.useReliefMap),
-      emissive: hasTexture ? 0x000000 : new THREE.Color(WALL_EMISSIVE),
-      roughness: 0.4,
-      metalness: 0.6,
+      emissive: mirror ? new THREE.Color(0x74cfe6) : hasTexture ? 0x000000 : new THREE.Color(WALL_EMISSIVE),
+      roughness: mirror ? 0.08 : 0.4,
+      metalness: mirror ? 0.95 : 0.6,
     });
     if (poly.useReliefMap) {
       wallMat.normalScale = new THREE.Vector2(0.9, 0.9);
@@ -365,7 +371,11 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
     const verts = poly.vertices;
     for (let i = 0; i < verts.length; i++) {
       const p1 = verts[i], p2 = verts[(i + 1) % verts.length];
-      walls.push({ p1: { x: p1.x, z: lvZ(p1.y) }, p2: { x: p2.x, z: lvZ(p2.y) } });
+      walls.push({
+        p1: { x: p1.x, z: lvZ(p1.y) },
+        p2: { x: p2.x, z: lvZ(p2.y) },
+        reflective: mirror,
+      });
     }
     if (!invisible) {
       // Visual: extrude the whole polygon shape upward (one solid mesh per polygon)

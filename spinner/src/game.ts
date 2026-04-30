@@ -47,6 +47,12 @@ import {
   ENEMY_SPINNER_TIER_1, ENEMY_SPINNER_TIER_2, ENEMY_SPINNER_TIER_3, type EnemySpinnerState,
 } from './enemySpinner';
 import {
+  createLaserSpinner, updateLaserSpinnerAI, updateLaserSpinnerVisuals,
+  setLaserSpinnerAwake, onLaserSpinnerCollision, getLaserSpinnerComboLockDuration,
+  isLaserSpinnerDead, destroyLaserSpinner, traceLaserSpinnerBeam,
+  LASER_SPINNER_TIER_1, type LaserSpinnerState,
+} from './laserSpinner';
+import {
   createZombieEnemy, updateZombieAI, updateZombieVisuals, setZombieAwake,
   applyDamageToZombie, isZombieDead, destroyZombieEnemy,
   ZOMBIE_TIER_1, type ZombieState,
@@ -195,6 +201,7 @@ if (import.meta.env.DEV && new URL(window.location.href).searchParams.get('spect
 
 const TurretEntities      = defineEntityType({ create: createTurret,       destroy: destroyTurret       });
 const EnemyEntities       = defineEntityType({ create: createEnemySpinner,  destroy: destroyEnemySpinner  });
+const LaserSpinnerEntities = defineEntityType({ create: createLaserSpinner, destroy: destroyLaserSpinner });
 const ZombieEntities      = defineEntityType({ create: createZombieEnemy,   destroy: destroyZombieEnemy   });
 const ObstacleEntities    = defineEntityType({ create: createObstacle,      destroy: destroyObstacle      });
 const DreadnoughtEntities = defineEntityType({ create: createDreadnought,   destroy: destroyDreadnought   });
@@ -252,6 +259,20 @@ registerCollisionPair('player', 'enemy', (_playerCol, enemyCol, hit) => {
   if (enemy?.alive) onEnemyCollision(enemy);
   const { point, normal } = computeContactInfo(_playerCol, enemyCol);
   emitSparks(point, normal, Math.floor(12 + hit.impactForce * 10), Math.min(1, hit.impactForce / 8));
+});
+
+registerCollisionPair('player', 'laser_spinner', (_playerCol, enemyCol, hit) => {
+  const enemy = LaserSpinnerEntities.getAll().find((e) => e.collidable === enemyCol);
+  if (enemy?.alive && !isPlayerInvulnerable()) {
+    const comboLock = getLaserSpinnerComboLockDuration(enemy);
+    if (comboLock > 0) {
+      enemyComboLockTimer = Math.max(enemyComboLockTimer, comboLock);
+      setPlayerControlLocked(true);
+    }
+  }
+  if (enemy?.alive) onLaserSpinnerCollision(enemy);
+  const { point, normal } = computeContactInfo(_playerCol, enemyCol);
+  emitSparks(point, normal, Math.floor(14 + hit.impactForce * 10), Math.min(1, hit.impactForce / 8));
 });
 
 registerCollisionPair('player', 'zombie', (_playerCol, zombieCol, hit) => {
@@ -566,6 +587,7 @@ const PLAYER_WEB_SPEED_MULT = 0.16;
 const PLAYER_WEB_VEL_DAMP = 0.42;
 let playerWebTimer = 0;
 let enemyComboLockTimer = 0;
+let playerLaserHitFxTimer = 0;
 
 type MotionBucket = 'move_x' | 'move_z';
 type SpiderMotionState = 'chase' | 'orbit' | 'collapse' | 'hop_windup' | 'hop_air' | 'hop_recover';
@@ -620,6 +642,7 @@ interface AwakenableEncounterEntity {
   setAwake: (awakened: boolean) => void;
   getPos: () => Vec2;
   getDetectionRadius: (alerted: boolean) => number;
+  requiresLineOfSight?: boolean;
 }
 
 interface EncounterState extends AreaZone {
@@ -893,6 +916,32 @@ function isPointInPolygon(point: { x: number; z: number }, vertices: { x: number
   return inside;
 }
 
+function cross2(ax: number, az: number, bx: number, bz: number): number {
+  return ax * bz - az * bx;
+}
+
+function lineSegmentHitsWall(from: Vec2, to: Vec2, wall: Segment): boolean {
+  const rayX = to.x - from.x;
+  const rayZ = to.z - from.z;
+  const segX = wall.p2.x - wall.p1.x;
+  const segZ = wall.p2.z - wall.p1.z;
+  const denom = cross2(rayX, rayZ, segX, segZ);
+  if (Math.abs(denom) < 0.00001) return false;
+
+  const deltaX = wall.p1.x - from.x;
+  const deltaZ = wall.p1.z - from.z;
+  const t = cross2(deltaX, deltaZ, segX, segZ) / denom;
+  const u = cross2(deltaX, deltaZ, rayX, rayZ) / denom;
+  return t > 0.001 && t < 0.999 && u >= 0 && u <= 1;
+}
+
+function hasWallLineOfSight(from: Vec2, to: Vec2): boolean {
+  for (const wall of walls) {
+    if (lineSegmentHitsWall(from, to, wall)) return false;
+  }
+  return true;
+}
+
 function buildAreaZoneFromPolygon(poly: LevelPolygon): AreaZone | null {
   if (poly.vertices.length < 3) return null;
   const vertices = poly.vertices.map((vertex) => ({ x: vertex.x, z: lvZ(vertex.y) }));
@@ -925,6 +974,7 @@ function isEncounterTargetEntity(ent: LevelEntity): boolean {
     case 'enemy_spinner_tier_1':
     case 'enemy_spinner_tier_2':
     case 'enemy_spinner_tier_3':
+    case 'laser_spinner':
     case 'zombie':
     case 'robot':
     case 'dreadnought':
@@ -1053,6 +1103,7 @@ function shouldPreloadTriggeredEntity(ent: LevelEntity): boolean {
     case 'enemy_spinner_tier_1':
     case 'enemy_spinner_tier_2':
     case 'enemy_spinner_tier_3':
+    case 'laser_spinner':
     case 'zombie':
     case 'robot':
     case 'spider_reliquary':
@@ -1094,6 +1145,7 @@ function updateAwakenableEncounterEntities(): void {
     const dx = playerBody.pos.x - pos.x;
     const dz = playerBody.pos.z - pos.z;
     if (dx * dx + dz * dz > radius * radius) continue;
+    if (entry.requiresLineOfSight && !hasWallLineOfSight(pos, playerBody.pos)) continue;
 
     entry.alerted = true;
     entry.setAwake(true);
@@ -1250,6 +1302,16 @@ function deactivateEnemySpinnerForFall(enemy: EnemySpinnerState): THREE.Object3D
   deregisterEntity(enemy.id);
   removeCollidableFromGameplay(enemy.collidable);
   return [enemy.topResult.tiltGroup];
+}
+
+function deactivateLaserSpinnerForFall(enemy: LaserSpinnerState): THREE.Object3D[] {
+  enemy.alive = false;
+  enemy.collidable.vel.x = 0;
+  enemy.collidable.vel.z = 0;
+  unregisterEncounterMember(enemy.id);
+  deregisterEntity(enemy.id);
+  removeCollidableFromGameplay(enemy.collidable);
+  return [enemy.topResult.tiltGroup, enemy.beamGroup];
 }
 
 function deactivateZombieForFall(zombie: ZombieState): THREE.Object3D[] {
@@ -1455,6 +1517,35 @@ function spawnLevelEntity(ent: LevelEntity): void {
       });
     }
   };
+  const spawnLaserSpinnerEntity = (): void => {
+    const enemy = LaserSpinnerEntities.spawn(pos, LASER_SPINNER_TIER_1);
+    registerEncounterMember(ent, enemy.id);
+    const startAwake = readBooleanProperty(ent.properties, 'startAwake');
+    if (!startAwake) {
+      setLaserSpinnerAwake(enemy, false);
+      registerAwakenableEncounterEntity(ent, spawnTrigger ?? ent.id, {
+        isAlive: () => enemy.alive,
+        isAwake: () => enemy.awakened,
+        setAwake: (awakened) => setLaserSpinnerAwake(enemy, awakened),
+        getPos: () => enemy.collidable.pos,
+        getDetectionRadius: (alerted) => alerted
+          ? Math.max(enemy.config.orbitRange * 0.95, enemy.config.chargeRange * 0.9)
+          : Math.max(enemy.config.orbitRange * 0.55, enemy.config.chargeRange * 0.55),
+        requiresLineOfSight: true,
+      });
+    }
+    if (isEntityFallable(ent)) {
+      registerFallableActor(enemy.collidable, () => {
+        const roots = deactivateLaserSpinnerForFall(enemy);
+        enqueueFallingVictim(createFallingVictim(
+          roots,
+          enemy.topResult.tiltGroup,
+          () => LaserSpinnerEntities.destroy(enemy),
+          enemy.topResult.spinGroup,
+        ));
+      });
+    }
+  };
 
   switch (ent.type) {
     case 'pickup':
@@ -1589,6 +1680,10 @@ function spawnLevelEntity(ent: LevelEntity): void {
     }
     case 'enemy_spinner_tier_3': {
       spawnEnemySpinnerEntity(ENEMY_SPINNER_TIER_3);
+      break;
+    }
+    case 'laser_spinner': {
+      spawnLaserSpinnerEntity();
       break;
     }
     case 'zombie': {
@@ -1975,6 +2070,7 @@ function resetGame(): void {
   // Destroy dynamic entities first (removes their collidables and scene objects)
   TurretEntities.destroyAll();
   EnemyEntities.destroyAll();
+  LaserSpinnerEntities.destroyAll();
   ZombieEntities.destroyAll();
   ObstacleEntities.destroyAll();
   DreadnoughtEntities.destroyAll();
@@ -2031,6 +2127,7 @@ function resetGame(): void {
   resetLavaEmbers();
   resetCameraShake();
   resetClashFlashes();
+  playerLaserHitFxTimer = 0;
   fallingVictims.length = 0;
   fallableActors.length = 0;
   playerKillFallTimer = 0;
@@ -2840,6 +2937,7 @@ function beginPlayerRespawnSequence(mode: 'topple' | 'pit'): void {
   playerBody.vel.z = 0;
   playerWebTimer = 0;
   enemyComboLockTimer = 0;
+  playerLaserHitFxTimer = 0;
   playerKillFallTimer = 0;
 
   if (mode === 'pit') {
@@ -2867,6 +2965,7 @@ function finishPlayerRespawn(): void {
   respawnInvulnerabilityTimer = RESPAWN_INVULNERABILITY_DURATION;
   playerWebTimer = 0;
   enemyComboLockTimer = 0;
+  playerLaserHitFxTimer = 0;
   playerKillFallTimer = 0;
   syncPlayerInvulnerability();
 }
@@ -2900,6 +2999,30 @@ function updateTurretSystem(delta: number): void {
   }
 
   updateExplosions(explosions, delta);
+}
+
+function updateLaserSpinnerBeamSystem(delta: number): void {
+  playerLaserHitFxTimer = Math.max(0, playerLaserHitFxTimer - delta);
+
+  for (const enemy of LaserSpinnerEntities.getAll()) {
+    if (!enemy.alive) continue;
+    const rpmDamage = traceLaserSpinnerBeam(
+      enemy,
+      playerBody.pos,
+      playerBody.radius,
+      walls,
+      delta,
+      isPlayerInvulnerable(),
+    );
+    if (rpmDamage <= 0) continue;
+
+    playerBody.rpm = Math.max(0, playerBody.rpm - rpmDamage);
+    if (playerLaserHitFxTimer <= 0) {
+      notifyPlayerHit();
+      emitPlasma({ x: playerBody.pos.x, y: 0.45, z: playerBody.pos.z }, 10, 0.32);
+      playerLaserHitFxTimer = 0.12;
+    }
+  }
 }
 
 // ─── Siege Engine Turret System ───────────────────────────────────────────────
@@ -3255,6 +3378,18 @@ function checkEnemyDeath(): void {
   }
 }
 
+function checkLaserSpinnerDeath(): void {
+  for (const enemy of [...LaserSpinnerEntities.getAll()]) {
+    if (!isLaserSpinnerDead(enemy)) continue;
+    const deathPos = { x: enemy.collidable.pos.x, z: enemy.collidable.pos.z };
+    unregisterEncounterMember(enemy.id);
+    LaserSpinnerEntities.destroy(enemy);
+    explosions.push(createExplosion(deathPos));
+    spawnPickupAt(pickups, deathPos);
+    spawnGrowthPickupAt(pickups, { x: deathPos.x + 0.8, z: deathPos.z });
+  }
+}
+
 // ─── Boss Death Check ────────────────────────────────────────────────────────
 
 function checkBossDeath(): void {
@@ -3578,6 +3713,7 @@ function animate(): void {
   entityUpdateSystem(delta);
   const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
   for (const e of EnemyEntities.getAll()) updateEnemyAI(e, playerBody.pos, playerBody.radius, playerSpeed, delta);
+  for (const e of LaserSpinnerEntities.getAll()) updateLaserSpinnerAI(e, playerBody.pos, playerBody.radius, playerSpeed, delta);
   for (const b of DreadnoughtEntities.getAll()) updateDreadnoughtAI(b, playerBody.pos, delta);
   for (const s of SiegeEntities.getAll()) updateSiegeEngineAI(s, playerBody.pos, delta);
   for (const h of HiveEntities.getAll()) updateHiveAI(h, playerBody.pos, delta);
@@ -3606,6 +3742,7 @@ function animate(): void {
   for (const spider of SpiderEntities.getAll()) syncSpiderReliquaryLegs(spider, delta);
   for (const boss of OctobossEntities.getAll()) syncOctobossTentacles(boss, delta);
   for (const h of HiveEntities.getAll()) syncFlockPositions(h);
+  updateLaserSpinnerBeamSystem(delta);
   updateSpiderCorePassThroughHits();
 
   // 2c. Kill-fall trigger zones
@@ -3703,6 +3840,7 @@ function animate(): void {
   // 7. Death checks
   profiler?.nextPhase('deathChecks');
   checkEnemyDeath();
+  checkLaserSpinnerDeath();
   checkBossDeath();
   checkSiegeDeath();
   checkSpiderDeath();
@@ -3731,6 +3869,7 @@ function animate(): void {
   updatePickups(pickups, time, delta);
   updatePlayerVisuals(time, delta);
   for (const e of EnemyEntities.getAll()) updateEnemyVisuals(e, time, delta);
+  for (const e of LaserSpinnerEntities.getAll()) updateLaserSpinnerVisuals(e, time, delta);
   for (const z of ZombieEntities.getAll()) updateZombieVisuals(z, playerBody.pos, delta, time);
   for (const b of DreadnoughtEntities.getAll()) updateDreadnoughtVisuals(b, time, delta);
   for (const s of SiegeEntities.getAll()) updateSiegeEngineVisuals(s, time, delta);

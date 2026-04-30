@@ -142,6 +142,7 @@ refinement ideas:
     menu improvement
     combat improvement
     glare effects over lava
+    ambient zones
     
 
 bugs:

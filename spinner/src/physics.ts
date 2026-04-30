@@ -23,6 +23,7 @@ export interface Collidable {
 export interface Segment {
   p1: Vec2;
   p2: Vec2;
+  reflective?: boolean;
 }
 
 export interface FloorZone {

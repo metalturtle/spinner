@@ -254,12 +254,17 @@ export class PropertiesPanel {
 
   private wallSection(properties: Record<string, string>): string {
     const invisible = properties.invisible === 'true';
+    const mirror = properties.mirror === 'true';
     return `
       <div class="prop-section">
         <h4>Wall</h4>
         <div class="prop-row">
           <label>Invisible</label>
           <input type="checkbox" data-field="invisible"${invisible ? ' checked' : ''} />
+        </div>
+        <div class="prop-row">
+          <label>Mirror</label>
+          <input type="checkbox" data-field="mirror"${mirror ? ' checked' : ''} />
         </div>
       </div>
     `;

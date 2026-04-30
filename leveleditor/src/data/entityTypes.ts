@@ -20,6 +20,7 @@ export const ENTITY_TYPE_OPTIONS: EntityTypeOption[] = [
   { value: 'enemy_spinner', label: 'Enemy Spinner T1', color: 0xcc66ff },
   { value: 'enemy_spinner_tier_2', label: 'Enemy Spinner T2', color: 0x8f7dff },
   { value: 'enemy_spinner_tier_3', label: 'Enemy Spinner T3', color: 0xb056ff },
+  { value: 'laser_spinner', label: 'Laser Spinner', color: 0xff6a52 },
   { value: 'zombie', label: 'Zombie', color: 0xa46a52 },
   { value: 'dreadnought', label: 'Dreadnought', color: 0xff4455 },
   { value: 'hive_boss', label: 'Hive Boss', color: 0xff77aa },

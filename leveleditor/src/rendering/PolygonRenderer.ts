@@ -18,6 +18,10 @@ function getSurfaceOpacity(layer: string, hasTexture: boolean, lightingPreviewEn
   return layer === 'floor' ? 0.35 : 0.2;
 }
 
+function isMirrorWall(poly: PolygonData): boolean {
+  return poly.layer === 'wall' && poly.properties.mirror === 'true';
+}
+
 export class PolygonRenderer {
   private scene: THREE.Scene;
   private levelData: LevelData;
@@ -65,6 +69,10 @@ export class PolygonRenderer {
 
     const hasTexture = Boolean(poly.textureId);
     const color = getSurfaceColor(poly.color, hasTexture, this.lightingPreviewEnabled);
+    const mirrorWall = isMirrorWall(poly);
+    const previewColor = mirrorWall
+      ? color.clone().lerp(new THREE.Color(0x86eaff), this.lightingPreviewEnabled ? 0.2 : 0.45)
+      : color;
 
     // Fill mesh
     const shape = new THREE.Shape();
@@ -97,7 +105,7 @@ export class PolygonRenderer {
     const debugMap = DEBUG_SHOW_NORMAL_AS_ALBEDO && normalMap ? normalMap : null;
     const fillMat = this.lightingPreviewEnabled
       ? new THREE.MeshStandardMaterial({
-          color,
+          color: previewColor,
           map: debugMap ?? baseMap,
           normalMap: DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap,
           bumpMap: DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : TextureManager.getBump(poly.textureId, reliefEnabled),
@@ -106,12 +114,12 @@ export class PolygonRenderer {
           transparent: fillOpacity < 1,
           opacity: fillOpacity,
           side: THREE.DoubleSide,
-          roughness: 0.82,
-          metalness: 0.04,
+          roughness: mirrorWall ? 0.22 : 0.82,
+          metalness: mirrorWall ? 0.55 : 0.04,
           depthTest: false,
         })
       : new THREE.MeshBasicMaterial({
-          color,
+          color: previewColor,
           map: TextureManager.get(poly.textureId),
           transparent: true,
           opacity: fillOpacity,
@@ -126,7 +134,7 @@ export class PolygonRenderer {
     const points = poly.vertices.map((v) => new THREE.Vector3(v.x, v.y, 0));
     points.push(points[0].clone());
     const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-    const lineMat = new THREE.LineBasicMaterial({ color, depthTest: false });
+    const lineMat = new THREE.LineBasicMaterial({ color: previewColor, depthTest: false });
     const line = new THREE.LineLoop(lineGeo, lineMat);
     line.userData = { type: 'polygon', id: poly.id };
     group.add(line);
@@ -136,7 +144,7 @@ export class PolygonRenderer {
       const holePoints = hole.map((v) => new THREE.Vector3(v.x, v.y, 0));
       holePoints.push(holePoints[0].clone());
       const holeGeo = new THREE.BufferGeometry().setFromPoints(holePoints);
-      const holeLine = new THREE.LineLoop(holeGeo, new THREE.LineBasicMaterial({ color, depthTest: false }));
+      const holeLine = new THREE.LineLoop(holeGeo, new THREE.LineBasicMaterial({ color: previewColor, depthTest: false }));
       holeLine.userData = { type: 'polygon', id: poly.id };
       group.add(holeLine);
     }
