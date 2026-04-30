@@ -124,9 +124,11 @@ import {
   playClashSound,
   playPickupSound,
   playZombieSlashSound,
+  resetAmbientTrack,
+  setAmbientTrack,
+  syncAmbientLoop,
   setSoundListenerPosition,
   syncSpinnerMotorLoops,
-  syncTempleAmbientLoop,
   syncWallScrapeLoop,
   type SpinnerMotorLoop,
 } from './sound';
@@ -648,6 +650,13 @@ interface SpawnTriggerZone extends AreaZone {
   fired: boolean;
 }
 
+interface AmbientTriggerZone extends AreaZone {
+  track: string;
+  volume: number;
+  playbackRate: number;
+  entered: boolean;
+}
+
 interface AwakenableEncounterEntity {
   awakenId: string;
   encounterId: string;
@@ -704,6 +713,7 @@ interface CheckpointState {
 }
 
 const spawnTriggerZones: SpawnTriggerZone[] = [];
+const ambientTriggerZones: AmbientTriggerZone[] = [];
 const killFallZones: AreaZone[] = [];
 const encounters = new Map<string, EncounterState>();
 const levelEntityEncounterIds = new Map<string, string>();
@@ -748,6 +758,13 @@ function readTriggerKind(props: Record<string, unknown> | undefined): 'awaken' |
   if (triggerKind === 'visibility') return 'visibility';
   if (readStringProperty(props, 'triggerAction') === 'kill_fall') return 'kill_fall';
   return 'awaken';
+}
+
+function readAmbientTrackProperty(props: Record<string, unknown> | undefined): string | null {
+  return readStringProperty(props, 'ambientTrack')
+    ?? readStringProperty(props, 'ambientSound')
+    ?? readStringProperty(props, 'musicTrack')
+    ?? readStringProperty(props, 'musicSound');
 }
 
 function disposeObject3D(root: THREE.Object3D): void {
@@ -1179,6 +1196,7 @@ function resetAwakenableEncounterEntitiesForRespawn(): void {
 
 function rebuildTriggerZones(level: LevelData): void {
   spawnTriggerZones.length = 0;
+  ambientTriggerZones.length = 0;
   killFallZones.length = 0;
   encounters.clear();
   levelEntityEncounterIds.clear();
@@ -1196,6 +1214,17 @@ function rebuildTriggerZones(level: LevelData): void {
     const zone = buildAreaZoneFromPolygon(poly);
     if (!zone) continue;
 
+    const ambientTrack = readAmbientTrackProperty(poly.properties);
+    if (ambientTrack) {
+      ambientTriggerZones.push({
+        track: ambientTrack,
+        volume: readNumberProperty(poly.properties, 'ambientVolume', 0.18, 0),
+        playbackRate: readNumberProperty(poly.properties, 'ambientPlaybackRate', 1, 0.1),
+        entered: false,
+        contains: zone.contains,
+      });
+    }
+
     const triggerId = readStringProperty(poly.properties, 'triggerId');
     const triggerKind = readTriggerKind(poly.properties);
     if (triggerId && triggerKind !== 'kill_fall') {
@@ -1211,6 +1240,17 @@ function rebuildTriggerZones(level: LevelData): void {
     if (circle.layer !== 'trigger') continue;
     const zone = buildAreaZoneFromCircle(circle);
     if (!zone) continue;
+
+    const ambientTrack = readAmbientTrackProperty(circle.properties);
+    if (ambientTrack) {
+      ambientTriggerZones.push({
+        track: ambientTrack,
+        volume: readNumberProperty(circle.properties, 'ambientVolume', 0.18, 0),
+        playbackRate: readNumberProperty(circle.properties, 'ambientPlaybackRate', 1, 0.1),
+        entered: false,
+        contains: zone.contains,
+      });
+    }
 
     const triggerId = readStringProperty(circle.properties, 'triggerId');
     const triggerKind = readTriggerKind(circle.properties);
@@ -1882,6 +1922,24 @@ function updateTriggerSpawns(): void {
   }
 }
 
+function resetAmbientTriggerZones(): void {
+  for (const zone of ambientTriggerZones) {
+    zone.entered = false;
+  }
+}
+
+function updateAmbientTriggers(): void {
+  for (const zone of ambientTriggerZones) {
+    const inside = zone.contains(playerBody.pos);
+    if (inside && !zone.entered) {
+      zone.entered = true;
+      setAmbientTrack(zone.track, zone.volume, zone.playbackRate);
+    } else if (!inside) {
+      zone.entered = false;
+    }
+  }
+}
+
 const initialUrl = new URL(window.location.href);
 let selectedLevelId: LevelChoiceId = DEBUG_SKIP_MAIN_MENU
   ? 'active'
@@ -2109,6 +2167,7 @@ function resetGame(): void {
   setupPlayer();
   resetComboState();
   setPlayerControlLocked(false);
+  resetAmbientTrack();
   respawnPending = false;
   respawnInvulnerabilityTimer = 0;
   syncPlayerInvulnerability();
@@ -2153,6 +2212,7 @@ function resetGame(): void {
   clearLevelLights(scene);
   setupLevelLights(scene, currentLevel);
   spawnAll(currentLevel);
+  resetAmbientTriggerZones();
   updateCheckpointVisuals(time);
 }
 
@@ -2974,6 +3034,8 @@ function finishPlayerRespawn(): void {
   resetAwakenableEncounterEntitiesForRespawn();
   resetComboState();
   setPlayerControlLocked(false);
+  resetAmbientTrack();
+  resetAmbientTriggerZones();
   respawnPending = false;
   gameOver = false;
   gameOverOverlay.style.display = 'none';
@@ -3741,7 +3803,7 @@ function animate(): void {
   const delta = Math.min(timer.getDelta(), 0.05);
   time += delta;
   setSoundListenerPosition(playerBody.pos);
-  syncTempleAmbientLoop(0.18, 1);
+  syncAmbientLoop();
   if (consumeProfilerTogglePressed()) profiler?.toggleOverlay();
   if (consumeSpectorCapturePressed() && spectorCaptureControllerPromise) {
     void spectorCaptureControllerPromise.then((controller) => controller?.captureFrame());
@@ -3812,6 +3874,7 @@ function animate(): void {
 
   // 1. Entity updates (intent — player input, enemy AI, boss AI, turret aim)
   profiler?.nextPhase('entityUpdate');
+  updateAmbientTriggers();
   if (enemyComboLockTimer > 0) {
     enemyComboLockTimer = Math.max(0, enemyComboLockTimer - delta);
     if (enemyComboLockTimer <= 0 && !isPlayerInvulnerable()) {

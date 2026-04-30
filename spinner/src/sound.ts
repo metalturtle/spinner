@@ -9,8 +9,7 @@ const EXPLOSION_SOUND_KEY = 'explode';
 const EXPLOSION_SOUND_KEY_2 = 'explode-2';
 const LASER_SOUND_URL = '/sounds/laser.wav';
 const LASER_SOUND_KEY = 'laser';
-const TEMPLE_AMBIENT_SOUND_URL = '/sounds/templeambient.wav';
-const TEMPLE_AMBIENT_SOUND_KEY = 'temple-ambient';
+const DEFAULT_AMBIENT_SOUND_URL = '/sounds/saturnambient.mp3';
 const SCRAPE_SOUND_URL = '/sounds/scrape.wav';
 const SCRAPE_SOUND_KEY = 'wall-scrape';
 const PICKUP_SOUND_URL = '/sounds/pickup.wav';
@@ -33,6 +32,10 @@ const loopingAudio = new Map<string, HTMLAudioElement>();
 const oneShotVoicePools = new Map<string, HTMLAudioElement[]>();
 const oneShotPoolIndices = new Map<string, number>();
 const listenerPosition = { x: 0, z: 0 };
+let ambientTrackUrl = DEFAULT_AMBIENT_SOUND_URL;
+let ambientTrackVolume = 0.18;
+let ambientTrackPlaybackRate = 1;
+let activeAmbientLoopKey: string | null = null;
 
 export interface SpinnerMotorLoop {
   key: string;
@@ -61,6 +64,19 @@ function distanceFalloff(source: { x: number; z: number } | undefined): number {
   return normalized * normalized;
 }
 
+function sanitizeLoopKeyPart(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]+/g, '_');
+}
+
+function getAmbientLoopKey(url: string): string {
+  return `ambient:${sanitizeLoopKeyPart(url)}`;
+}
+
+function resolveAmbientTrackUrl(track: string): string {
+  if (track.startsWith('/')) return track;
+  return `/sounds/${track}`;
+}
+
 function getPreloadedAudio(key: string, url: string): HTMLAudioElement {
   let audio = preloadedAudio.get(key);
   if (!audio) {
@@ -83,11 +99,28 @@ function getOneShotPoolSize(key: string): number {
       return 10;
     case PICKUP_SOUND_KEY:
     case ZOMBIE_SLASH_SOUND_KEY:
-    case ZOMBIE_ROAR_SOUND_KEY:
     case SPIDERLEG_SOUND_KEY:
       return 6;
+    case ZOMBIE_ROAR_SOUND_KEY:
+      return 10;
     default:
       return 8;
+  }
+}
+
+function getOneShotPoolMaxSize(key: string): number {
+  switch (key) {
+    case LASER_SOUND_KEY:
+      return 20;
+    case ZOMBIE_ROAR_SOUND_KEY:
+      return 18;
+    case CLASH_SOUND_KEY:
+    case CLASH_SOUND_KEY_2:
+    case EXPLOSION_SOUND_KEY:
+    case EXPLOSION_SOUND_KEY_2:
+      return 14;
+    default:
+      return getOneShotPoolSize(key);
   }
 }
 
@@ -108,10 +141,24 @@ function getOneShotPool(key: string, url: string): HTMLAudioElement[] {
   return pool;
 }
 
+function createOneShotVoice(url: string): HTMLAudioElement {
+  const audio = new Audio(url);
+  audio.preload = 'auto';
+  audio.load();
+  return audio;
+}
+
 function pickOneShotVoice(key: string, url: string): HTMLAudioElement {
   const pool = getOneShotPool(key, url);
   for (const voice of pool) {
     if (voice.paused || voice.ended) return voice;
+  }
+
+  const maxSize = getOneShotPoolMaxSize(key);
+  if (pool.length < maxSize) {
+    const voice = createOneShotVoice(url);
+    pool.push(voice);
+    return voice;
   }
 
   const nextIndex = oneShotPoolIndices.get(key) ?? 0;
@@ -174,7 +221,7 @@ export function initSound(): void {
   getOneShotPool(ZOMBIE_SLASH_SOUND_KEY, ZOMBIE_SLASH_SOUND_URL);
   getOneShotPool(ZOMBIE_ROAR_SOUND_KEY, ZOMBIE_ROAR_SOUND_URL);
   getOneShotPool(SPIDERLEG_SOUND_KEY, SPIDERLEG_SOUND_URL);
-  getLoopingAudio(TEMPLE_AMBIENT_SOUND_KEY, TEMPLE_AMBIENT_SOUND_URL);
+  getLoopingAudio(getAmbientLoopKey(DEFAULT_AMBIENT_SOUND_URL), DEFAULT_AMBIENT_SOUND_URL);
   getPreloadedAudio(`${SPINNER_MOTOR_PREFIX}template`, SPINNER_MOTOR_SOUND_URL);
   window.addEventListener('pointerdown', unlockAudio, { once: true, passive: true });
   window.addEventListener('keydown', unlockAudio, { once: true });
@@ -331,9 +378,28 @@ export function syncWallScrapeLoop(volume: number, playbackRate: number): void {
   setLoopState(audio, volume, playbackRate);
 }
 
-export function syncTempleAmbientLoop(volume: number, playbackRate = 1): void {
-  const audio = getLoopingAudio(TEMPLE_AMBIENT_SOUND_KEY, TEMPLE_AMBIENT_SOUND_URL);
-  setLoopState(audio, volume, playbackRate);
+export function setAmbientTrack(track: string, volume = 0.18, playbackRate = 1): void {
+  ambientTrackUrl = resolveAmbientTrackUrl(track);
+  ambientTrackVolume = Math.max(0, Math.min(1, volume));
+  ambientTrackPlaybackRate = Math.max(0.5, Math.min(2, playbackRate));
+}
+
+export function resetAmbientTrack(): void {
+  ambientTrackUrl = DEFAULT_AMBIENT_SOUND_URL;
+  ambientTrackVolume = 0.18;
+  ambientTrackPlaybackRate = 1;
+}
+
+export function syncAmbientLoop(): void {
+  const loopKey = getAmbientLoopKey(ambientTrackUrl);
+  const audio = getLoopingAudio(loopKey, ambientTrackUrl);
+  setLoopState(audio, ambientTrackVolume, ambientTrackPlaybackRate);
+
+  if (activeAmbientLoopKey && activeAmbientLoopKey !== loopKey) {
+    const previous = loopingAudio.get(activeAmbientLoopKey);
+    if (previous) setLoopState(previous, 0, previous.playbackRate || 1);
+  }
+  activeAmbientLoopKey = loopKey;
 }
 
 export function syncSpinnerMotorLoops(loops: SpinnerMotorLoop[]): void {
