@@ -8,12 +8,17 @@ import { createHpBar, updateHpBar } from './hpBar';
 import {
   nextEntityId, registerMovement, tagCollidable, untagCollidable, deregisterEntity,
 } from './systems';
+import { playZombieRoarSound } from './sound';
 
 const ZOMBIE_MODEL_URL = new URL('../models/zombie/ZombieSmooth.fbx', import.meta.url).href;
 const ZOMBIE_IDLE_URL = new URL('../models/zombie/sword and shield idle.fbx', import.meta.url).href;
 const ZOMBIE_ATTACK_URL = new URL('../models/zombie/sword and shield attack.fbx', import.meta.url).href;
 
 type ZombieAnim = 'idle' | 'walk' | 'attack';
+
+function randomZombieRoarDelay(): number {
+  return 4 + Math.random() * 6.5;
+}
 
 interface ZombieAssetBundle {
   scene: THREE.Group;
@@ -151,6 +156,7 @@ export interface ZombieState {
   currentAnim: ZombieAnim | null;
   attackCooldown: number;
   attackAnimTimer: number;
+  roarTimer: number;
   tintMaterials: THREE.MeshStandardMaterial[];
 }
 
@@ -289,6 +295,7 @@ export function createZombieEnemy(pos: Vec2, config: ZombieConfig): ZombieState 
     currentAnim: null,
     attackCooldown: Math.random() * 0.35,
     attackAnimTimer: 0,
+    roarTimer: randomZombieRoarDelay(),
     tintMaterials: [],
   };
 
@@ -301,13 +308,24 @@ export function createZombieEnemy(pos: Vec2, config: ZombieConfig): ZombieState 
 }
 
 export function setZombieAwake(zombie: ZombieState, awakened: boolean): void {
+  const wasAwake = zombie.awakened;
   zombie.awakened = awakened;
   zombie.collidable.enabled = awakened;
   zombie.collidable.vel.x = 0;
   zombie.collidable.vel.z = 0;
   zombie.attackAnimTimer = 0;
   zombie.attackCooldown = 0;
+  zombie.roarTimer = randomZombieRoarDelay();
   setZombieAnimation(zombie, 'idle');
+
+  if (!wasAwake && awakened) {
+    playZombieRoarSound(
+      String(zombie.id),
+      { x: zombie.collidable.pos.x, z: zombie.collidable.pos.z },
+      0.9,
+    );
+    zombie.roarTimer = 5.5 + Math.random() * 6.5;
+  }
 }
 
 export function updateZombieAI(zombie: ZombieState, playerPos: Vec2, delta: number): boolean {
@@ -319,10 +337,21 @@ export function updateZombieAI(zombie: ZombieState, playerPos: Vec2, delta: numb
 
   zombie.attackCooldown = Math.max(0, zombie.attackCooldown - delta);
   zombie.attackAnimTimer = Math.max(0, zombie.attackAnimTimer - delta);
+  zombie.roarTimer -= delta;
 
   const dx = playerPos.x - body.pos.x;
   const dz = playerPos.z - body.pos.z;
   const dist = Math.sqrt(dx * dx + dz * dz);
+
+  if (zombie.roarTimer <= 0) {
+    const proximityIntensity = Math.max(0.45, Math.min(1, 1 - dist / 18));
+    playZombieRoarSound(
+      String(zombie.id),
+      { x: zombie.collidable.pos.x, z: zombie.collidable.pos.z },
+      proximityIntensity,
+    );
+    zombie.roarTimer = randomZombieRoarDelay();
+  }
 
   if (dist <= cfg.attackRange) {
     body.vel.x *= 0.82;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { scene } from './renderer';
+import { playSpiderLegPlantSound } from './sound';
 import { collidables, type Collidable, type Vec2 } from './physics';
 import { createHpBar, updateHpBar } from './hpBar';
 import { getArenaBounds, isPointInLava } from './arena';
@@ -897,6 +898,13 @@ export function syncSpiderReliquaryLegs(boss: SpiderReliquaryState, delta: numbe
         leg.footPos.copy(leg.footTo);
         leg.plantedTime = 0;
         leg.replantLock = oneLegMode ? 0.4 : 0.24;
+        const phase = getPhaseIndex(boss);
+        const intensity = phase === 0 ? 0.72 : phase === 1 ? 0.84 : 1.0;
+        playSpiderLegPlantSound(
+          `${boss.id}:${leg.baseAngle.toFixed(3)}`,
+          intensity,
+          { x: leg.footPos.x, z: leg.footPos.z },
+        );
       }
     }
 

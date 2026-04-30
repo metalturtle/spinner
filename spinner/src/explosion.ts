@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { scene } from './renderer';
+import { playExplosionSound } from './sound';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -271,10 +272,12 @@ function createFireballExplosion(
 }
 
 export function createExplosion(pos: { x: number; z: number }): Explosion {
+  playExplosionSound(0.82);
   return createFireballExplosion(pos, EXPLOSION_DURATION, EXPLOSION_MAX_RADIUS, 0.65);
 }
 
 export function createEnergyExplosion(pos: { x: number; z: number }): Explosion {
+  playExplosionSound(0.9);
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uTime:    { value: 0 },
@@ -309,6 +312,7 @@ export function createEnergyExplosion(pos: { x: number; z: number }): Explosion 
 }
 
 export function createRobotExplosion(pos: { x: number; z: number }): Explosion {
+  playExplosionSound(1.0);
   return createFireballExplosion(pos, ROBOT_EXPLOSION_DURATION, ROBOT_EXPLOSION_MAX_RADIUS, 0.75);
 }
 

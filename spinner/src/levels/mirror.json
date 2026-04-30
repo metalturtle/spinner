@@ -1,0 +1,746 @@
+{
+  "version": 4,
+  "unit": "m",
+  "gridSize": 1,
+  "polygons": [
+    {
+      "id": "poly_molq5q7h70nt9j",
+      "name": "Room 1 - Bottom",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": -108,
+          "y": -102
+        },
+        {
+          "x": 131,
+          "y": -102
+        },
+        {
+          "x": 131,
+          "y": -101
+        },
+        {
+          "x": -108,
+          "y": -101
+        }
+      ],
+      "properties": {},
+      "color": "#5577aa"
+    },
+    {
+      "id": "poly_molq5q7h8qfxy4",
+      "name": "Room 1 - Top",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": -108,
+          "y": 96
+        },
+        {
+          "x": 131,
+          "y": 96
+        },
+        {
+          "x": 131,
+          "y": 97
+        },
+        {
+          "x": -108,
+          "y": 97
+        }
+      ],
+      "properties": {},
+      "color": "#5577aa"
+    },
+    {
+      "id": "poly_molq5q7hfq8lnp",
+      "name": "Room 1 - Left",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": -108,
+          "y": -101
+        },
+        {
+          "x": -107,
+          "y": -101
+        },
+        {
+          "x": -107,
+          "y": 96
+        },
+        {
+          "x": -108,
+          "y": 96
+        }
+      ],
+      "properties": {},
+      "color": "#5577aa"
+    },
+    {
+      "id": "poly_molq5q7i1xoy76",
+      "name": "Room 1 - Right",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 130,
+          "y": -101
+        },
+        {
+          "x": 131,
+          "y": -101
+        },
+        {
+          "x": 131,
+          "y": 96
+        },
+        {
+          "x": 130,
+          "y": 96
+        }
+      ],
+      "properties": {},
+      "color": "#5577aa"
+    },
+    {
+      "id": "poly_molqp4pevlri2v",
+      "name": "Polygon 6",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 2,
+          "y": 16
+        },
+        {
+          "x": 15,
+          "y": 5
+        },
+        {
+          "x": 16,
+          "y": 6
+        },
+        {
+          "x": 3,
+          "y": 17
+        }
+      ],
+      "properties": {
+        "mirror": "true"
+      },
+      "color": "#ff5533"
+    },
+    {
+      "id": "poly_molqpemk2qxfug",
+      "name": "Polygon 7",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 15,
+          "y": 5
+        },
+        {
+          "x": 16,
+          "y": -10
+        },
+        {
+          "x": 18,
+          "y": -10
+        },
+        {
+          "x": 16,
+          "y": 6
+        }
+      ],
+      "properties": {},
+      "color": "#33cc66"
+    },
+    {
+      "id": "poly_molqplphqeq8jj",
+      "name": "Polygon 8",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 16,
+          "y": -10
+        },
+        {
+          "x": 4,
+          "y": -17
+        },
+        {
+          "x": 5,
+          "y": -18
+        },
+        {
+          "x": 18,
+          "y": -10
+        }
+      ],
+      "properties": {
+        "mirror": "true"
+      },
+      "color": "#cc33ff"
+    },
+    {
+      "id": "poly_molqpq9hi08f2e",
+      "name": "Polygon 9",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 4,
+          "y": -17
+        },
+        {
+          "x": -7,
+          "y": -17
+        },
+        {
+          "x": -7,
+          "y": -18
+        },
+        {
+          "x": 5,
+          "y": -18
+        }
+      ],
+      "properties": {},
+      "color": "#ffcc33"
+    },
+    {
+      "id": "poly_molqpub7jfg313",
+      "name": "Polygon 10",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": -7,
+          "y": -17
+        },
+        {
+          "x": -12,
+          "y": -10
+        },
+        {
+          "x": -13,
+          "y": -10
+        },
+        {
+          "x": -7,
+          "y": -18
+        }
+      ],
+      "properties": {
+        "mirror": "true"
+      },
+      "color": "#33cccc"
+    },
+    {
+      "id": "poly_molqpz4edraan7",
+      "name": "Polygon 11",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": -13,
+          "y": -10
+        },
+        {
+          "x": -15,
+          "y": 8
+        },
+        {
+          "x": -14,
+          "y": 8
+        },
+        {
+          "x": -12,
+          "y": -10
+        }
+      ],
+      "properties": {},
+      "color": "#3388ff"
+    },
+    {
+      "id": "poly_molqq68co851k9",
+      "name": "Polygon 12",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": -15,
+          "y": 8
+        },
+        {
+          "x": -10,
+          "y": 16
+        },
+        {
+          "x": -9,
+          "y": 16
+        },
+        {
+          "x": -14,
+          "y": 8
+        }
+      ],
+      "properties": {
+        "mirror": "true"
+      },
+      "color": "#ff5533"
+    },
+    {
+      "id": "poly_molqqayjtt2psu",
+      "name": "Polygon 13",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": -14,
+          "y": 21
+        },
+        {
+          "x": -1,
+          "y": 28
+        },
+        {
+          "x": -2,
+          "y": 29
+        },
+        {
+          "x": -14,
+          "y": 22
+        }
+      ],
+      "properties": {
+        "mirror": "true"
+      },
+      "color": "#33cc66"
+    },
+    {
+      "id": "poly_molqqjsszr4whu",
+      "name": "Polygon 14",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": -1,
+          "y": 28
+        },
+        {
+          "x": 9,
+          "y": 26
+        },
+        {
+          "x": 10,
+          "y": 27
+        },
+        {
+          "x": -2,
+          "y": 29
+        }
+      ],
+      "properties": {
+        "mirror": "true"
+      },
+      "color": "#cc33ff"
+    },
+    {
+      "id": "poly_molqqp9hy6aop3",
+      "name": "Polygon 15",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 10,
+          "y": 27
+        },
+        {
+          "x": 25,
+          "y": 15
+        },
+        {
+          "x": 24,
+          "y": 14
+        },
+        {
+          "x": 9,
+          "y": 26
+        }
+      ],
+      "properties": {},
+      "color": "#ffcc33"
+    },
+    {
+      "id": "poly_molqquz5m65t0u",
+      "name": "Polygon 16",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 24,
+          "y": 14
+        },
+        {
+          "x": 24,
+          "y": -11
+        },
+        {
+          "x": 25,
+          "y": -11
+        },
+        {
+          "x": 25,
+          "y": 15
+        }
+      ],
+      "properties": {
+        "mirror": "true"
+      },
+      "color": "#33cccc"
+    },
+    {
+      "id": "poly_molqr0q220ryk4",
+      "name": "Polygon 17",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 25,
+          "y": -11
+        },
+        {
+          "x": 19,
+          "y": -21
+        },
+        {
+          "x": 18,
+          "y": -20
+        },
+        {
+          "x": 24,
+          "y": -11
+        }
+      ],
+      "properties": {},
+      "color": "#3388ff"
+    },
+    {
+      "id": "poly_molqr50oeppx3n",
+      "name": "Polygon 18",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 19,
+          "y": -21
+        },
+        {
+          "x": 12,
+          "y": -26
+        },
+        {
+          "x": 11,
+          "y": -25
+        },
+        {
+          "x": 18,
+          "y": -20
+        }
+      ],
+      "properties": {
+        "mirror": "true"
+      },
+      "color": "#ff5533"
+    },
+    {
+      "id": "poly_molqrautsl59bi",
+      "name": "Polygon 19",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 11,
+          "y": -25
+        },
+        {
+          "x": 2,
+          "y": -27
+        },
+        {
+          "x": 2,
+          "y": -28
+        },
+        {
+          "x": 12,
+          "y": -26
+        }
+      ],
+      "properties": {},
+      "color": "#33cc66"
+    },
+    {
+      "id": "poly_molq5q7iqdvlvy",
+      "name": "Room 1 - Floor",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": -107,
+          "y": -101
+        },
+        {
+          "x": 130,
+          "y": -101
+        },
+        {
+          "x": 130,
+          "y": 96
+        },
+        {
+          "x": -107,
+          "y": 96
+        }
+      ],
+      "properties": {
+        "surfaceType": "normal"
+      },
+      "color": "#1d4355",
+      "textureId": "sci-fi",
+      "textureScale": 4
+    },
+    {
+      "id": "poly_molrykcnwejyuo",
+      "name": "Rect 20",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": -24,
+          "y": -37
+        },
+        {
+          "x": -3,
+          "y": -37
+        },
+        {
+          "x": -3,
+          "y": -19
+        },
+        {
+          "x": -24,
+          "y": -19
+        }
+      ],
+      "properties": {
+        "surfaceType": "water"
+      },
+      "color": "#3388ff",
+      "textureId": "sci-fi"
+    }
+  ],
+  "circles": [],
+  "entities": [
+    {
+      "id": "ent_molq9mt1nfa418",
+      "name": "Laser Mirror 2",
+      "type": "laser_mirror",
+      "position": {
+        "x": 56,
+        "y": 77
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molq9u1n9h84m6",
+      "name": "Laser Mirror 3",
+      "type": "laser_mirror",
+      "position": {
+        "x": 15,
+        "y": 0
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molqbzoruxxejh",
+      "name": "Laser Mirror 4",
+      "type": "laser_mirror",
+      "position": {
+        "x": 13,
+        "y": 24
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molqc3ndw5ycie",
+      "name": "Laser Mirror 5",
+      "type": "laser_mirror",
+      "position": {
+        "x": 32,
+        "y": 12
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molqc52l6nrgaa",
+      "name": "Laser Mirror 6",
+      "type": "laser_mirror",
+      "position": {
+        "x": 37,
+        "y": -4
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molqc5ykwdktfb",
+      "name": "Laser Mirror 7",
+      "type": "laser_mirror",
+      "position": {
+        "x": 37,
+        "y": -24
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molqc87stm8udi",
+      "name": "Laser Mirror 8",
+      "type": "laser_mirror",
+      "position": {
+        "x": 10,
+        "y": 24
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molqc9oog2zxmy",
+      "name": "Laser Mirror 9",
+      "type": "laser_mirror",
+      "position": {
+        "x": 17,
+        "y": 24
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molqccdxvmo0dg",
+      "name": "Laser Mirror 10",
+      "type": "laser_mirror",
+      "position": {
+        "x": -20,
+        "y": 10
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molqcd5hpy6nvx",
+      "name": "Laser Mirror 11",
+      "type": "laser_mirror",
+      "position": {
+        "x": -41,
+        "y": -20
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molqce6ctwwdrz",
+      "name": "Laser Mirror 12",
+      "type": "laser_mirror",
+      "position": {
+        "x": -29,
+        "y": -37
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molqcetwvkqex8",
+      "name": "Laser Mirror 13",
+      "type": "laser_mirror",
+      "position": {
+        "x": 6,
+        "y": -27
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molqcfxbtpqfal",
+      "name": "Laser Mirror 14",
+      "type": "laser_mirror",
+      "position": {
+        "x": 16,
+        "y": -11
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molqcgioe180i9",
+      "name": "Laser Mirror 15",
+      "type": "laser_mirror",
+      "position": {
+        "x": 31,
+        "y": -46
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molqco093pdbq9",
+      "name": "Player Spawn 16",
+      "type": "player_spawn",
+      "position": {
+        "x": 2,
+        "y": -23
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_sprinkler_room1_a",
+      "name": "Sprinkler Room 1A",
+      "type": "sprinkler",
+      "position": {
+        "x": -36,
+        "y": -40
+      },
+      "rotation": 0,
+      "properties": {
+        "height": "2.8",
+        "radius": "12",
+        "rate": "72",
+        "spinSpeed": "1.25"
+      }
+    },
+    {
+      "id": "ent_sprinkler_room1_b",
+      "name": "Sprinkler Room 1B",
+      "type": "sprinkler",
+      "position": {
+        "x": 4,
+        "y": -5
+      },
+      "rotation": 0,
+      "properties": {
+        "height": "2.85",
+        "radius": "12.5",
+        "rate": "80",
+        "spinSpeed": "1.45"
+      }
+    },
+    {
+      "id": "ent_sprinkler_room1_c",
+      "name": "Sprinkler Room 1C",
+      "type": "sprinkler",
+      "position": {
+        "x": 42,
+        "y": 34
+      },
+      "rotation": 0,
+      "properties": {
+        "height": "2.8",
+        "radius": "12",
+        "rate": "72",
+        "spinSpeed": "1.2"
+      }
+    }
+  ]
+}

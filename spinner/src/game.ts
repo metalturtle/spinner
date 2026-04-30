@@ -119,6 +119,17 @@ import { createProfiler } from './profiler';
 import type { FrameCounts, FrameMode, RenderStats, SceneStats } from './profilerTypes';
 import { createSpectorCaptureController } from './spectorCapture';
 import { updateTopDownCulling } from './sceneCulling';
+import {
+  initSound,
+  playClashSound,
+  playPickupSound,
+  playZombieSlashSound,
+  setSoundListenerPosition,
+  syncSpinnerMotorLoops,
+  syncTempleAmbientLoop,
+  syncWallScrapeLoop,
+  type SpinnerMotorLoop,
+} from './sound';
 
 
 // ─── Level-driven state ──────────────────────────────────────────────────────
@@ -175,6 +186,7 @@ setupLevelLights(scene, currentLevel);
 initHud();
 setHudVisible(false);
 initCamera();
+initSound();
 initSparks(scene);
 initTrails(scene);
 initGooDecals(scene);
@@ -525,10 +537,13 @@ registerProximityPair('player', 'pickup', (_playerProx, pickupProx) => {
   if (pickup.type === 'normal') {
     const halfPoint = spinnerConfig.rpmCapacity * RPM_HALF_POINT_RATIO;
     playerBody.rpm += pickupRpmGain(playerBody.rpm, halfPoint, PICKUP_RPM_BOOST);
+    playPickupSound('normal');
   } else if (pickup.type === 'hyper') {
     playerBody.rpm += HYPER_BOOST;
+    playPickupSound('hyper');
   } else {
     addPlayerCapacity(spinnerConfig.growthPickupCapacityGain);
+    playPickupSound('growth');
   }
   collectPickup(pickup);
 });
@@ -3362,6 +3377,92 @@ function applyPlayerClashFlashes(circleHits: CircleHit[]): void {
   }
 }
 
+function isSpinnerClashType(type: string | undefined): boolean {
+  return type === 'enemy' || type === 'laser_spinner' || type === 'hive_flock';
+}
+
+function applyPlayerSpinnerClashSounds(circleHits: CircleHit[]): void {
+  let strongestImpact = 0;
+
+  for (const hit of circleHits) {
+    const playerIsA = hit.i === 0;
+    const playerIsB = hit.j === 0;
+    if (!playerIsA && !playerIsB) continue;
+
+    const other = collidables[playerIsA ? hit.j : hit.i];
+    const otherType = getCollidableType(other);
+    if (!isSpinnerClashType(otherType)) continue;
+
+    strongestImpact = Math.max(strongestImpact, hit.impactForce);
+  }
+
+  if (strongestImpact > 0) {
+    playClashSound(strongestImpact);
+  }
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function buildSpinnerMotorLoops(): SpinnerMotorLoop[] {
+  const loops: SpinnerMotorLoop[] = [];
+
+  const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
+  const playerSpeedFrac = clamp01(playerSpeed / Math.max(spinnerConfig.maxSpeed, 0.001));
+  const playerRpmFrac = clamp01(playerBody.rpm / Math.max(playerBody.rpmCapacity, 1));
+  loops.push({
+    key: 'player',
+    volume: Math.min(0.16, 0.03 + playerRpmFrac * 0.045 + playerSpeedFrac * 0.055),
+    playbackRate: Math.min(1.25, 0.84 + playerRpmFrac * 0.2 + playerSpeedFrac * 0.14),
+  });
+
+  for (const enemy of EnemyEntities.getAll()) {
+    if (!enemy.alive || !enemy.awakened || enemy.collidable.enabled === false) continue;
+
+    const dx = enemy.collidable.pos.x - playerBody.pos.x;
+    const dz = enemy.collidable.pos.z - playerBody.pos.z;
+    const distance = Math.hypot(dx, dz);
+    const proximity = clamp01(1 - distance / 20);
+    if (proximity <= 0) continue;
+
+    const speed = Math.hypot(enemy.collidable.vel.x, enemy.collidable.vel.z);
+    const maxEnemySpeed = enemy.config.maxSpeed * enemy.config.dashSpeedMult;
+    const speedFrac = clamp01(speed / Math.max(maxEnemySpeed, 0.001));
+    const rpmFrac = clamp01(enemy.collidable.rpm / Math.max(enemy.collidable.rpmCapacity, 1));
+    loops.push({
+      key: `enemy-${enemy.id}`,
+      volume: proximity * proximity * Math.min(0.13, 0.018 + rpmFrac * 0.04 + speedFrac * 0.045),
+      playbackRate: Math.min(1.32, 0.82 + rpmFrac * 0.18 + speedFrac * 0.2),
+    });
+  }
+
+  return loops;
+}
+
+function syncPlayerWallScrapeSound(wallHits: Array<{ collidableIndex: number; normal: { x: number; z: number } }>): void {
+  let strongestTanSpeed = 0;
+
+  for (const wh of wallHits) {
+    if (wh.collidableIndex !== 0) continue;
+
+    const velDotN = playerBody.vel.x * wh.normal.x + playerBody.vel.z * wh.normal.z;
+    const tanVx = playerBody.vel.x - velDotN * wh.normal.x;
+    const tanVz = playerBody.vel.z - velDotN * wh.normal.z;
+    strongestTanSpeed = Math.max(strongestTanSpeed, Math.hypot(tanVx, tanVz));
+  }
+
+  const normalized = clamp01((strongestTanSpeed - 1.3) / 10.5);
+  if (normalized <= 0) {
+    syncWallScrapeLoop(0, 1);
+    return;
+  }
+
+  const volume = Math.min(0.42, 0.06 + normalized * 0.32);
+  const playbackRate = Math.min(1.3, 0.82 + normalized * 0.38);
+  syncWallScrapeLoop(volume, playbackRate);
+}
+
 // ─── Enemy Death Check ───────────────────────────────────────────────────────
 
 function checkEnemyDeath(): void {
@@ -3423,6 +3524,7 @@ function killZombie(zombie: ZombieState, gib: boolean): void {
   if (!zombie.alive) return;
 
   const deathPos = { x: zombie.collidable.pos.x, z: zombie.collidable.pos.z };
+  playZombieSlashSound(deathPos, gib ? 1 : 0.82);
   unregisterEncounterMember(zombie.id);
   ZombieEntities.destroy(zombie);
 
@@ -3638,6 +3740,8 @@ function animate(): void {
   timer.update();
   const delta = Math.min(timer.getDelta(), 0.05);
   time += delta;
+  setSoundListenerPosition(playerBody.pos);
+  syncTempleAmbientLoop(0.18, 1);
   if (consumeProfilerTogglePressed()) profiler?.toggleOverlay();
   if (consumeSpectorCapturePressed() && spectorCaptureControllerPromise) {
     void spectorCaptureControllerPromise.then((controller) => controller?.captureFrame());
@@ -3650,6 +3754,8 @@ function animate(): void {
   }
 
   if (menuVisible) {
+    syncWallScrapeLoop(0, 1);
+    syncSpinnerMotorLoops([]);
     profiler?.nextPhase('visuals');
     for (const obs of ObstacleEntities.getAll()) syncObstacle(obs);
     for (const door of SlidingDoorEntities.getAll()) updateSlidingDoor(door, delta);
@@ -3665,6 +3771,8 @@ function animate(): void {
   }
 
   if (gameOver) {
+    syncWallScrapeLoop(0, 1);
+    syncSpinnerMotorLoops([]);
     profiler?.nextPhase('visuals');
     updateFallingVictims(delta);
     updateGibs(delta);
@@ -3683,6 +3791,8 @@ function animate(): void {
   }
 
   if (respawnPending) {
+    syncWallScrapeLoop(0, 1);
+    syncSpinnerMotorLoops([]);
     profiler?.nextPhase('visuals');
     updateFallingVictims(delta);
     updateGibs(delta);
@@ -3749,6 +3859,8 @@ function animate(): void {
   updateKillFallZones(delta);
   updateFallingVictims(delta);
   if (gameOver || respawnPending) {
+    syncWallScrapeLoop(0, 1);
+    syncSpinnerMotorLoops([]);
     const done = updateTopple(delta);
     updateGibs(delta);
     updateCheckpointVisuals(time);
@@ -3771,6 +3883,8 @@ function animate(): void {
   const { wallHits, circleHits } = runCollisions();
   applyPlayerCollisionCameraShake(circleHits);
   applyPlayerClashFlashes(circleHits);
+  applyPlayerSpinnerClashSounds(circleHits);
+  syncPlayerWallScrapeSound(wallHits);
 
   // Wall hit sparks — continuous grinding, direction = tangential (along wall surface)
   for (const wh of wallHits) {
@@ -3852,6 +3966,8 @@ function animate(): void {
 
   if (playerBody.rpm <= 0) {
     beginPlayerRespawnSequence('topple');
+    syncWallScrapeLoop(0, 1);
+    syncSpinnerMotorLoops([]);
     profiler?.nextPhase('visuals');
     updateHud(0, time, delta, getComboHudState());
     updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
@@ -3905,6 +4021,7 @@ function animate(): void {
     rpmCapacity: playerBody.rpmCapacity,
     spinSign: 1,
   });
+  syncSpinnerMotorLoops(buildSpinnerMotorLoops());
   updateTopDownCulling(camera, SCENE_CULL_PADDING);
   profiler?.nextPhase('render');
   renderer.render(scene, camera);

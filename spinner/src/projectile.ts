@@ -4,6 +4,7 @@ import type { Segment, Vec2 } from './physics';
 import { walls } from './physics';
 import { emitSparks, RED_SPARK_STYLE } from './sparks';
 import { emitRicochetBubbles } from './ricochetBubbles';
+import { playLaserSound } from './sound';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -295,6 +296,8 @@ export function createProjectile(
 
   group.position.set(pos.x, 0.5, pos.z);
   scene.add(group);
+  const speedIntensity = Math.max(0, Math.min(1, (speed - 8) / 24));
+  playLaserSound({ x: pos.x, z: pos.z }, speedIntensity);
 
   return {
     pos:      { x: pos.x, z: pos.z },
