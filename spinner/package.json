@@ -4,7 +4,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build"
+    "build": "tsc && vite build",
+    "perf:query": "node ./scripts/perf-query.mjs"
   },
   "keywords": [],
   "author": "",
@@ -18,6 +19,7 @@
   },
   "devDependencies": {
     "@types/three": "^0.183.1",
+    "spectorjs": "^0.9.30",
     "typescript": "^6.0.2",
     "vite": "^8.0.8"
   }

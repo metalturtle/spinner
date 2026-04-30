@@ -107,7 +107,10 @@ import {
   setSlidingDoorOpen, updateSlidingDoor, type SlidingDoorState,
 } from './slidingDoor';
 import type { LevelCircle, LevelEntity, LevelPolygon } from './levelLoader';
-import { consumeSpecialPressed } from './input';
+import { consumeProfilerTogglePressed, consumeSpectorCapturePressed, consumeSpecialPressed } from './input';
+import { createProfiler } from './profiler';
+import type { FrameCounts, FrameMode, RenderStats, SceneStats } from './profilerTypes';
+import { createSpectorCaptureController } from './spectorCapture';
 
 
 // ─── Level-driven state ──────────────────────────────────────────────────────
@@ -169,6 +172,19 @@ initTrails(scene);
 initGooDecals(scene);
 initLavaEmbers(scene);
 // initSpaceBackground();
+
+const profiler = createProfiler({
+  enabled: import.meta.env.DEV && new URL(window.location.href).searchParams.get('profile') === '1',
+  overlayEnabled: true,
+  batchWindowMs: 500,
+  collectorBaseUrl: '/api/perf-log',
+});
+
+let spectorCaptureControllerPromise: Promise<Awaited<ReturnType<typeof createSpectorCaptureController>>> | null = null;
+
+if (import.meta.env.DEV && new URL(window.location.href).searchParams.get('spector') === '1') {
+  spectorCaptureControllerPromise = createSpectorCaptureController(renderer.domElement);
+}
 
 // ─── Entity Type Managers ─────────────────────────────────────────────────────
 
@@ -1849,6 +1865,105 @@ function setMenuBusy(busy: boolean, label?: string): void {
   if (label) menuStatusEl.textContent = label;
 }
 
+function countAlive<T extends { alive: boolean }>(entries: readonly T[]): number {
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.alive) count += 1;
+  }
+  return count;
+}
+
+function countUncollectedPickups(): number {
+  let count = 0;
+  for (const pickup of pickups) {
+    if (!pickup.collected) count += 1;
+  }
+  return count;
+}
+
+function countEnabledCollidables(): number {
+  let count = 0;
+  for (const collidable of collidables) {
+    if (collidable.enabled === false) continue;
+    count += 1;
+  }
+  return count;
+}
+
+function countTotalCollidables(): number {
+  return collidables.length;
+}
+
+function getProfilerCounts(): FrameCounts {
+  return {
+    projectiles: countAlive(projectiles),
+    pickups: countUncollectedPickups(),
+    explosions: countAlive(explosions),
+    enemies:
+      countAlive(TurretEntities.getAll()) +
+      countAlive(EnemyEntities.getAll()) +
+      countAlive(ZombieEntities.getAll()) +
+      countAlive(RobotEntities.getAll()) +
+      countAlive(BigSlugEntities.getAll()) +
+      countAlive(BabySlugEntities.getAll()),
+    bosses:
+      countAlive(DreadnoughtEntities.getAll()) +
+      countAlive(SiegeEntities.getAll()) +
+      countAlive(SpiderEntities.getAll()) +
+      countAlive(OctobossEntities.getAll()) +
+      countAlive(HiveEntities.getAll()),
+    collidables: countEnabledCollidables(),
+    collidablesTotal: countTotalCollidables(),
+    torches: fireTorches.length,
+  };
+}
+
+function getProfilerRenderStats(): RenderStats {
+  return {
+    drawCalls: renderer.info.render.calls,
+    triangles: renderer.info.render.triangles,
+    lines: renderer.info.render.lines,
+  };
+}
+
+function getProfilerSceneStats(): SceneStats {
+  let totalObjects = 0;
+  let visibleMeshes = 0;
+  let totalMeshes = 0;
+  let pointLights = 0;
+  let shadowCasters = 0;
+
+  scene.traverse((object) => {
+    totalObjects += 1;
+    const mesh = object as THREE.Mesh;
+    if (mesh.isMesh) {
+      totalMeshes += 1;
+      if (mesh.visible) visibleMeshes += 1;
+      if (mesh.castShadow) shadowCasters += 1;
+    }
+    if ((object as THREE.PointLight).isPointLight) pointLights += 1;
+  });
+
+  return {
+    totalObjects,
+    visibleMeshes,
+    totalMeshes,
+    pointLights,
+    shadowCasters,
+  };
+}
+
+function getProfilerFrameMode(): FrameMode {
+  if (menuVisible) return 'menu';
+  if (gameOver) return 'gameOver';
+  if (respawnPending) return 'respawn';
+  return 'gameplay';
+}
+
+function finishProfilerFrame(): void {
+  profiler?.finishFrame(getProfilerRenderStats(), getProfilerCounts(), getProfilerSceneStats());
+}
+
 // ─── Reset ───────────────────────────────────────────────────────────────────
 
 function resetGame(): void {
@@ -2413,6 +2528,9 @@ function createComboStrikeArc(from: Vec2, to: Vec2, strikeIndex: number, target:
   const dz = to.z - from.z;
   const dist = Math.hypot(dx, dz);
   if (dist < 0.25) return undefined;
+  const petalProgress = spinnerConfig.comboHitCount <= 1
+    ? 1
+    : strikeIndex / (spinnerConfig.comboHitCount - 1);
 
   if (countQueuedComboHits(target) > 1) {
     const targetPos = target.getPos();
@@ -2439,7 +2557,7 @@ function createComboStrikeArc(from: Vec2, to: Vec2, strikeIndex: number, target:
     midDirZ /= midLen;
 
     const ringRadius = playerBody.radius + target.collidable.radius + 0.35;
-    const controlRadius = ringRadius * 3.4;
+    const controlRadius = ringRadius * (2.4 + petalProgress * 2.2);
     return {
       center: targetPos,
       radius: ringRadius,
@@ -2452,17 +2570,26 @@ function createComboStrikeArc(from: Vec2, to: Vec2, strikeIndex: number, target:
     };
   }
 
-  const center = {
+  const invDist = 1 / dist;
+  const dirX = dx * invDist;
+  const dirZ = dz * invDist;
+  const perpX = strikeIndex % 2 === 0 ? -dirZ : dirZ;
+  const perpZ = strikeIndex % 2 === 0 ? dirX : -dirX;
+  const midpoint = {
     x: (from.x + to.x) * 0.5,
     z: (from.z + to.z) * 0.5,
   };
-  const startAngle = Math.atan2(from.z - center.z, from.x - center.x);
+  const controlOffset = Math.max(2.2, dist * (0.75 + petalProgress * 0.45));
 
   return {
-    center,
+    center: midpoint,
     radius: dist * 0.5,
-    startAngle,
+    startAngle: Math.atan2(from.z - midpoint.z, from.x - midpoint.x),
     sweepDir: strikeIndex % 2 === 0 ? 1 : -1,
+    control: {
+      x: midpoint.x + perpX * controlOffset,
+      z: midpoint.z + perpZ * controlOffset,
+    },
   };
 }
 
@@ -3352,6 +3479,11 @@ function animate(): void {
   timer.update();
   const delta = Math.min(timer.getDelta(), 0.05);
   time += delta;
+  if (consumeProfilerTogglePressed()) profiler?.toggleOverlay();
+  if (consumeSpectorCapturePressed() && spectorCaptureControllerPromise) {
+    void spectorCaptureControllerPromise.then((controller) => controller?.captureFrame());
+  }
+  profiler?.startFrame(delta * 1000, getProfilerFrameMode());
 
   if (respawnInvulnerabilityTimer > 0) {
     respawnInvulnerabilityTimer = Math.max(0, respawnInvulnerabilityTimer - delta);
@@ -3359,16 +3491,20 @@ function animate(): void {
   }
 
   if (menuVisible) {
+    profiler?.nextPhase('visuals');
     for (const obs of ObstacleEntities.getAll()) syncObstacle(obs);
     for (const door of SlidingDoorEntities.getAll()) updateSlidingDoor(door, delta);
     updateCheckpointVisuals(time);
     updatePlayerVisuals(time, 0);
     updateCamera(playerBody.pos, playerBody.vel, delta, false);
+    profiler?.nextPhase('render');
     renderer.render(scene, camera);
+    finishProfilerFrame();
     return;
   }
 
   if (gameOver) {
+    profiler?.nextPhase('visuals');
     updateFallingVictims(delta);
     updateGibs(delta);
     for (const door of SlidingDoorEntities.getAll()) updateSlidingDoor(door, delta);
@@ -3377,11 +3513,14 @@ function animate(): void {
     if (done) gameOverOverlay.style.display = 'flex';
     updateHud(playerBody.rpm, time, delta, getComboHudState());
     updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
+    profiler?.nextPhase('render');
     renderer.render(scene, camera);
+    finishProfilerFrame();
     return;
   }
 
   if (respawnPending) {
+    profiler?.nextPhase('visuals');
     updateFallingVictims(delta);
     updateGibs(delta);
     for (const door of SlidingDoorEntities.getAll()) updateSlidingDoor(door, delta);
@@ -3390,11 +3529,14 @@ function animate(): void {
     if (done) completePlayerDeathSequence();
     updateHud(playerBody.rpm, time, delta, getComboHudState());
     updateCamera(playerBody.pos, playerBody.vel, delta, false);
+    profiler?.nextPhase('render');
     renderer.render(scene, camera);
+    finishProfilerFrame();
     return;
   }
 
   // 1. Entity updates (intent — player input, enemy AI, boss AI, turret aim)
+  profiler?.nextPhase('entityUpdate');
   if (enemyComboLockTimer > 0) {
     enemyComboLockTimer = Math.max(0, enemyComboLockTimer - delta);
     if (enemyComboLockTimer <= 0 && !isPlayerInvulnerable()) {
@@ -3425,9 +3567,11 @@ function animate(): void {
   updatePlayerCombo(delta);
 
   // 2. Movement (friction, clamp, position for all registered movables)
+  profiler?.nextPhase('movement');
   movementSystem(delta);
 
   // 2b. Sync siege engine sub-parts to core position (before collision)
+  profiler?.nextPhase('sync');
   for (const s of SiegeEntities.getAll()) syncSiegeEngineParts(s);
   for (const spider of SpiderEntities.getAll()) syncSpiderReliquaryLegs(spider, delta);
   for (const boss of OctobossEntities.getAll()) syncOctobossTentacles(boss, delta);
@@ -3447,11 +3591,14 @@ function animate(): void {
     }
     updateHud(playerBody.rpm, time, delta, getComboHudState());
     updateCamera(playerBody.pos, playerBody.vel, delta, respawnPending ? false : shouldSnapComboCamera());
+    profiler?.nextPhase('render');
     renderer.render(scene, camera);
+    finishProfilerFrame();
     return;
   }
 
   // 3. Collision resolution
+  profiler?.nextPhase('collision');
   const { wallHits, circleHits } = runCollisions();
   applyPlayerCollisionCameraShake(circleHits);
 
@@ -3503,10 +3650,12 @@ function animate(): void {
   }
 
   // 4. Collision pair dispatch (turret HP, obstacle HP, enemy recovery)
+  profiler?.nextPhase('collisionDispatch');
   collisionSystem(circleHits);
   updateOctobossDrillContacts(delta);
 
   // 5. Proximity pair dispatch (pickup collection)
+  profiler?.nextPhase('proximity');
   proximitySystem();
 
   // 5b. Level trigger spawns
@@ -3514,10 +3663,12 @@ function animate(): void {
   updateCheckpointActivation();
 
   // 6. RPM system (base decay) + player-specific hooks
+  profiler?.nextPhase('rpm');
   rpmSystem(delta);
   playerRpmHooks(delta, hasPlayerWallHit(wallHits), circleHits);
 
   // 7. Death checks
+  profiler?.nextPhase('deathChecks');
   checkEnemyDeath();
   checkBossDeath();
   checkSiegeDeath();
@@ -3530,13 +3681,17 @@ function animate(): void {
 
   if (playerBody.rpm <= 0) {
     beginPlayerRespawnSequence('topple');
+    profiler?.nextPhase('visuals');
     updateHud(0, time, delta, getComboHudState());
     updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
+    profiler?.nextPhase('render');
     renderer.render(scene, camera);
+    finishProfilerFrame();
     return;
   }
 
   // 8. Visuals + render
+  profiler?.nextPhase('visuals');
   for (const obs of ObstacleEntities.getAll()) syncObstacle(obs);
   updatePickups(pickups, time, delta);
   updatePlayerVisuals(time, delta);
@@ -3555,6 +3710,7 @@ function animate(): void {
   updateHud(playerBody.rpm, time, delta, getComboHudState());
   updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
   sampleSpiderMotionDebug(delta);
+  profiler?.nextPhase('effects');
   updateSparks(time);
   updateGooDecals(time);
   updateGibs(delta);
@@ -3570,7 +3726,9 @@ function animate(): void {
     rpmCapacity: playerBody.rpmCapacity,
     spinSign: 1,
   });
+  profiler?.nextPhase('render');
   renderer.render(scene, camera);
+  finishProfilerFrame();
 }
 
 animate();

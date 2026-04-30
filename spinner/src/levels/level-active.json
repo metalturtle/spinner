@@ -3147,7 +3147,7 @@
       "type": "fire_torch",
       "position": {
         "x": 10,
-        "y": 78
+        "y": 75
       },
       "rotation": 0,
       "properties": {
@@ -3166,7 +3166,7 @@
       "type": "fire_torch",
       "position": {
         "x": 10,
-        "y": 62
+        "y": 61
       },
       "rotation": 0,
       "properties": {
@@ -3177,6 +3177,74 @@
         "height": "1.8",
         "poleHeight": "1.55",
         "flameSize": "0.22"
+      }
+    },
+    {
+      "id": "ent_molflkdufhnwa2",
+      "name": "Point Light 29",
+      "type": "light_point",
+      "position": {
+        "x": 0,
+        "y": 17
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#ffd080",
+        "intensity": "20",
+        "range": "15",
+        "decay": "0.5",
+        "height": "1.5"
+      }
+    },
+    {
+      "id": "ent_molfmd2hngokh1",
+      "name": "Point Light 30",
+      "type": "light_point",
+      "position": {
+        "x": 0,
+        "y": 39
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#ffd080",
+        "intensity": "20",
+        "range": "15",
+        "decay": "0.5",
+        "height": "1.5"
+      }
+    },
+    {
+      "id": "ent_molfmxbtxoeobh",
+      "name": "Point Light 31",
+      "type": "light_point",
+      "position": {
+        "x": 0,
+        "y": -8
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#c77e00",
+        "intensity": "20",
+        "range": "8",
+        "decay": "0.5",
+        "height": "1.5"
+      }
+    },
+    {
+      "id": "ent_molfnjpjrsk3xk",
+      "name": "Point Light 32",
+      "type": "light_point",
+      "position": {
+        "x": 0,
+        "y": 70
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#ffd080",
+        "intensity": "30",
+        "range": "20",
+        "decay": "0.2",
+        "height": "1.5"
       }
     }
   ]
