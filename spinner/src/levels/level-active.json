@@ -2688,6 +2688,58 @@
         "surfaceType": "lava"
       },
       "color": "#3388ff"
+    },
+    {
+      "id": "poly_moleh8iqgychb4",
+      "name": "Rect 54",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 93,
+          "y": 141
+        },
+        {
+          "x": 98,
+          "y": 141
+        },
+        {
+          "x": 98,
+          "y": 142
+        },
+        {
+          "x": 93,
+          "y": 142
+        }
+      ],
+      "properties": {},
+      "color": "#3388ff",
+      "textureId": "rock_wall_16_diff_1k"
+    },
+    {
+      "id": "poly_molehbbf0gey2b",
+      "name": "Rect 55",
+      "layer": "wall",
+      "vertices": [
+        {
+          "x": 102,
+          "y": 141
+        },
+        {
+          "x": 108,
+          "y": 141
+        },
+        {
+          "x": 108,
+          "y": 142
+        },
+        {
+          "x": 102,
+          "y": 142
+        }
+      ],
+      "properties": {},
+      "color": "#ff5533",
+      "textureId": "rock_wall_16_diff_1k"
     }
   ],
   "circles": [
@@ -3025,6 +3077,107 @@
       },
       "rotation": 0,
       "properties": {}
+    },
+    {
+      "id": "ent_molecq7ddu7fb0",
+      "name": "Checkpoint 23",
+      "type": "checkpoint",
+      "position": {
+        "x": 46,
+        "y": 69
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_molegykfczxlhe",
+      "name": "Sliding Door 24",
+      "type": "sliding_door",
+      "position": {
+        "x": 100,
+        "y": 142
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "",
+        "closeTriggerId": "arena_wave_1"
+      }
+    },
+    {
+      "id": "ent_molen8qnexx0qj",
+      "name": "Fire Torch 25",
+      "type": "fire_torch",
+      "position": {
+        "x": -9,
+        "y": 61
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#ff9a3c",
+        "intensity": "30",
+        "range": "9.5",
+        "decay": "1.6",
+        "height": "1.8",
+        "poleHeight": "1.55",
+        "flameSize": "0.22"
+      }
+    },
+    {
+      "id": "ent_molen9vx87edxf",
+      "name": "Fire Torch 26",
+      "type": "fire_torch",
+      "position": {
+        "x": -9,
+        "y": 75
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#ff9a3c",
+        "intensity": "30",
+        "range": "9.5",
+        "decay": "1.6",
+        "height": "1.8",
+        "poleHeight": "1.55",
+        "flameSize": "0.22"
+      }
+    },
+    {
+      "id": "ent_molenaxb61xxlr",
+      "name": "Fire Torch 27",
+      "type": "fire_torch",
+      "position": {
+        "x": 10,
+        "y": 78
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#ff9a3c",
+        "intensity": "30",
+        "range": "9.5",
+        "decay": "1.6",
+        "height": "1.8",
+        "poleHeight": "1.55",
+        "flameSize": "0.22"
+      }
+    },
+    {
+      "id": "ent_molenc4clwcc7w",
+      "name": "Fire Torch 28",
+      "type": "fire_torch",
+      "position": {
+        "x": 10,
+        "y": 62
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#ff9a3c",
+        "intensity": "30",
+        "range": "9.5",
+        "decay": "1.6",
+        "height": "1.8",
+        "poleHeight": "1.55",
+        "flameSize": "0.22"
+      }
     }
   ]
 }

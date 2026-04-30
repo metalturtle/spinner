@@ -129,6 +129,7 @@ refinement ideas:
     open closing doors
     arena waves
     mirror room with laser spinner
+    rain effect with spinners throwing out rain drops
 
 bugs:
     sometimes entities slip through walls

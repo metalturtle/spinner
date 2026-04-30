@@ -191,12 +191,13 @@ export function defaultSlidingDoorConfig(
   encounterId: string | null,
   closeTriggerId: string | null = null,
 ): SlidingDoorConfig {
+  const width = 5;
   return {
     rotationDeg,
-    width: 5,
+    width,
     height: WALL_HEIGHT + 0.35,
     thickness: WALL_THICKNESS,
-    slideDistance: 1.8,
+    slideDistance: width * 0.4,
     openSpeed: 1.9,
     startOpen: false,
     encounterId,

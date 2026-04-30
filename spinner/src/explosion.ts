@@ -3,8 +3,8 @@ import { scene } from './renderer';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const EXPLOSION_DURATION   = 0.55;  // seconds — total lifetime
-const EXPLOSION_MAX_RADIUS = 2.5;   // world units at peak expansion
+const EXPLOSION_DURATION   = 0.8;   // seconds — total lifetime
+const EXPLOSION_MAX_RADIUS = 3.2;   // world units at peak expansion
 const ENERGY_EXPLOSION_DURATION   = 1.0;
 const ENERGY_EXPLOSION_MAX_RADIUS = 3.6;
 const ROBOT_EXPLOSION_DURATION    = 1.0;
@@ -226,33 +226,52 @@ export interface Explosion {
   alive:     boolean;
   duration:  number;
   maxRadius: number;
-  kind:      'standard' | 'energy' | 'fireball';
+  kind:      'energy' | 'fireball';
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
-export function createExplosion(pos: { x: number; z: number }): Explosion {
+function createFireballExplosion(
+  pos: { x: number; z: number },
+  duration: number,
+  maxRadius: number,
+  height = 0.75,
+): Explosion {
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime:    { value: 0 },
+      uLife:    { value: 0 },
+      uSeed:    { value: Math.random() * 100 },
+      uOpacity: { value: 1 },
+    },
+    vertexShader:   FIREBALL_EXPLOSION_VERT,
+    fragmentShader: FIREBALL_EXPLOSION_FRAG,
+    transparent:    true,
+    depthWrite:     false,
+    blending:       THREE.NormalBlending,
+    side:           THREE.DoubleSide,
+  });
+
   const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(1, 16, 12),
-    new THREE.MeshStandardMaterial({
-      color:             0xff6600,
-      emissive:          0xff9900,
-      emissiveIntensity: 3.0,
-      transparent:       true,
-      opacity:           1.0,
-      depthWrite:        false,
-    })
+    new THREE.SphereGeometry(1, 48, 28),
+    material,
   );
-  mesh.position.set(pos.x, 0, pos.z);
+  mesh.position.set(pos.x, height, pos.z);
+  mesh.frustumCulled = false;
   scene.add(mesh);
+
   return {
     mesh,
     elapsed: 0,
     alive: true,
-    duration: EXPLOSION_DURATION,
-    maxRadius: EXPLOSION_MAX_RADIUS,
-    kind: 'standard',
+    duration,
+    maxRadius,
+    kind: 'fireball',
   };
+}
+
+export function createExplosion(pos: { x: number; z: number }): Explosion {
+  return createFireballExplosion(pos, EXPLOSION_DURATION, EXPLOSION_MAX_RADIUS, 0.65);
 }
 
 export function createEnergyExplosion(pos: { x: number; z: number }): Explosion {
@@ -290,37 +309,7 @@ export function createEnergyExplosion(pos: { x: number; z: number }): Explosion 
 }
 
 export function createRobotExplosion(pos: { x: number; z: number }): Explosion {
-  const material = new THREE.ShaderMaterial({
-    uniforms: {
-      uTime:    { value: 0 },
-      uLife:    { value: 0 },
-      uSeed:    { value: Math.random() * 100 },
-      uOpacity: { value: 1 },
-    },
-    vertexShader:   FIREBALL_EXPLOSION_VERT,
-    fragmentShader: FIREBALL_EXPLOSION_FRAG,
-    transparent:    true,
-    depthWrite:     false,
-    blending:       THREE.NormalBlending,
-    side:           THREE.DoubleSide,
-  });
-
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(1, 48, 28),
-    material,
-  );
-  mesh.position.set(pos.x, 0.75, pos.z);
-  mesh.frustumCulled = false;
-  scene.add(mesh);
-
-  return {
-    mesh,
-    elapsed: 0,
-    alive: true,
-    duration: ROBOT_EXPLOSION_DURATION,
-    maxRadius: ROBOT_EXPLOSION_MAX_RADIUS,
-    kind: 'fireball',
-  };
+  return createFireballExplosion(pos, ROBOT_EXPLOSION_DURATION, ROBOT_EXPLOSION_MAX_RADIUS, 0.75);
 }
 
 // ─── Update ──────────────────────────────────────────────────────────────────
@@ -341,14 +330,10 @@ export function updateExplosions(explosions: Explosion[], delta: number): void {
     const eased = t * t * (3 - 2 * t);
     e.mesh.scale.setScalar(Math.max(0.01, eased * e.maxRadius));
 
-    if (e.kind !== 'standard') {
-      const material = e.mesh.material as THREE.ShaderMaterial;
-      material.uniforms.uTime.value += delta;
-      material.uniforms.uLife.value = t;
-      material.uniforms.uOpacity.value = 1 - t;
-    } else {
-      (e.mesh.material as THREE.MeshStandardMaterial).opacity = 1 - t;
-    }
+    const material = e.mesh.material as THREE.ShaderMaterial;
+    material.uniforms.uTime.value += delta;
+    material.uniforms.uLife.value = t;
+    material.uniforms.uOpacity.value = 1 - t;
   }
 }
 

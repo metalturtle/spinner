@@ -6,9 +6,9 @@ import {
   PICKUP_RPM_BOOST, HYPER_BOOST,
 } from './constants';
 import { spinnerConfig, resetSpinnerConfig } from './spinnerConfig';
-import { runCollisions, collidables, walls, zones, isCollidableEnabled, type Collidable, type Segment, type Vec2 } from './physics';
+import { runCollisions, collidables, walls, zones, isCollidableEnabled, type CircleHit, type Collidable, type Segment, type Vec2 } from './physics';
 import { initHud, updateHud, setHudVisible, type ComboHudState } from './hud';
-import { initCamera, updateCamera } from './camera';
+import { initCamera, resetCameraShake, triggerCameraShake, updateCamera } from './camera';
 import {
   defineEntityType,
   registerCollisionPair, registerProximityPair,
@@ -1059,6 +1059,7 @@ function awakenEncounterEntities(triggerId: string): void {
     if (entry.awakenId !== triggerId) continue;
     if (!entry.isAlive()) continue;
     entry.alerted = true;
+    entry.setAwake(true);
     activateEncounter(entry.encounterId);
   }
 }
@@ -1671,12 +1672,14 @@ function spawnLevelEntity(ent: LevelEntity): void {
       const closeTriggerId = readStringProperty(ent.properties, 'closeTriggerId');
       const rotationDeg = ent.rotation ?? 0;
       const defaults = defaultSlidingDoorConfig(rotationDeg, encounterId, closeTriggerId);
+      const width = readNumberProperty(ent.properties, 'width', defaults.width, 1.5);
+      const defaultTravel = Math.max(defaults.slideDistance, width * 0.4);
       const door = SlidingDoorEntities.spawn(pos, {
         rotationDeg,
-        width: readNumberProperty(ent.properties, 'width', defaults.width, 1.5),
+        width,
         height: readNumberProperty(ent.properties, 'height', defaults.height, 0.8),
         thickness: readNumberProperty(ent.properties, 'thickness', defaults.thickness, 0.12),
-        slideDistance: readNumberProperty(ent.properties, 'travel', defaults.slideDistance, 0),
+        slideDistance: readNumberProperty(ent.properties, 'travel', defaultTravel, 0),
         openSpeed: readNumberProperty(ent.properties, 'openSpeed', defaults.openSpeed, 0.1),
         startOpen: ent.properties?.startOpen === undefined
           ? defaults.startOpen
@@ -1906,6 +1909,7 @@ function resetGame(): void {
   resetGibs();
   resetRicochetBubbles();
   resetLavaEmbers();
+  resetCameraShake();
   fallingVictims.length = 0;
   fallableActors.length = 0;
   playerKillFallTimer = 0;
@@ -2001,6 +2005,7 @@ interface ComboSegment {
     radius: number;
     startAngle: number;
     sweepDir: 1 | -1;
+    control?: Vec2;
   };
 }
 
@@ -2360,11 +2365,22 @@ function resolveComboStrikeTarget(): ComboTarget | null {
   return nearest[0] ?? null;
 }
 
+function countQueuedComboHits(target: ComboTarget): number {
+  return comboState.slotTargets.filter((entry) => entry.collidable === target.collidable).length;
+}
+
 function computeComboStrikeDestination(from: Vec2, target: ComboTarget): Vec2 {
   const targetPos = target.getPos();
-  let dx = targetPos.x - from.x;
-  let dz = targetPos.z - from.z;
+  const repeatHitCount = comboState.hitCounts.get(target.collidable) ?? 0;
+  let dx = comboState.originPos.x - targetPos.x;
+  let dz = comboState.originPos.z - targetPos.z;
   let dist = Math.hypot(dx, dz);
+
+  if (dist < 0.001) {
+    dx = from.x - targetPos.x;
+    dz = from.z - targetPos.z;
+    dist = Math.hypot(dx, dz);
+  }
 
   if (dist < 0.001) {
     dx = 1;
@@ -2372,20 +2388,69 @@ function computeComboStrikeDestination(from: Vec2, target: ComboTarget): Vec2 {
     dist = 1;
   }
 
-  const dirX = dx / dist;
-  const dirZ = dz / dist;
+  let dirX = dx / dist;
+  let dirZ = dz / dist;
+  const repeatAngleOffsets = [0, 1.05, -1.05];
+  const angleOffset = repeatAngleOffsets[Math.min(repeatHitCount, repeatAngleOffsets.length - 1)];
+  if (angleOffset !== 0) {
+    const cos = Math.cos(angleOffset);
+    const sin = Math.sin(angleOffset);
+    const rotatedX = dirX * cos - dirZ * sin;
+    const rotatedZ = dirX * sin + dirZ * cos;
+    dirX = rotatedX;
+    dirZ = rotatedZ;
+  }
+
   const offset = playerBody.radius + target.collidable.radius + 0.35;
   return {
-    x: targetPos.x - dirX * offset,
-    z: targetPos.z - dirZ * offset,
+    x: targetPos.x + dirX * offset,
+    z: targetPos.z + dirZ * offset,
   };
 }
 
-function createComboStrikeArc(from: Vec2, to: Vec2, strikeIndex: number): ComboSegment['arc'] | undefined {
+function createComboStrikeArc(from: Vec2, to: Vec2, strikeIndex: number, target: ComboTarget): ComboSegment['arc'] | undefined {
   const dx = to.x - from.x;
   const dz = to.z - from.z;
   const dist = Math.hypot(dx, dz);
   if (dist < 0.25) return undefined;
+
+  if (countQueuedComboHits(target) > 1) {
+    const targetPos = target.getPos();
+    let startDirX = from.x - targetPos.x;
+    let startDirZ = from.z - targetPos.z;
+    let endDirX = to.x - targetPos.x;
+    let endDirZ = to.z - targetPos.z;
+    const startLen = Math.hypot(startDirX, startDirZ) || 1;
+    const endLen = Math.hypot(endDirX, endDirZ) || 1;
+    startDirX /= startLen;
+    startDirZ /= startLen;
+    endDirX /= endLen;
+    endDirZ /= endLen;
+
+    let midDirX = startDirX + endDirX;
+    let midDirZ = startDirZ + endDirZ;
+    let midLen = Math.hypot(midDirX, midDirZ);
+    if (midLen < 0.001) {
+      midDirX = strikeIndex % 2 === 0 ? -endDirZ : endDirZ;
+      midDirZ = strikeIndex % 2 === 0 ? endDirX : -endDirX;
+      midLen = Math.hypot(midDirX, midDirZ) || 1;
+    }
+    midDirX /= midLen;
+    midDirZ /= midLen;
+
+    const ringRadius = playerBody.radius + target.collidable.radius + 0.35;
+    const controlRadius = ringRadius * 3.4;
+    return {
+      center: targetPos,
+      radius: ringRadius,
+      startAngle: 0,
+      sweepDir: strikeIndex % 2 === 0 ? 1 : -1,
+      control: {
+        x: targetPos.x + midDirX * controlRadius,
+        z: targetPos.z + midDirZ * controlRadius,
+      },
+    };
+  }
 
   const center = {
     x: (from.x + to.x) * 0.5,
@@ -2403,6 +2468,17 @@ function createComboStrikeArc(from: Vec2, to: Vec2, strikeIndex: number): ComboS
 
 function sampleComboSegmentPosition(segment: ComboSegment, t: number): Vec2 {
   if (segment.kind === 'strike' && segment.arc) {
+    if (segment.arc.control) {
+      const oneMinusT = 1 - t;
+      return {
+        x: oneMinusT * oneMinusT * segment.from.x
+          + 2 * oneMinusT * t * segment.arc.control.x
+          + t * t * segment.to.x,
+        z: oneMinusT * oneMinusT * segment.from.z
+          + 2 * oneMinusT * t * segment.arc.control.z
+          + t * t * segment.to.z,
+      };
+    }
     const angle = segment.arc.startAngle + segment.arc.sweepDir * Math.PI * t;
     return {
       x: segment.arc.center.x + Math.cos(angle) * segment.arc.radius,
@@ -2488,7 +2564,7 @@ function beginNextComboStrike(): void {
     duration: spinnerConfig.comboStrikeDuration / Math.max(spinnerConfig.comboSpeedScale, 0.001),
     elapsed: 0,
     target,
-    arc: createComboStrikeArc(from, to, comboState.strikeIndex),
+    arc: createComboStrikeArc(from, to, comboState.strikeIndex, target),
   };
 }
 
@@ -3001,6 +3077,17 @@ function sampleSpiderMotionDebug(delta: number): void {
   }
 }
 
+function applyPlayerCollisionCameraShake(circleHits: CircleHit[]): void {
+  for (const hit of circleHits) {
+    const playerIsA = hit.i === 0;
+    const playerIsB = hit.j === 0;
+    if (!playerIsA && !playerIsB) continue;
+
+    const intensity = Math.min(0.8, Math.max(0, hit.impactForce - 0.35) * 0.2);
+    if (intensity > 0) triggerCameraShake(intensity);
+  }
+}
+
 // ─── Enemy Death Check ───────────────────────────────────────────────────────
 
 function checkEnemyDeath(): void {
@@ -3366,6 +3453,7 @@ function animate(): void {
 
   // 3. Collision resolution
   const { wallHits, circleHits } = runCollisions();
+  applyPlayerCollisionCameraShake(circleHits);
 
   // Wall hit sparks — continuous grinding, direction = tangential (along wall surface)
   for (const wh of wallHits) {

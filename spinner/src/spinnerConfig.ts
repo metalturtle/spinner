@@ -64,7 +64,7 @@ export interface SpinnerConfig {
 }
 
 const DEFAULT_SPINNER_CONFIG: SpinnerConfig = {
-  rpmCapacity:   120,
+  rpmCapacity:   1000,
   startingRpmRatio: 0.55,
   maxRpmCapacity: 2000,
 
@@ -94,7 +94,7 @@ const DEFAULT_SPINNER_CONFIG: SpinnerConfig = {
   duelRpmInfluenceScale: 0.22,
 
   comboMinRpmRatio:      0.35,
-  comboCostRatio:        0.20,
+  comboCostRatio:        0.12,
   comboCooldown:         6.5,
   comboRecovery:         0.25,
   comboHitCount:         3,
