@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { lvZ, type LevelPolygon } from './levelLoader';
+import { registerTopDownCullable } from './sceneCulling';
 
 const MAX_EMBERS = 2400;
 const VERTS_PER_EMBER = 2;
@@ -8,6 +9,8 @@ const SURFACE_Y = 0.08;
 const MAX_SAMPLE_ATTEMPTS = 32;
 const MAX_SPAWNS_PER_REGION_PER_FRAME = 28;
 const MAX_FLYING_SPAWNS_PER_REGION_PER_FRAME = 12;
+const EMBER_CHUNK_CAPACITY = 320;
+const EMBER_CHUNK_PADDING = 4.5;
 
 const SURFACE_KIND = 0;
 const FLYING_KIND = 1;
@@ -15,7 +18,25 @@ const FLYING_KIND = 1;
 type Vec2 = { x: number; z: number };
 type Vec3 = { x: number; y: number; z: number };
 
+interface EmberChunk {
+  center: Vec2;
+  radius: number;
+  positions: Float32Array;
+  velocities: Float32Array;
+  birthTimes: Float32Array;
+  lifetimes: Float32Array;
+  seeds: Float32Array;
+  kinds: Float32Array;
+  colors: Float32Array;
+  geometry: THREE.BufferGeometry;
+  lines: THREE.LineSegments;
+  freeHead: number;
+  unregisterCull: () => void;
+}
+
 interface LavaEmitterRegion {
+  center: Vec2;
+  radius: number;
   vertices: Vec2[];
   holes: Vec2[][];
   minX: number;
@@ -27,10 +48,12 @@ interface LavaEmitterRegion {
   flyingEmissionRate: number;
   surfaceSpawnCarry: number;
   flyingSpawnCarry: number;
+  chunk: EmberChunk | null;
 }
 
 interface EmberPointEmitter {
   id: string;
+  origin: Vec3;
   position: Vec3;
   radius: number;
   heightJitter: number;
@@ -38,6 +61,7 @@ interface EmberPointEmitter {
   flyingEmissionRate: number;
   surfaceSpawnCarry: number;
   flyingSpawnCarry: number;
+  chunk: EmberChunk | null;
 }
 
 interface SpinnerInfluence {
@@ -64,20 +88,10 @@ const FLYING_EMBER_PALETTE: [number, number, number][] = [
 
 const emitterRegions: LavaEmitterRegion[] = [];
 const pointEmitters = new Map<string, EmberPointEmitter>();
+const emberChunks: EmberChunk[] = [];
 
-let positions: Float32Array | null = null;
-let velocities: Float32Array | null = null;
-let birthTimes: Float32Array | null = null;
-let lifetimes: Float32Array | null = null;
-let endpoints: Float32Array | null = null;
-let seeds: Float32Array | null = null;
-let kinds: Float32Array | null = null;
-let colors: Float32Array | null = null;
-
-let geometry: THREE.BufferGeometry | null = null;
+let lavaEmberScene: THREE.Scene | null = null;
 let material: THREE.ShaderMaterial | null = null;
-let lines: THREE.LineSegments | null = null;
-let freeHead = 0;
 let currentTime = 0;
 
 const VERTEX_SHADER = /* glsl */ `
@@ -187,34 +201,121 @@ function samplePointInRegion(region: LavaEmitterRegion): Vec2 | null {
   return null;
 }
 
-function computeTipPosition(
-  px: number,
-  py: number,
-  pz: number,
-  vx: number,
-  vy: number,
-  vz: number,
-  seed: number,
-  kind: number,
-  age: number,
-  lifetime: number,
-): Vec3 {
+function computeTipPosition(chunk: EmberChunk, emberIndex: number, age: number, lifetime: number): Vec3 {
+  const v0 = emberIndex * VERTS_PER_EMBER;
+  const v0_3 = v0 * 3;
+  const kind = chunk.kinds[v0];
+  const seed = chunk.seeds[v0];
   const lifeRatio = age / lifetime;
   const driftRatio = kind === FLYING_KIND ? Math.sqrt(lifeRatio) : lifeRatio;
   const swirl = seed * Math.PI * 2 + age * (1.6 + seed * 2.1);
 
   return {
-    x: px + vx * age + Math.sin(swirl) * (kind === FLYING_KIND ? 0.38 : 0.09) * driftRatio,
-    y: py + vy * age + (kind === FLYING_KIND ? Math.sin(swirl * 0.65) * 0.08 * driftRatio : 0),
-    z: pz + vz * age + Math.cos(swirl * 1.13) * (kind === FLYING_KIND ? 0.31 : 0.07) * driftRatio,
+    x: chunk.positions[v0_3] + chunk.velocities[v0_3] * age + Math.sin(swirl) * (kind === FLYING_KIND ? 0.38 : 0.09) * driftRatio,
+    y: chunk.positions[v0_3 + 1] + chunk.velocities[v0_3 + 1] * age + (kind === FLYING_KIND ? Math.sin(swirl * 0.65) * 0.08 * driftRatio : 0),
+    z: chunk.positions[v0_3 + 2] + chunk.velocities[v0_3 + 2] * age + Math.cos(swirl * 1.13) * (kind === FLYING_KIND ? 0.31 : 0.07) * driftRatio,
   };
 }
 
-function emitEmber(point: Vec3, kind: number, spreadMultiplier = 1): void {
-  if (!positions || !velocities || !birthTimes || !lifetimes || !seeds || !kinds || !colors) return;
+function updateChunkAttributes(chunk: EmberChunk): void {
+  chunk.geometry.attributes.position.needsUpdate = true;
+  chunk.geometry.attributes.aVelocity.needsUpdate = true;
+  chunk.geometry.attributes.aBirthTime.needsUpdate = true;
+  chunk.geometry.attributes.aLifetime.needsUpdate = true;
+  chunk.geometry.attributes.aSeed.needsUpdate = true;
+  chunk.geometry.attributes.aKind.needsUpdate = true;
+  chunk.geometry.attributes.aColor.needsUpdate = true;
+}
 
-  const i = freeHead;
-  freeHead = (freeHead + 1) % MAX_EMBERS;
+function createChunk(scene: THREE.Scene, center: Vec2, radius: number): EmberChunk {
+  const vertexCount = EMBER_CHUNK_CAPACITY * VERTS_PER_EMBER;
+  const positions = new Float32Array(vertexCount * 3);
+  const velocities = new Float32Array(vertexCount * 3);
+  const birthTimes = new Float32Array(vertexCount).fill(DEAD_TIME);
+  const lifetimes = new Float32Array(vertexCount).fill(1);
+  const endpoints = new Float32Array(vertexCount);
+  const seeds = new Float32Array(vertexCount).fill(0);
+  const kinds = new Float32Array(vertexCount).fill(0);
+  const colors = new Float32Array(vertexCount * 3);
+
+  for (let i = 0; i < EMBER_CHUNK_CAPACITY; i++) {
+    endpoints[i * 2] = 0.0;
+    endpoints[i * 2 + 1] = 1.48;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('aVelocity', new THREE.BufferAttribute(velocities, 3));
+  geometry.setAttribute('aBirthTime', new THREE.BufferAttribute(birthTimes, 1));
+  geometry.setAttribute('aLifetime', new THREE.BufferAttribute(lifetimes, 1));
+  geometry.setAttribute('aEndpoint', new THREE.BufferAttribute(endpoints, 1));
+  geometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+  geometry.setAttribute('aKind', new THREE.BufferAttribute(kinds, 1));
+  geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+
+  const lines = new THREE.LineSegments(geometry, material!);
+  lines.frustumCulled = false;
+  lines.renderOrder = 2;
+  scene.add(lines);
+
+  return {
+    center,
+    radius,
+    positions,
+    velocities,
+    birthTimes,
+    lifetimes,
+    seeds,
+    kinds,
+    colors,
+    geometry,
+    lines,
+    freeHead: 0,
+    unregisterCull: registerTopDownCullable(
+      lines,
+      radius,
+      new THREE.Vector3(center.x, 0, center.z),
+    ),
+  };
+}
+
+function destroyChunks(): void {
+  if (!lavaEmberScene) return;
+  while (emberChunks.length > 0) {
+    const chunk = emberChunks.pop()!;
+    chunk.unregisterCull();
+    lavaEmberScene.remove(chunk.lines);
+    chunk.geometry.dispose();
+  }
+}
+
+function getOrCreateChunk(scene: THREE.Scene, center: Vec2, sourceRadius: number): EmberChunk {
+  const nextChunk = createChunk(scene, center, sourceRadius + EMBER_CHUNK_PADDING);
+  emberChunks.push(nextChunk);
+  return nextChunk;
+}
+
+function ensureRegionChunk(region: LavaEmitterRegion): EmberChunk | null {
+  if (region.chunk) return region.chunk;
+  if (!lavaEmberScene || !material) return null;
+  region.chunk = getOrCreateChunk(lavaEmberScene, region.center, region.radius);
+  return region.chunk;
+}
+
+function ensurePointEmitterChunk(emitter: EmberPointEmitter): EmberChunk | null {
+  if (emitter.chunk) return emitter.chunk;
+  if (!lavaEmberScene || !material) return null;
+  emitter.chunk = getOrCreateChunk(
+    lavaEmberScene,
+    { x: emitter.origin.x, z: emitter.origin.z },
+    emitter.radius + emitter.heightJitter,
+  );
+  return emitter.chunk;
+}
+
+function emitEmber(chunk: EmberChunk, point: Vec3, kind: number, spreadMultiplier = 1): void {
+  const i = chunk.freeHead;
+  chunk.freeHead = (chunk.freeHead + 1) % EMBER_CHUNK_CAPACITY;
 
   const v0 = i * VERTS_PER_EMBER;
   const v1 = v0 + 1;
@@ -231,123 +332,103 @@ function emitEmber(point: Vec3, kind: number, spreadMultiplier = 1): void {
   const vy = isFlying ? (1.2 + Math.random() * 0.85) : (0.72 + Math.random() * 0.48);
   const vz = (Math.random() - 0.5) * (isFlying ? 2.9 : 1.3);
 
-  positions[v0_3] = bx; positions[v0_3 + 1] = by; positions[v0_3 + 2] = bz;
-  positions[v1_3] = bx; positions[v1_3 + 1] = by; positions[v1_3 + 2] = bz;
+  chunk.positions[v0_3] = bx; chunk.positions[v0_3 + 1] = by; chunk.positions[v0_3 + 2] = bz;
+  chunk.positions[v1_3] = bx; chunk.positions[v1_3 + 1] = by; chunk.positions[v1_3 + 2] = bz;
 
-  velocities[v0_3] = vx; velocities[v0_3 + 1] = vy; velocities[v0_3 + 2] = vz;
-  velocities[v1_3] = vx; velocities[v1_3 + 1] = vy; velocities[v1_3 + 2] = vz;
+  chunk.velocities[v0_3] = vx; chunk.velocities[v0_3 + 1] = vy; chunk.velocities[v0_3 + 2] = vz;
+  chunk.velocities[v1_3] = vx; chunk.velocities[v1_3 + 1] = vy; chunk.velocities[v1_3 + 2] = vz;
 
-  birthTimes[v0] = currentTime; birthTimes[v1] = currentTime;
+  chunk.birthTimes[v0] = currentTime; chunk.birthTimes[v1] = currentTime;
   const lifetime = isFlying ? (1.95 + Math.random() * 1.25) : (0.82 + Math.random() * 0.62);
-  lifetimes[v0] = lifetime; lifetimes[v1] = lifetime;
+  chunk.lifetimes[v0] = lifetime; chunk.lifetimes[v1] = lifetime;
   const seed = Math.random();
-  seeds[v0] = seed; seeds[v1] = seed;
-  kinds[v0] = kind; kinds[v1] = kind;
+  chunk.seeds[v0] = seed; chunk.seeds[v1] = seed;
+  chunk.kinds[v0] = kind; chunk.kinds[v1] = kind;
 
   const palette = isFlying ? FLYING_EMBER_PALETTE : SURFACE_EMBER_PALETTE;
   const color = palette[Math.floor(Math.random() * palette.length)];
-  colors[v0_3] = color[0]; colors[v0_3 + 1] = color[1]; colors[v0_3 + 2] = color[2];
-  colors[v1_3] = color[0]; colors[v1_3 + 1] = color[1]; colors[v1_3 + 2] = color[2];
+  chunk.colors[v0_3] = color[0]; chunk.colors[v0_3 + 1] = color[1]; chunk.colors[v0_3 + 2] = color[2];
+  chunk.colors[v1_3] = color[0]; chunk.colors[v1_3 + 1] = color[1]; chunk.colors[v1_3 + 2] = color[2];
 }
 
-function applySpinnerInfluence(influence: SpinnerInfluence): boolean {
-  if (!positions || !velocities || !birthTimes || !lifetimes || !seeds || !kinds) return false;
-  if (influence.rpm <= 0 || influence.rpmCapacity <= 0) return false;
+function applySpinnerInfluence(influence: SpinnerInfluence): void {
+  if (emberChunks.length === 0) return;
+  if (influence.rpm <= 0 || influence.rpmCapacity <= 0) return;
 
-  let changedAny = false;
   const rpmRatio = THREE.MathUtils.clamp(influence.rpm / influence.rpmCapacity, 0, 1.5);
-  if (rpmRatio <= 0.02) return false;
+  if (rpmRatio <= 0.02) return;
 
   const zoneRadius = influence.radius + 0.65 + rpmRatio * 0.95;
   const zoneRadiusSq = zoneRadius * zoneRadius;
   const spinSign = influence.spinSign >= 0 ? 1 : -1;
 
-  for (let i = 0; i < MAX_EMBERS; i++) {
-    const v0 = i * VERTS_PER_EMBER;
-    const v1 = v0 + 1;
-    const age = currentTime - birthTimes[v0];
-    const lifetime = lifetimes[v0];
-    if (age <= 0 || age >= lifetime) continue;
+  for (const chunk of emberChunks) {
+    const chunkDx = chunk.center.x - influence.position.x;
+    const chunkDz = chunk.center.z - influence.position.z;
+    const maxDist = zoneRadius + chunk.radius;
+    if (chunkDx * chunkDx + chunkDz * chunkDz > maxDist * maxDist) continue;
 
-    const v0_3 = v0 * 3;
-    const v1_3 = v1 * 3;
-    const kind = kinds[v0];
-    const tipPos = computeTipPosition(
-      positions[v0_3], positions[v0_3 + 1], positions[v0_3 + 2],
-      velocities[v0_3], velocities[v0_3 + 1], velocities[v0_3 + 2],
-      seeds[v0], kind, age, lifetime,
-    );
+    let changed = false;
 
-    const dx = tipPos.x - influence.position.x;
-    const dz = tipPos.z - influence.position.z;
-    const distSq = dx * dx + dz * dz;
-    if (distSq > zoneRadiusSq) continue;
+    for (let i = 0; i < EMBER_CHUNK_CAPACITY; i++) {
+      const v0 = i * VERTS_PER_EMBER;
+      const v1 = v0 + 1;
+      const age = currentTime - chunk.birthTimes[v0];
+      const lifetime = chunk.lifetimes[v0];
+      if (age <= 0 || age >= lifetime) continue;
 
-    const dist = Math.max(0.001, Math.sqrt(distSq));
-    const nx = dx / dist;
-    const nz = dz / dist;
-    const tx = spinSign > 0 ? -nz : nz;
-    const tz = spinSign > 0 ? nx : -nx;
+      const v0_3 = v0 * 3;
+      const v1_3 = v1 * 3;
+      const kind = chunk.kinds[v0];
+      const tipPos = computeTipPosition(chunk, i, age, lifetime);
 
-    const falloff = 1 - dist / zoneRadius;
-    const closeBoost = dist < influence.radius + 0.18 ? 1.45 : 1.0;
-    const tangentialSpeed = (1.6 + rpmRatio * (kind === FLYING_KIND ? 5.8 : 4.1)) * falloff * closeBoost;
-    const outwardSpeed = (0.45 + rpmRatio * (kind === FLYING_KIND ? 2.6 : 1.8)) * falloff * closeBoost;
-    const upwardBoost = (kind === FLYING_KIND ? 0.45 : 0.22) + falloff * rpmRatio * 0.45;
+      const dx = tipPos.x - influence.position.x;
+      const dz = tipPos.z - influence.position.z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq > zoneRadiusSq) continue;
 
-    const curVx = velocities[v0_3];
-    const curVy = velocities[v0_3 + 1];
-    const curVz = velocities[v0_3 + 2];
+      const dist = Math.max(0.001, Math.sqrt(distSq));
+      const nx = dx / dist;
+      const nz = dz / dist;
+      const tx = spinSign > 0 ? -nz : nz;
+      const tz = spinSign > 0 ? nx : -nx;
 
-    const nextVx = curVx * 0.72 + tx * tangentialSpeed + nx * outwardSpeed;
-    const nextVy = Math.max(curVy * 0.82 + upwardBoost, kind === FLYING_KIND ? 1.1 : 0.75);
-    const nextVz = curVz * 0.72 + tz * tangentialSpeed + nz * outwardSpeed;
+      const falloff = 1 - dist / zoneRadius;
+      const closeBoost = dist < influence.radius + 0.18 ? 1.45 : 1.0;
+      const tangentialSpeed = (1.6 + rpmRatio * (kind === FLYING_KIND ? 5.8 : 4.1)) * falloff * closeBoost;
+      const outwardSpeed = (0.45 + rpmRatio * (kind === FLYING_KIND ? 2.6 : 1.8)) * falloff * closeBoost;
+      const upwardBoost = (kind === FLYING_KIND ? 0.45 : 0.22) + falloff * rpmRatio * 0.45;
 
-    const remainingLifetime = lifetime - age;
-    if (remainingLifetime <= 0.03) continue;
+      const curVx = chunk.velocities[v0_3];
+      const curVy = chunk.velocities[v0_3 + 1];
+      const curVz = chunk.velocities[v0_3 + 2];
 
-    positions[v0_3] = tipPos.x; positions[v0_3 + 1] = tipPos.y; positions[v0_3 + 2] = tipPos.z;
-    positions[v1_3] = tipPos.x; positions[v1_3 + 1] = tipPos.y; positions[v1_3 + 2] = tipPos.z;
+      const nextVx = curVx * 0.72 + tx * tangentialSpeed + nx * outwardSpeed;
+      const nextVy = Math.max(curVy * 0.82 + upwardBoost, kind === FLYING_KIND ? 1.1 : 0.75);
+      const nextVz = curVz * 0.72 + tz * tangentialSpeed + nz * outwardSpeed;
 
-    velocities[v0_3] = nextVx; velocities[v0_3 + 1] = nextVy; velocities[v0_3 + 2] = nextVz;
-    velocities[v1_3] = nextVx; velocities[v1_3 + 1] = nextVy; velocities[v1_3 + 2] = nextVz;
+      const remainingLifetime = lifetime - age;
+      if (remainingLifetime <= 0.03) continue;
 
-    birthTimes[v0] = currentTime; birthTimes[v1] = currentTime;
-    lifetimes[v0] = remainingLifetime; lifetimes[v1] = remainingLifetime;
-    changedAny = true;
+      chunk.positions[v0_3] = tipPos.x; chunk.positions[v0_3 + 1] = tipPos.y; chunk.positions[v0_3 + 2] = tipPos.z;
+      chunk.positions[v1_3] = tipPos.x; chunk.positions[v1_3 + 1] = tipPos.y; chunk.positions[v1_3 + 2] = tipPos.z;
+
+      chunk.velocities[v0_3] = nextVx; chunk.velocities[v0_3 + 1] = nextVy; chunk.velocities[v0_3 + 2] = nextVz;
+      chunk.velocities[v1_3] = nextVx; chunk.velocities[v1_3 + 1] = nextVy; chunk.velocities[v1_3 + 2] = nextVz;
+
+      chunk.birthTimes[v0] = currentTime; chunk.birthTimes[v1] = currentTime;
+      chunk.lifetimes[v0] = remainingLifetime; chunk.lifetimes[v1] = remainingLifetime;
+      changed = true;
+    }
+
+    if (changed) updateChunkAttributes(chunk);
   }
-
-  return changedAny;
 }
 
 export function initLavaEmbers(scene: THREE.Scene): void {
-  if (lines) return;
+  if (material) return;
 
-  const vertexCount = MAX_EMBERS * VERTS_PER_EMBER;
-  positions = new Float32Array(vertexCount * 3);
-  velocities = new Float32Array(vertexCount * 3);
-  birthTimes = new Float32Array(vertexCount).fill(DEAD_TIME);
-  lifetimes = new Float32Array(vertexCount).fill(1);
-  endpoints = new Float32Array(vertexCount);
-  seeds = new Float32Array(vertexCount).fill(0);
-  kinds = new Float32Array(vertexCount).fill(0);
-  colors = new Float32Array(vertexCount * 3);
-
-  for (let i = 0; i < MAX_EMBERS; i++) {
-    endpoints[i * 2] = 0.0;
-    endpoints[i * 2 + 1] = 1.48;
-  }
-
-  geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('aVelocity', new THREE.BufferAttribute(velocities, 3));
-  geometry.setAttribute('aBirthTime', new THREE.BufferAttribute(birthTimes, 1));
-  geometry.setAttribute('aLifetime', new THREE.BufferAttribute(lifetimes, 1));
-  geometry.setAttribute('aEndpoint', new THREE.BufferAttribute(endpoints, 1));
-  geometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
-  geometry.setAttribute('aKind', new THREE.BufferAttribute(kinds, 1));
-  geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
-
+  lavaEmberScene = scene;
   material = new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
@@ -359,10 +440,8 @@ export function initLavaEmbers(scene: THREE.Scene): void {
     blending: THREE.AdditiveBlending,
   });
 
-  lines = new THREE.LineSegments(geometry, material);
-  lines.frustumCulled = false;
-  lines.renderOrder = 2;
-  scene.add(lines);
+  for (const region of emitterRegions) ensureRegionChunk(region);
+  for (const emitter of pointEmitters.values()) ensurePointEmitterChunk(emitter);
 }
 
 export function registerLavaEmitter(poly: LevelPolygon): void {
@@ -375,18 +454,29 @@ export function registerLavaEmitter(poly: LevelPolygon): void {
   let maxX = -Infinity;
   let minZ = Infinity;
   let maxZ = -Infinity;
+  let centerX = 0;
+  let centerZ = 0;
   for (const vertex of vertices) {
     minX = Math.min(minX, vertex.x);
     maxX = Math.max(maxX, vertex.x);
     minZ = Math.min(minZ, vertex.z);
     maxZ = Math.max(maxZ, vertex.z);
+    centerX += vertex.x;
+    centerZ += vertex.z;
   }
+
+  centerX /= vertices.length;
+  centerZ /= vertices.length;
 
   const holeArea = holes.reduce((sum, hole) => sum + Math.abs(signedPolygonArea(hole)), 0);
   const area = Math.abs(signedPolygonArea(vertices)) - holeArea;
   if (area <= 0.05 || !Number.isFinite(area)) return;
 
-  emitterRegions.push({
+  const spanX = maxX - minX;
+  const spanZ = maxZ - minZ;
+  const region: LavaEmitterRegion = {
+    center: { x: centerX, z: centerZ },
+    radius: Math.sqrt(spanX * spanX + spanZ * spanZ) * 0.5,
     vertices,
     holes,
     minX,
@@ -398,7 +488,11 @@ export function registerLavaEmitter(poly: LevelPolygon): void {
     flyingEmissionRate: THREE.MathUtils.clamp(area * 0.46, 5, 30),
     surfaceSpawnCarry: 0,
     flyingSpawnCarry: 0,
-  });
+    chunk: null,
+  };
+
+  emitterRegions.push(region);
+  ensureRegionChunk(region);
 }
 
 export function registerEmberPointEmitter(config: {
@@ -409,8 +503,9 @@ export function registerEmberPointEmitter(config: {
   surfaceEmissionRate?: number;
   flyingEmissionRate?: number;
 }): void {
-  pointEmitters.set(config.id, {
+  const emitter: EmberPointEmitter = {
     id: config.id,
+    origin: { ...config.position },
     position: { ...config.position },
     radius: config.radius ?? 0.18,
     heightJitter: config.heightJitter ?? 0.08,
@@ -418,7 +513,11 @@ export function registerEmberPointEmitter(config: {
     flyingEmissionRate: config.flyingEmissionRate ?? 16,
     surfaceSpawnCarry: 0,
     flyingSpawnCarry: 0,
-  });
+    chunk: null,
+  };
+
+  pointEmitters.set(config.id, emitter);
+  ensurePointEmitterChunk(emitter);
 }
 
 export function updateEmberPointEmitter(id: string, position: Vec3): void {
@@ -433,17 +532,19 @@ export function unregisterEmberPointEmitter(id: string): void {
 
 export function updateLavaEmbers(delta: number, time: number, spinnerInfluence?: SpinnerInfluence): void {
   currentTime = time;
-  if (!geometry || !material) return;
+  if (!material) return;
 
   material.uniforms.uTime.value = time;
   if (emitterRegions.length === 0 && pointEmitters.size === 0) return;
 
-  let changedAny = false;
-
   for (const region of emitterRegions) {
+    const chunk = ensureRegionChunk(region);
+    if (!chunk) continue;
+
+    let changed = false;
     region.surfaceSpawnCarry = Math.min(
       region.surfaceSpawnCarry + region.surfaceEmissionRate * delta,
-      region.surfaceEmissionRate * 2
+      region.surfaceEmissionRate * 2,
     );
     let surfaceSpawnCount = Math.floor(region.surfaceSpawnCarry);
     surfaceSpawnCount = Math.min(surfaceSpawnCount, MAX_SPAWNS_PER_REGION_PER_FRAME);
@@ -452,13 +553,13 @@ export function updateLavaEmbers(delta: number, time: number, spinnerInfluence?:
     for (let i = 0; i < surfaceSpawnCount; i++) {
       const point = samplePointInRegion(region);
       if (!point) continue;
-      emitEmber({ x: point.x, y: SURFACE_Y, z: point.z }, SURFACE_KIND);
-      changedAny = true;
+      emitEmber(chunk, { x: point.x, y: SURFACE_Y, z: point.z }, SURFACE_KIND);
+      changed = true;
     }
 
     region.flyingSpawnCarry = Math.min(
       region.flyingSpawnCarry + region.flyingEmissionRate * delta,
-      Math.max(1, region.flyingEmissionRate * 3)
+      Math.max(1, region.flyingEmissionRate * 3),
     );
     let flyingSpawnCount = Math.floor(region.flyingSpawnCarry);
     flyingSpawnCount = Math.min(flyingSpawnCount, MAX_FLYING_SPAWNS_PER_REGION_PER_FRAME);
@@ -467,67 +568,65 @@ export function updateLavaEmbers(delta: number, time: number, spinnerInfluence?:
     for (let i = 0; i < flyingSpawnCount; i++) {
       const point = samplePointInRegion(region);
       if (!point) continue;
-      emitEmber({ x: point.x, y: SURFACE_Y, z: point.z }, FLYING_KIND);
-      changedAny = true;
+      emitEmber(chunk, { x: point.x, y: SURFACE_Y, z: point.z }, FLYING_KIND);
+      changed = true;
     }
+
+    if (changed) updateChunkAttributes(chunk);
   }
 
   for (const emitter of pointEmitters.values()) {
+    const chunk = ensurePointEmitterChunk(emitter);
+    if (!chunk) continue;
+
+    let changed = false;
     emitter.surfaceSpawnCarry = Math.min(
       emitter.surfaceSpawnCarry + emitter.surfaceEmissionRate * delta,
-      emitter.surfaceEmissionRate * 2
+      emitter.surfaceEmissionRate * 2,
     );
     let surfaceSpawnCount = Math.floor(emitter.surfaceSpawnCarry);
     surfaceSpawnCount = Math.min(surfaceSpawnCount, MAX_SPAWNS_PER_REGION_PER_FRAME);
     emitter.surfaceSpawnCarry -= surfaceSpawnCount;
 
     for (let i = 0; i < surfaceSpawnCount; i++) {
-      emitEmber({
+      emitEmber(chunk, {
         x: emitter.position.x,
         y: emitter.position.y + Math.random() * emitter.heightJitter,
         z: emitter.position.z,
       }, SURFACE_KIND, Math.max(0.75, emitter.radius / 0.16));
-      changedAny = true;
+      changed = true;
     }
 
     emitter.flyingSpawnCarry = Math.min(
       emitter.flyingSpawnCarry + emitter.flyingEmissionRate * delta,
-      Math.max(1, emitter.flyingEmissionRate * 3)
+      Math.max(1, emitter.flyingEmissionRate * 3),
     );
     let flyingSpawnCount = Math.floor(emitter.flyingSpawnCarry);
     flyingSpawnCount = Math.min(flyingSpawnCount, MAX_FLYING_SPAWNS_PER_REGION_PER_FRAME);
     emitter.flyingSpawnCarry -= flyingSpawnCount;
 
     for (let i = 0; i < flyingSpawnCount; i++) {
-      emitEmber({
+      emitEmber(chunk, {
         x: emitter.position.x,
         y: emitter.position.y + Math.random() * emitter.heightJitter,
         z: emitter.position.z,
       }, FLYING_KIND, Math.max(0.9, emitter.radius / 0.16));
-      changedAny = true;
+      changed = true;
     }
+
+    if (changed) updateChunkAttributes(chunk);
   }
 
-  if (spinnerInfluence) {
-    changedAny = applySpinnerInfluence(spinnerInfluence) || changedAny;
-  }
-
-  if (!changedAny) return;
-
-  geometry.attributes.position.needsUpdate = true;
-  geometry.attributes.aVelocity.needsUpdate = true;
-  geometry.attributes.aBirthTime.needsUpdate = true;
-  geometry.attributes.aLifetime.needsUpdate = true;
-  geometry.attributes.aSeed.needsUpdate = true;
-  geometry.attributes.aKind.needsUpdate = true;
-  geometry.attributes.aColor.needsUpdate = true;
+  if (spinnerInfluence) applySpinnerInfluence(spinnerInfluence);
 }
 
 export function resetLavaEmbers(): void {
-  if (!birthTimes || !geometry) return;
-  birthTimes.fill(DEAD_TIME);
-  geometry.attributes.aBirthTime.needsUpdate = true;
-  freeHead = 0;
+  for (const chunk of emberChunks) {
+    chunk.birthTimes.fill(DEAD_TIME);
+    chunk.freeHead = 0;
+    chunk.geometry.attributes.aBirthTime.needsUpdate = true;
+  }
+
   currentTime = 0;
   for (const region of emitterRegions) {
     region.surfaceSpawnCarry = 0;
@@ -541,5 +640,7 @@ export function resetLavaEmbers(): void {
 
 export function clearLavaEmbers(): void {
   emitterRegions.length = 0;
+  pointEmitters.clear();
   resetLavaEmbers();
+  destroyChunks();
 }

@@ -4,6 +4,7 @@ import { walls, zones } from './physics';
 import { lvZ, type LevelData, type LevelPolygon } from './levelLoader';
 import { createLavaMaterial } from './lavaSurface';
 import { clearLavaEmbers, registerLavaEmitter } from './lavaEmbers';
+import { registerTopDownCullable } from './sceneCulling';
 import { applyWallExtrusionUVs, applyWorldUVs, getTextureScale, TextureManager } from './textureUtils';
 
 const WALL_COLOR    = 0x0f3460;
@@ -14,6 +15,7 @@ const CIRCLE_FLOOR_INSET = 0.05;
 const DEBUG_SHOW_NORMAL_AS_ALBEDO = false;
 const arenaRoots: THREE.Object3D[] = [];
 const lavaLightRoots: THREE.Object3D[] = [];
+const lavaLightCullHandles = new WeakMap<THREE.Object3D, () => void>();
 type LavaRegion = { contains(point: { x: number; z: number }): boolean };
 const lavaRegions: LavaRegion[] = [];
 type ArenaBounds = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -162,6 +164,8 @@ function extrudeWallPoly(poly: LevelPolygon, mat: THREE.MeshStandardMaterial): T
 function clearLavaLights(scene: THREE.Scene): void {
   while (lavaLightRoots.length > 0) {
     const root = lavaLightRoots.pop()!;
+    lavaLightCullHandles.get(root)?.();
+    lavaLightCullHandles.delete(root);
     scene.remove(root);
   }
 }
@@ -208,11 +212,13 @@ function addLavaLight(scene: THREE.Scene, poly: LevelPolygon): void {
   const root = new THREE.Group();
   root.position.set(centerX, 2, centerZ);
 
-  const light = new THREE.PointLight(0xff6a1a, (100.2 + radius * 0.18) * 10, Math.max(6, radius * 2.8), 1.6);
+  const lightRange = Math.max(6, radius * 2.8);
+  const light = new THREE.PointLight(0xff6a1a, (100.2 + radius * 0.18) * 10, lightRange, 1.6);
   light.castShadow = false;
   root.add(light);
 
   lavaLightRoots.push(root);
+  lavaLightCullHandles.set(root, registerTopDownCullable(root, lightRange));
   scene.add(root);
 }
 

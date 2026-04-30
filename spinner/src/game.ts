@@ -9,11 +9,12 @@ import { spinnerConfig, resetSpinnerConfig } from './spinnerConfig';
 import { runCollisions, collidables, walls, zones, isCollidableEnabled, type CircleHit, type Collidable, type Segment, type Vec2 } from './physics';
 import { initHud, updateHud, setHudVisible, type ComboHudState } from './hud';
 import { initCamera, resetCameraShake, triggerCameraShake, updateCamera } from './camera';
+import { emitClashFlash, initClashFlashes, resetClashFlashes, updateClashFlashes } from './clashFlash';
 import {
   defineEntityType,
   registerCollisionPair, registerProximityPair,
   entityUpdateSystem, movementSystem, collisionSystem, proximitySystem, rpmSystem,
-  resetEntityRegistrations, deregisterEntity, untagCollidable, setMovementMaxSpeed,
+  resetEntityRegistrations, deregisterEntity, getCollidableType, untagCollidable, setMovementMaxSpeed,
 } from './systems';
 import {
   playerBody, playerId, setupPlayer, resetPlayer,
@@ -111,6 +112,7 @@ import { consumeProfilerTogglePressed, consumeSpectorCapturePressed, consumeSpec
 import { createProfiler } from './profiler';
 import type { FrameCounts, FrameMode, RenderStats, SceneStats } from './profilerTypes';
 import { createSpectorCaptureController } from './spectorCapture';
+import { updateTopDownCulling } from './sceneCulling';
 
 
 // ─── Level-driven state ──────────────────────────────────────────────────────
@@ -171,6 +173,7 @@ initSparks(scene);
 initTrails(scene);
 initGooDecals(scene);
 initLavaEmbers(scene);
+initClashFlashes(scene);
 // initSpaceBackground();
 
 const profiler = createProfiler({
@@ -179,6 +182,8 @@ const profiler = createProfiler({
   batchWindowMs: 500,
   collectorBaseUrl: '/api/perf-log',
 });
+
+const SCENE_CULL_PADDING = 2;
 
 let spectorCaptureControllerPromise: Promise<Awaited<ReturnType<typeof createSpectorCaptureController>>> | null = null;
 
@@ -2025,6 +2030,7 @@ function resetGame(): void {
   resetRicochetBubbles();
   resetLavaEmbers();
   resetCameraShake();
+  resetClashFlashes();
   fallingVictims.length = 0;
   fallableActors.length = 0;
   playerKillFallTimer = 0;
@@ -3215,6 +3221,24 @@ function applyPlayerCollisionCameraShake(circleHits: CircleHit[]): void {
   }
 }
 
+function applyPlayerClashFlashes(circleHits: CircleHit[]): void {
+  for (const hit of circleHits) {
+    const playerIsA = hit.i === 0;
+    const playerIsB = hit.j === 0;
+    if (!playerIsA && !playerIsB) continue;
+
+    const other = collidables[playerIsA ? hit.j : hit.i];
+    const otherType = getCollidableType(other);
+    if (!otherType || otherType === 'zombie') continue;
+
+    const intensity = Math.min(1, Math.max(0, hit.impactForce - 0.4) * 0.24);
+    if (intensity <= 0) continue;
+
+    const { point } = computeContactInfo(playerBody, other);
+    emitClashFlash(point, intensity);
+  }
+}
+
 // ─── Enemy Death Check ───────────────────────────────────────────────────────
 
 function checkEnemyDeath(): void {
@@ -3497,6 +3521,8 @@ function animate(): void {
     updateCheckpointVisuals(time);
     updatePlayerVisuals(time, 0);
     updateCamera(playerBody.pos, playerBody.vel, delta, false);
+    updateClashFlashes(delta);
+    updateTopDownCulling(camera, SCENE_CULL_PADDING);
     profiler?.nextPhase('render');
     renderer.render(scene, camera);
     finishProfilerFrame();
@@ -3513,6 +3539,8 @@ function animate(): void {
     if (done) gameOverOverlay.style.display = 'flex';
     updateHud(playerBody.rpm, time, delta, getComboHudState());
     updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
+    updateClashFlashes(delta);
+    updateTopDownCulling(camera, SCENE_CULL_PADDING);
     profiler?.nextPhase('render');
     renderer.render(scene, camera);
     finishProfilerFrame();
@@ -3529,6 +3557,8 @@ function animate(): void {
     if (done) completePlayerDeathSequence();
     updateHud(playerBody.rpm, time, delta, getComboHudState());
     updateCamera(playerBody.pos, playerBody.vel, delta, false);
+    updateClashFlashes(delta);
+    updateTopDownCulling(camera, SCENE_CULL_PADDING);
     profiler?.nextPhase('render');
     renderer.render(scene, camera);
     finishProfilerFrame();
@@ -3591,6 +3621,8 @@ function animate(): void {
     }
     updateHud(playerBody.rpm, time, delta, getComboHudState());
     updateCamera(playerBody.pos, playerBody.vel, delta, respawnPending ? false : shouldSnapComboCamera());
+    updateClashFlashes(delta);
+    updateTopDownCulling(camera, SCENE_CULL_PADDING);
     profiler?.nextPhase('render');
     renderer.render(scene, camera);
     finishProfilerFrame();
@@ -3601,6 +3633,7 @@ function animate(): void {
   profiler?.nextPhase('collision');
   const { wallHits, circleHits } = runCollisions();
   applyPlayerCollisionCameraShake(circleHits);
+  applyPlayerClashFlashes(circleHits);
 
   // Wall hit sparks — continuous grinding, direction = tangential (along wall surface)
   for (const wh of wallHits) {
@@ -3684,6 +3717,8 @@ function animate(): void {
     profiler?.nextPhase('visuals');
     updateHud(0, time, delta, getComboHudState());
     updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
+    updateClashFlashes(delta);
+    updateTopDownCulling(camera, SCENE_CULL_PADDING);
     profiler?.nextPhase('render');
     renderer.render(scene, camera);
     finishProfilerFrame();
@@ -3711,6 +3746,7 @@ function animate(): void {
   updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
   sampleSpiderMotionDebug(delta);
   profiler?.nextPhase('effects');
+  updateClashFlashes(delta);
   updateSparks(time);
   updateGooDecals(time);
   updateGibs(delta);
@@ -3726,6 +3762,7 @@ function animate(): void {
     rpmCapacity: playerBody.rpmCapacity,
     spinSign: 1,
   });
+  updateTopDownCulling(camera, SCENE_CULL_PADDING);
   profiler?.nextPhase('render');
   renderer.render(scene, camera);
   finishProfilerFrame();

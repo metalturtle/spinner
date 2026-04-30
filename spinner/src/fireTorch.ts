@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { lvPos, type LevelEntity } from './levelLoader';
+import { registerTopDownCullable } from './sceneCulling';
 import {
   registerEmberPointEmitter,
   unregisterEmberPointEmitter,
@@ -17,6 +18,7 @@ export interface FireTorch {
   baseIntensity: number;
   baseRange: number;
   seed: number;
+  unregisterCull: () => void;
 }
 
 function parseNumber(value: unknown, fallback: number, min?: number): number {
@@ -100,6 +102,7 @@ export function createFireTorch(scene: THREE.Scene, entity: LevelEntity): FireTo
   root.add(light);
 
   scene.add(root);
+  const unregisterCull = registerTopDownCullable(root, range);
 
   registerEmberPointEmitter({
     id: entity.id,
@@ -121,6 +124,7 @@ export function createFireTorch(scene: THREE.Scene, entity: LevelEntity): FireTo
     baseIntensity: intensity,
     baseRange: range,
     seed: Math.random() * Math.PI * 2,
+    unregisterCull,
   };
 }
 
@@ -152,6 +156,7 @@ export function updateFireTorch(torch: FireTorch, time: number): void {
 
 export function destroyFireTorch(scene: THREE.Scene, torch: FireTorch): void {
   unregisterEmberPointEmitter(torch.id);
+  torch.unregisterCull();
   torch.root.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
     if (mesh.geometry) mesh.geometry.dispose();

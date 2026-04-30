@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { lvPos, type LevelData, type LevelEntity } from './levelLoader';
+import { registerTopDownCullable } from './sceneCulling';
 
 const levelLightRoots: THREE.Object3D[] = [];
+const cullHandles = new WeakMap<THREE.Object3D, () => void>();
 
 function parseNumber(value: unknown, fallback: number, min?: number): number {
   const parsed = typeof value === 'number' ? value : parseFloat(String(value ?? ''));
@@ -33,6 +35,7 @@ export function createLevelPointLightRoot(entity: LevelEntity): THREE.Object3D {
   const light = new THREE.PointLight(color, intensity, range, decay);
   light.castShadow = false;
   root.add(light);
+  cullHandles.set(root, registerTopDownCullable(root, range));
 
   return root;
 }
@@ -52,6 +55,8 @@ export function setupLevelLights(scene: THREE.Scene, level: LevelData): void {
 export function clearLevelLights(scene: THREE.Scene): void {
   while (levelLightRoots.length > 0) {
     const root = levelLightRoots.pop()!;
+    cullHandles.get(root)?.();
+    cullHandles.delete(root);
     scene.remove(root);
   }
 }

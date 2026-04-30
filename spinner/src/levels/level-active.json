@@ -105,7 +105,6 @@
       ],
       "properties": {},
       "color": "#2a3a4a",
-      "textureId": "rock_wall_16_diff_1k",
       "textureScale": 4
     },
     {
@@ -1139,7 +1138,8 @@
         }
       ],
       "properties": {},
-      "color": "#5577aa"
+      "color": "#5577aa",
+      "textureId": "rock_wall_16_diff_1k"
     },
     {
       "id": "poly_mokg3ipz3wxogj",
