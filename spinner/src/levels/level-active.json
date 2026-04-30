@@ -2740,6 +2740,519 @@
       "properties": {},
       "color": "#ff5533",
       "textureId": "rock_wall_16_diff_1k"
+    },
+    {
+      "id": "poly_mom1vumkortsee",
+      "name": "Rect 56",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": 98,
+          "y": 172
+        },
+        {
+          "x": 104,
+          "y": 172
+        },
+        {
+          "x": 104,
+          "y": 178
+        },
+        {
+          "x": 98,
+          "y": 178
+        }
+      ],
+      "properties": {},
+      "color": "#3388ff",
+      "textureId": "rock_wall_16_diff_1k",
+      "textureScale": 4
+    },
+    {
+      "id": "poly_mom1wb0fthcldy",
+      "name": "Rect 57",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 94,
+          "y": 178
+        },
+        {
+          "x": 107,
+          "y": 178
+        },
+        {
+          "x": 107,
+          "y": 190
+        },
+        {
+          "x": 94,
+          "y": 190
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#ff5533"
+    },
+    {
+      "id": "poly_mom24tzpnjiale",
+      "name": "Rect 58",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 88,
+          "y": 160
+        },
+        {
+          "x": 111,
+          "y": 160
+        },
+        {
+          "x": 111,
+          "y": 172
+        },
+        {
+          "x": 88,
+          "y": 172
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#cc33ff"
+    },
+    {
+      "id": "poly_mom25isyqy63ki",
+      "name": "Rect 59",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 104,
+          "y": 172
+        },
+        {
+          "x": 116,
+          "y": 172
+        },
+        {
+          "x": 116,
+          "y": 184
+        },
+        {
+          "x": 104,
+          "y": 184
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#ffcc33"
+    },
+    {
+      "id": "poly_mom25qgyr291wo",
+      "name": "Rect 60",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 85,
+          "y": 172
+        },
+        {
+          "x": 98,
+          "y": 172
+        },
+        {
+          "x": 98,
+          "y": 184
+        },
+        {
+          "x": 85,
+          "y": 184
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#33cccc"
+    },
+    {
+      "id": "poly_mom265lhh2o9cl",
+      "name": "Rect 61",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": 116,
+          "y": 172
+        },
+        {
+          "x": 122,
+          "y": 172
+        },
+        {
+          "x": 122,
+          "y": 174
+        },
+        {
+          "x": 116,
+          "y": 174
+        }
+      ],
+      "properties": {},
+      "color": "#3388ff",
+      "textureId": "rock_wall_16_diff_1k",
+      "textureScale": 4
+    },
+    {
+      "id": "poly_mom27250397hk8",
+      "name": "Rect 62",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": 120,
+          "y": 174
+        },
+        {
+          "x": 122,
+          "y": 174
+        },
+        {
+          "x": 122,
+          "y": 192
+        },
+        {
+          "x": 120,
+          "y": 192
+        }
+      ],
+      "properties": {},
+      "color": "#ff5533",
+      "textureScale": 4,
+      "textureId": "rock_wall_16_diff_1k"
+    },
+    {
+      "id": "poly_mom27bri8w5al0",
+      "name": "Rect 63",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": 113,
+          "y": 199
+        },
+        {
+          "x": 122,
+          "y": 199
+        },
+        {
+          "x": 122,
+          "y": 205
+        },
+        {
+          "x": 113,
+          "y": 205
+        }
+      ],
+      "properties": {},
+      "color": "#33cc66",
+      "textureId": "rock_wall_16_diff_1k",
+      "textureScale": 4
+    },
+    {
+      "id": "poly_mom27l1k7mjoft",
+      "name": "Rect 64",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": 99,
+          "y": 205
+        },
+        {
+          "x": 107,
+          "y": 205
+        },
+        {
+          "x": 107,
+          "y": 213
+        },
+        {
+          "x": 99,
+          "y": 213
+        }
+      ],
+      "properties": {},
+      "color": "#cc33ff",
+      "textureScale": 4,
+      "textureId": "sci-fi"
+    },
+    {
+      "id": "poly_mom29jbfwbdbhu",
+      "name": "Rect 65",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 107,
+          "y": 174
+        },
+        {
+          "x": 120,
+          "y": 174
+        },
+        {
+          "x": 120,
+          "y": 199
+        },
+        {
+          "x": 107,
+          "y": 199
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#33cccc"
+    },
+    {
+      "id": "poly_mom29zrzlq9hwd",
+      "name": "Rect 66",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 122,
+          "y": 172
+        },
+        {
+          "x": 138,
+          "y": 172
+        },
+        {
+          "x": 138,
+          "y": 192
+        },
+        {
+          "x": 122,
+          "y": 192
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#3388ff"
+    },
+    {
+      "id": "poly_mom2aa41hqnq84",
+      "name": "Rect 67",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 120,
+          "y": 192
+        },
+        {
+          "x": 141,
+          "y": 192
+        },
+        {
+          "x": 141,
+          "y": 199
+        },
+        {
+          "x": 120,
+          "y": 199
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#ff5533"
+    },
+    {
+      "id": "poly_mom2ad3ae28ked",
+      "name": "Rect 68",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 82,
+          "y": 199
+        },
+        {
+          "x": 113,
+          "y": 199
+        },
+        {
+          "x": 113,
+          "y": 205
+        },
+        {
+          "x": 82,
+          "y": 205
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#33cc66"
+    },
+    {
+      "id": "poly_mom2ag0ifob65b",
+      "name": "Rect 69",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 82,
+          "y": 190
+        },
+        {
+          "x": 107,
+          "y": 190
+        },
+        {
+          "x": 107,
+          "y": 199
+        },
+        {
+          "x": 82,
+          "y": 199
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#cc33ff"
+    },
+    {
+      "id": "poly_mom2ajl72dc35u",
+      "name": "Rect 70",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 111,
+          "y": 162
+        },
+        {
+          "x": 138,
+          "y": 162
+        },
+        {
+          "x": 138,
+          "y": 172
+        },
+        {
+          "x": 111,
+          "y": 172
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#ffcc33"
+    },
+    {
+      "id": "poly_mom2apgpifezpm",
+      "name": "Rect 71",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 122,
+          "y": 199
+        },
+        {
+          "x": 145,
+          "y": 199
+        },
+        {
+          "x": 145,
+          "y": 219
+        },
+        {
+          "x": 122,
+          "y": 219
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#33cccc"
+    },
+    {
+      "id": "poly_mom2aul65mkhhq",
+      "name": "Rect 72",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 107,
+          "y": 205
+        },
+        {
+          "x": 122,
+          "y": 205
+        },
+        {
+          "x": 122,
+          "y": 220
+        },
+        {
+          "x": 107,
+          "y": 220
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#3388ff"
+    },
+    {
+      "id": "poly_mom2ax7nehpw8b",
+      "name": "Rect 73",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 81,
+          "y": 213
+        },
+        {
+          "x": 107,
+          "y": 213
+        },
+        {
+          "x": 107,
+          "y": 220
+        },
+        {
+          "x": 81,
+          "y": 220
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#ff5533"
+    },
+    {
+      "id": "poly_mom2b1tgqyg26g",
+      "name": "Rect 74",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 82,
+          "y": 205
+        },
+        {
+          "x": 99,
+          "y": 205
+        },
+        {
+          "x": 99,
+          "y": 213
+        },
+        {
+          "x": 82,
+          "y": 213
+        }
+      ],
+      "properties": {
+        "triggerKind": "kill_fall"
+      },
+      "color": "#33cc66"
     }
   ],
   "circles": [
@@ -3232,6 +3745,39 @@
         "decay": "0.2",
         "height": "1.5"
       }
+    },
+    {
+      "id": "ent_mom01glp7jh6rz",
+      "name": "Focus Laser Unlock 32",
+      "type": "pickup_laser_focus",
+      "position": {
+        "x": -6,
+        "y": 0
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mom01k5lnwjt9c",
+      "name": "Combo Unlock 33",
+      "type": "pickup_combo",
+      "position": {
+        "x": -6,
+        "y": 2
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_mom02ynhhencke",
+      "name": "Spin Laser Unlock 34",
+      "type": "pickup_laser_spin",
+      "position": {
+        "x": -4,
+        "y": 2
+      },
+      "rotation": 0,
+      "properties": {}
     }
   ]
 }

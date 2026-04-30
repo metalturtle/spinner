@@ -57,6 +57,8 @@ export interface SpiderReliquaryConfig {
   legSlamCooldown: [number, number, number];
   webDamage: [number, number, number];
   webCooldown: [number, number, number];
+  webDuration: [number, number, number];
+  webRange: [number, number, number];
   webSpeed: [number, number, number];
   acidDamage: [number, number, number];
   acidCooldown: [number, number, number];
@@ -107,6 +109,8 @@ export const SPIDER_RELIQUARY_TIER_1: SpiderReliquaryConfig = {
   legSlamCooldown: [0.9, 0.75, 0.6],
   webDamage: [10, 14, 18],
   webCooldown: [5.8, 4.5, 3.5],
+  webDuration: [0.95, 1.08, 1.22],
+  webRange: [30.8, 34.8, 38.8],
   webSpeed: [7.4, 8.2, 9.2],
   acidDamage: [9, 12, 16],
   acidCooldown: [3.8, 3.0, 2.4],
@@ -205,6 +209,12 @@ export interface SpiderReliquaryState {
   oneLegHopRecover: number;
   oneLegHopDirX: number;
   oneLegHopDirZ: number;
+  webTetherTimer: number;
+  webTetherDuration: number;
+  webTetherTarget: THREE.Vector3;
+  webTetherGroup: THREE.Group;
+  webTetherSegments: THREE.Mesh[];
+  webTetherNodes: THREE.Mesh[];
   webProjectiles: Projectile[];
   acidProjectiles: Projectile[];
 }
@@ -238,6 +248,63 @@ function setSegmentFromPoints(
   mesh.position.copy(start).lerp(end, 0.5);
   mesh.scale.set(thickness, length, thickness);
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
+}
+
+function createWebTetherVisuals(): {
+  group: THREE.Group;
+  segments: THREE.Mesh[];
+  nodes: THREE.Mesh[];
+} {
+  const group = new THREE.Group();
+  const strandMat = new THREE.MeshStandardMaterial({
+    color: 0xf2eadf,
+    emissive: 0xd8c8b2,
+    emissiveIntensity: 0.45,
+    transparent: true,
+    opacity: 0.96,
+    roughness: 0.92,
+    metalness: 0.02,
+    depthWrite: false,
+  });
+  const knotMat = new THREE.MeshStandardMaterial({
+    color: 0xfff7ee,
+    emissive: 0xe6d8bf,
+    emissiveIntensity: 0.55,
+    transparent: true,
+    opacity: 0.98,
+    roughness: 0.84,
+    metalness: 0.02,
+    depthWrite: false,
+  });
+
+  const segments: THREE.Mesh[] = [];
+  const nodes: THREE.Mesh[] = [];
+  for (let i = 0; i < 8; i++) {
+    const seg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.055, 1, 5),
+      strandMat.clone(),
+    );
+    seg.visible = false;
+    seg.castShadow = false;
+    seg.receiveShadow = false;
+    group.add(seg);
+    segments.push(seg);
+  }
+
+  for (let i = 0; i < 9; i++) {
+    const node = new THREE.Mesh(
+      new THREE.SphereGeometry(i === 0 ? 0.08 : 0.055, 6, 6),
+      knotMat.clone(),
+    );
+    node.visible = false;
+    node.castShadow = false;
+    node.receiveShadow = false;
+    group.add(node);
+    nodes.push(node);
+  }
+
+  scene.add(group);
+  return { group, segments, nodes };
 }
 
 function solveTwoBoneKnee(
@@ -360,9 +427,15 @@ function createAttackMesh(kind: SpiderAttackKind): THREE.Mesh {
     ? new THREE.RingGeometry(0.7, 1.0, 48)
     : new THREE.CircleGeometry(1, 40);
   const material = new THREE.MeshBasicMaterial({
-    color: kind === 'pulse' ? 0xffd26e : kind === 'leg_slam' ? 0xff9b54 : 0xff7042,
+    color: kind === 'pulse'
+      ? 0xffd26e
+      : kind === 'leg_slam'
+        ? 0xff9b54
+        : kind === 'web'
+          ? 0xf7efe1
+          : 0xff7042,
     transparent: true,
-    opacity: kind === 'pulse' ? 0.18 : kind === 'leg_slam' ? 0.22 : 0.24,
+    opacity: kind === 'pulse' ? 0.18 : kind === 'leg_slam' ? 0.22 : kind === 'web' ? 0.12 : 0.24,
     side: THREE.DoubleSide,
     depthWrite: false,
   });
@@ -380,6 +453,12 @@ function removeAttack(attack: SpiderAttack): void {
   if (attack.mesh.material instanceof THREE.Material) attack.mesh.material.dispose();
 }
 
+function setWebTetherVisible(boss: SpiderReliquaryState, visible: boolean): void {
+  boss.webTetherGroup.visible = visible;
+  for (const seg of boss.webTetherSegments) seg.visible = visible;
+  for (const node of boss.webTetherNodes) node.visible = visible;
+}
+
 function resetSpiderTransientState(boss: SpiderReliquaryState): void {
   boss.collidable.vel.x = 0;
   boss.collidable.vel.z = 0;
@@ -387,6 +466,9 @@ function resetSpiderTransientState(boss: SpiderReliquaryState): void {
   boss.oneLegHopAir = 0;
   boss.oneLegHopRecover = 0;
   boss.corePassThroughCooldown = 0;
+  boss.webTetherTimer = 0;
+  boss.webTetherDuration = 0;
+  setWebTetherVisible(boss, false);
   for (const attack of boss.attacks) removeAttack(attack);
   boss.attacks.length = 0;
 }
@@ -469,6 +551,34 @@ function schedulePulse(boss: SpiderReliquaryState, phase: number): void {
     radius,
     damage: boss.config.pulseDamage[phase],
     windup: 0.7,
+    recover: 0,
+    elapsed: 0,
+    facingAngle: boss.facingAngle,
+    didLunge: false,
+    hitResolved: false,
+    mesh,
+  });
+}
+
+function scheduleWebShot(
+  boss: SpiderReliquaryState,
+  target: Vec2,
+  playerRadius: number,
+  phase: number,
+): void {
+  const radius = playerRadius * 0.8 + 0.42;
+  const point = { x: target.x, z: target.z };
+  const dist = Math.hypot(target.x - boss.collidable.pos.x, target.z - boss.collidable.pos.z);
+  const windup = clamp(dist / Math.max(boss.config.webSpeed[phase] * 8.0, 0.001), 0.08, 0.16);
+  const mesh = createAttackMesh('web');
+  mesh.position.set(point.x, 0.045, point.z);
+  mesh.scale.set(radius, radius, 1);
+  boss.attacks.push({
+    kind: 'web',
+    point,
+    radius,
+    damage: boss.config.webDamage[phase],
+    windup,
     recover: 0,
     elapsed: 0,
     facingAngle: boss.facingAngle,
@@ -674,6 +784,8 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
     legs.push(makeLeg(angle, config));
   }
 
+  const webTetherVisuals = createWebTetherVisuals();
+
   const boss: SpiderReliquaryState = {
     id,
     config,
@@ -707,6 +819,12 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
     oneLegHopRecover: 0,
     oneLegHopDirX: 0,
     oneLegHopDirZ: 0,
+    webTetherTimer: 0,
+    webTetherDuration: 0,
+    webTetherTarget: new THREE.Vector3(pos.x, 0.75, pos.z),
+    webTetherGroup: webTetherVisuals.group,
+    webTetherSegments: webTetherVisuals.segments,
+    webTetherNodes: webTetherVisuals.nodes,
     webProjectiles: [],
     acidProjectiles: [],
   };
@@ -714,6 +832,7 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
   bodyGroup.position.set(pos.x, 0, pos.z);
   hpGroup.position.set(pos.x, 0, pos.z);
   bodyRoot.scale.setScalar(config.bodyScale);
+  setWebTetherVisible(boss, false);
   collidable.owner = boss;
   for (const leg of legs) leg.collidable.owner = { boss, leg };
   syncSpiderReliquaryLegs(boss, 0);
@@ -992,6 +1111,7 @@ export function updateSpiderReliquaryAI(
   boss.legSlamCooldown = Math.max(0, boss.legSlamCooldown - delta);
   boss.webCooldown = Math.max(0, boss.webCooldown - delta);
   boss.acidCooldown = Math.max(0, boss.acidCooldown - delta);
+  boss.webTetherTimer = Math.max(0, boss.webTetherTimer - delta);
   boss.corePassThroughCooldown = Math.max(0, boss.corePassThroughCooldown - delta);
   boss.oneLegHopWindup = Math.max(0, boss.oneLegHopWindup - delta);
   boss.oneLegHopAir = Math.max(0, boss.oneLegHopAir - delta);
@@ -1001,6 +1121,7 @@ export function updateSpiderReliquaryAI(
   const dx = playerPos.x - body.pos.x;
   const dz = playerPos.z - body.pos.z;
   const dist = Math.hypot(dx, dz) || 1;
+  boss.webTetherTarget.set(playerPos.x, 0.72, playerPos.z);
   const targetAngle = Math.atan2(dx, dz);
   const facingDelta = wrapAngle(targetAngle - boss.facingAngle) * Math.min(3.4 * delta, 1.0);
   boss.facingAngle += facingDelta;
@@ -1152,6 +1273,21 @@ export function updateSpiderReliquaryAI(
   }
 
   const events: SpiderReliquaryAttackEvent[] = [];
+
+  if (
+    boss.webCooldown <= 0
+    && boss.webTetherTimer <= 0
+    && !playerWebbed
+    && !isRamming
+    && boss.collapseTimer <= 0.15
+    && dist >= 4.6
+    && dist <= boss.config.webRange[phase]
+  ) {
+    scheduleWebShot(boss, playerPos, playerRadius, phase);
+    boss.webCooldown = boss.config.webCooldown[phase];
+    boss.legSlamCooldown = Math.max(boss.legSlamCooldown, 0.35);
+    boss.pulseCooldown = Math.max(boss.pulseCooldown, 0.55);
+  }
   for (let i = boss.attacks.length - 1; i >= 0; i--) {
     const attack = boss.attacks[i];
     attack.elapsed += delta;
@@ -1182,6 +1318,8 @@ export function updateSpiderReliquaryAI(
       ? 0.84 + progress * 0.34
       : attack.kind === 'leg_slam'
         ? 0.78 + progress * 0.46
+        : attack.kind === 'web'
+          ? 0.72 + progress * 0.2
         : 0.92 + progress * 0.12;
     attack.mesh.scale.set(attack.radius * scaleBoost, attack.radius * scaleBoost, 1);
 
@@ -1190,6 +1328,8 @@ export function updateSpiderReliquaryAI(
       ? 0.1 + progress * 0.22
       : attack.kind === 'leg_slam'
         ? 0.12 + progress * 0.3
+        : attack.kind === 'web'
+          ? 0.08 + progress * 0.2
         : 0.15 + progress * 0.28;
 
     if (!attack.hitResolved && attack.elapsed >= attack.windup) {
@@ -1207,11 +1347,12 @@ export function updateSpiderReliquaryAI(
       const distToPlayer = Math.hypot(playerPos.x - point.x, playerPos.z - point.z);
       events.push({
         kind: attack.kind,
-        point: { x: point.x, y: attack.kind === 'leg_slam' ? 0.34 : 0.18, z: point.z },
+        point: { x: point.x, y: attack.kind === 'leg_slam' ? 0.34 : attack.kind === 'web' ? 0.72 : 0.18, z: point.z },
         radius: hitRadius,
         damage: attack.damage,
         hitPlayer: distToPlayer <= hitRadius + playerRadius,
         knockback: attack.kind === 'leg_slam' ? (phase === 2 ? 39 : 31.5) : undefined,
+        webDuration: attack.kind === 'web' ? boss.config.webDuration[phase] : undefined,
       });
       attack.hitResolved = true;
       if (attack.kind !== 'leg_slam') {
@@ -1353,6 +1494,59 @@ export function updateSpiderReliquaryVisuals(
   const haloMat = boss.haloMesh.material as THREE.MeshStandardMaterial;
   haloMat.emissiveIntensity = shielded ? 0.35 : 0.65 + collapseFrac * 0.6;
   haloMat.color.set(aliveLegs <= boss.config.shieldLegThreshold ? 0xe89c42 : 0xd7ae5c);
+
+  const webStrength = boss.webTetherDuration > 0
+    ? clamp(boss.webTetherTimer / boss.webTetherDuration, 0, 1)
+    : 0;
+  if (webStrength <= 0.001) {
+    setWebTetherVisible(boss, false);
+    return;
+  }
+
+  setWebTetherVisible(boss, true);
+  boss.webTetherGroup.position.set(0, 0, 0);
+  const anchor = new THREE.Vector3(
+    boss.visualPos.x + Math.sin(boss.facingAngle) * 0.58,
+    1.98,
+    boss.visualPos.z + Math.cos(boss.facingAngle) * 0.58,
+  );
+  const target = boss.webTetherTarget.clone();
+  target.y = 0.72;
+  const dir = new THREE.Vector3().subVectors(target, anchor);
+  const len = Math.max(dir.length(), 0.001);
+  const forward = dir.clone().normalize();
+  const sideways = new THREE.Vector3(-forward.z, 0, forward.x).normalize();
+  const controlPoints: THREE.Vector3[] = [];
+  for (let i = 0; i <= boss.webTetherNodes.length - 1; i++) {
+    const t = i / Math.max(1, boss.webTetherNodes.length - 1);
+    const point = anchor.clone().lerp(target, t);
+    const sag = Math.sin(t * Math.PI) * (0.28 + len * 0.035);
+    const sway = Math.sin(time * 12 + i * 0.85) * (0.035 + 0.02 * webStrength) * (1 - Math.abs(t - 0.5) * 0.7);
+    point.y -= sag;
+    point.addScaledVector(sideways, sway);
+    controlPoints.push(point);
+  }
+
+  for (let i = 0; i < boss.webTetherSegments.length; i++) {
+    const seg = boss.webTetherSegments[i];
+    const start = controlPoints[i];
+    const end = controlPoints[i + 1];
+    setSegmentFromPoints(seg, start, end, 0.07 - i * 0.002);
+    const segMat = seg.material as THREE.MeshStandardMaterial;
+    segMat.opacity = 0.35 + webStrength * 0.5;
+    segMat.emissiveIntensity = 0.22 + webStrength * 0.35;
+  }
+
+  for (let i = 0; i < boss.webTetherNodes.length; i++) {
+    const node = boss.webTetherNodes[i];
+    node.position.copy(controlPoints[i]);
+    const pulse = 0.86 + 0.14 * Math.sin(time * 10 + i * 0.6);
+    const scale = i === 0 ? 1.25 : 0.85 + pulse * 0.2;
+    node.scale.setScalar(scale);
+    const nodeMat = node.material as THREE.MeshStandardMaterial;
+    nodeMat.opacity = 0.42 + webStrength * 0.48;
+    nodeMat.emissiveIntensity = 0.3 + webStrength * 0.4;
+  }
 }
 
 export function isSpiderReliquaryDead(boss: SpiderReliquaryState): boolean {
@@ -1376,9 +1570,18 @@ export function destroySpiderReliquary(boss: SpiderReliquaryState): void {
 
   scene.remove(boss.bodyGroup);
   scene.remove(boss.hpGroup);
+  scene.remove(boss.webTetherGroup);
 
   for (const attack of boss.attacks) removeAttack(attack);
   boss.attacks.length = 0;
+  for (const seg of boss.webTetherSegments) {
+    seg.geometry.dispose();
+    if (seg.material instanceof THREE.Material) seg.material.dispose();
+  }
+  for (const node of boss.webTetherNodes) {
+    node.geometry.dispose();
+    if (node.material instanceof THREE.Material) node.material.dispose();
+  }
 
   for (const leg of boss.legs) {
     if (!leg.alive) continue;

@@ -97,6 +97,7 @@ let visualOffsetY  = 0;
 let deathMode: 'none' | 'topple' | 'pit' = 'none';
 let playerControlLocked = false;
 let playerInvulnerable = false;
+let playerImpactDamageMultiplier = 1;
 export let playerId = 0;
 
 // ─── Setup (call once at start and again after every reset) ──────────────────
@@ -145,6 +146,7 @@ export function resetPlayer(spawnPos: { x: number; z: number } = { x: 0, z: 0 })
   deathMode      = 'none';
   playerControlLocked = false;
   playerInvulnerable = false;
+  playerImpactDamageMultiplier = 1;
   syncPlayerTopScale();
   tiltGroup.position.set(spawnPos.x, 0, spawnPos.z);
   tiltGroup.rotation.set(0, 0, 0);
@@ -203,7 +205,7 @@ export function playerRpmHooks(delta: number, playerWallHit: boolean, circleHits
 
     const enemyDamage = COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
       * hit.impactForce * (playerBody.mass / enemy.mass)
-      * (playerBody.rpm / safeEnemyRpm) * playerBody.heatFactor;
+      * (playerBody.rpm / safeEnemyRpm) * playerBody.heatFactor * playerImpactDamageMultiplier;
 
     playerBody.rpm = Math.max(0, playerBody.rpm - damage);
     if (!enemy.isStatic) {
@@ -295,6 +297,14 @@ export function setPlayerInvulnerable(invulnerable: boolean): void {
 
 export function isPlayerInvulnerable(): boolean {
   return playerInvulnerable;
+}
+
+export function setPlayerImpactDamageMultiplier(multiplier: number): void {
+  playerImpactDamageMultiplier = Math.max(1, multiplier);
+}
+
+export function getPlayerImpactDamageMultiplier(): number {
+  return playerImpactDamageMultiplier;
 }
 
 // ─── Topple (game-over animation) ────────────────────────────────────────────

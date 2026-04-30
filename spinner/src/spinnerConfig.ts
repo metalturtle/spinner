@@ -61,6 +61,23 @@ export interface SpinnerConfig {
   comboReturnDuration:  number;               // seconds to snap back to origin
   comboSpeedScale:      number;               // movement speed multiplier during combo travel
   comboHitPause:        number;               // pause duration after each combo hit
+
+  // Heat attack (C key)
+  heatMinRpmRatio: number;
+  heatCooldown: number;
+  heatDuration: number;
+  heatRpmDrainRatioPerSecond: number;
+  heatDamageMultiplier: number;
+  heatAuraScale: number;
+
+  // Spinning laser (V key)
+  spinningLaserMinRpmRatio: number;
+  spinningLaserRpmDrainRatioPerSecond: number;
+  spinningLaserRange: number;
+  spinningLaserWidth: number;
+  spinningLaserAngularSpeed: number;
+  spinningLaserRpmDamageRatioPerSecond: number;
+  spinningLaserHpDamageRatioPerSecond: number;
 }
 
 const DEFAULT_SPINNER_CONFIG: SpinnerConfig = {
@@ -104,6 +121,21 @@ const DEFAULT_SPINNER_CONFIG: SpinnerConfig = {
   comboReturnDuration:   0.08,
   comboSpeedScale:       0.3,
   comboHitPause:         0.05,
+
+  heatMinRpmRatio:          0.22,
+  heatCooldown:             5.4,
+  heatDuration:             4.0,
+  heatRpmDrainRatioPerSecond: 0,
+  heatDamageMultiplier:     3,
+  heatAuraScale:            1.22,
+
+  spinningLaserMinRpmRatio:         0.28,
+  spinningLaserRpmDrainRatioPerSecond: 0.22,
+  spinningLaserRange:               13,
+  spinningLaserWidth:               0.82,
+  spinningLaserAngularSpeed:        Math.PI * 4.8,
+  spinningLaserRpmDamageRatioPerSecond: 0.115,
+  spinningLaserHpDamageRatioPerSecond:  0.065,
 };
 
 export const spinnerConfig: SpinnerConfig = { ...DEFAULT_SPINNER_CONFIG };

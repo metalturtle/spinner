@@ -121,17 +121,15 @@ refinement
 sound effects
 
 refinement ideas:
-    sound effects
-    level load
     spider boss shooting webs
-    laser pickup
-    enemy spinner also effects ember
-    octoboss more mechanical arms
-    launch effects improvement
+    spider boss after last leg destroyed, is a spinner
+    octoboss shoots laser from eyes
+    enemies dont walk off the floor area
     zombie model improvement, crawling and walking zombie
     menu improvement
     combat improvement
     ambient zones
+    laser room
 
 
 backburner:
@@ -145,6 +143,8 @@ backburner:
     arena waves
     more entities types in temple
     turret shooting fire arrows
+    octoboss more mechanical arms
+    enemy spinner also effects ember
 
 bugs:
     sometimes entities slip through walls
@@ -155,6 +155,16 @@ done:
     checkpoints
     open closing doors
     mirror room with laser spinner
+    laser pickup
+    level load
+    sound effects
+    Heat attack
+    platforming to space station
 
 refine:
     more bounciness when spinner hits the walls or enemy spinners
+    laser sound
+    octoboss eye improvement
+    laser glow
+    heat attack improvement
+    

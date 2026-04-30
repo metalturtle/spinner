@@ -7,7 +7,7 @@ import {
 } from './constants';
 import { spinnerConfig, resetSpinnerConfig } from './spinnerConfig';
 import { runCollisions, collidables, walls, zones, isCollidableEnabled, type CircleHit, type Collidable, type Segment, type Vec2 } from './physics';
-import { initHud, updateHud, setHudVisible, type ComboHudState } from './hud';
+import { initHud, updateHud, setHudVisible, type AbilityHudState } from './hud';
 import { initCamera, resetCameraShake, triggerCameraShake, updateCamera } from './camera';
 import { emitClashFlash, initClashFlashes, resetClashFlashes, updateClashFlashes } from './clashFlash';
 import {
@@ -21,10 +21,11 @@ import {
   playerRpmHooks, updatePlayerVisuals, updateTopple, notifyHit as notifyPlayerHit,
   startPlayerPitFallDeath, startPlayerToppleDeath,
   setPlayerControlLocked, setPlayerInvulnerable, isPlayerInvulnerable,
-  addPlayerCapacity,
+  addPlayerCapacity, getPlayerImpactDamageMultiplier, setPlayerImpactDamageMultiplier,
 } from './player';
 import {
-  createNormalPickup, createHyperPickup, updatePickups, spawnPickupAt, spawnGrowthPickupAt, ejectPickupAt,
+  createNormalPickup, createHyperPickup, createComboUnlockPickup, createHeatUnlockPickup, createSpinningLaserUnlockPickup,
+  updatePickups, spawnPickupAt, spawnGrowthPickupAt, ejectPickupAt,
   collectPickup, pickupRpmGain, type Pickup,
 } from './pickup';
 import { type LevelData, lvPos, lvZ } from './levelLoader';
@@ -116,7 +117,13 @@ import {
   setSlidingDoorOpen, updateSlidingDoor, type SlidingDoorState,
 } from './slidingDoor';
 import type { LevelCircle, LevelEntity, LevelPolygon } from './levelLoader';
-import { consumeProfilerTogglePressed, consumeSpectorCapturePressed, consumeSpecialPressed } from './input';
+import {
+  consumeComboPressed,
+  consumeHeatPressed,
+  consumeProfilerTogglePressed,
+  consumeSpectorCapturePressed,
+  spinningLaserHeld,
+} from './input';
 import { createProfiler } from './profiler';
 import type { FrameCounts, FrameMode, RenderStats, SceneStats } from './profilerTypes';
 import { createSpectorCaptureController } from './spectorCapture';
@@ -125,6 +132,7 @@ import {
   initSound,
   preloadSoundAssets,
   playClashSound,
+  playLaserSound,
   playPickupSound,
   playZombieSlashSound,
   resetAmbientTrack,
@@ -274,6 +282,10 @@ const BigSlugEntities     = defineEntityType({ create: createSlugworm,      dest
 const BabySlugEntities    = defineEntityType({ create: createSlugworm,      destroy: destroySlugworm      });
 const SlidingDoorEntities = defineEntityType({ create: createSlidingDoor,   destroy: destroySlidingDoor   });
 
+function scalePlayerImpactDamage(baseDamage: number): number {
+  return baseDamage * getPlayerImpactDamageMultiplier();
+}
+
 // ─── Collision Pair Handlers (permanent, registered once) ────────────────────
 
 registerCollisionPair('player', 'turret', (_playerCol, turretCol, hit) => {
@@ -281,9 +293,9 @@ registerCollisionPair('player', 'turret', (_playerCol, turretCol, hit) => {
   if (!turret?.alive) return;
   const safePlayerRpm = Math.max(0.01, playerBody.rpm);
   const safeEnemyRpm  = Math.max(0.01, turretCol.rpm);
-  const hpDamage = COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
+  const hpDamage = scalePlayerImpactDamage(COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
     * hit.impactForce * (playerBody.mass / turretCol.mass)
-    * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor;
+    * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor);
   if (applyDamageToTurret(turret, hpDamage)) {
     const pos = { x: turret.pos.x, z: turret.pos.z };
     unregisterEncounterMember(turret.id);
@@ -297,7 +309,7 @@ registerCollisionPair('player', 'turret', (_playerCol, turretCol, hit) => {
 registerCollisionPair('player', 'obstacle', (_playerCol, obsCol, hit) => {
   const obs = ObstacleEntities.getAll().find(o => o.collidable === obsCol);
   if (!obs?.alive || obs.config.type !== 'breakable') return;
-  const hpDamage = obstacleHpDamage(hit.impactForce);
+  const hpDamage = scalePlayerImpactDamage(obstacleHpDamage(hit.impactForce));
   if (applyDamageToObstacle(obs, hpDamage)) {
     const pos = { x: obsCol.pos.x, z: obsCol.pos.z };
     ObstacleEntities.destroy(obs);
@@ -345,8 +357,8 @@ registerCollisionPair('player', 'zombie', (_playerCol, zombieCol, hit) => {
     return;
   }
 
-  const hpDamage = hit.impactForce * zombie.config.impactDamageScale
-    * Math.max(0.35, playerBody.rpm / playerBody.rpmCapacity);
+  const hpDamage = scalePlayerImpactDamage(hit.impactForce * zombie.config.impactDamageScale
+    * Math.max(0.35, playerBody.rpm / playerBody.rpmCapacity));
   applyDamageToZombie(zombie, hpDamage);
 
   const { point, normal } = computeContactInfo(_playerCol, zombieCol);
@@ -362,9 +374,9 @@ registerCollisionPair('player', 'siege_core', (_playerCol, coreCol, hit) => {
 
   const safePlayerRpm = Math.max(0.01, playerBody.rpm);
   const safeEnemyRpm  = Math.max(0.01, coreCol.rpm);
-  const rpmDamage = COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
+  const rpmDamage = scalePlayerImpactDamage(COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
     * hit.impactForce * (playerBody.mass / coreCol.mass)
-    * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor;
+    * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor);
   siege.collidable.rpm = Math.max(0, siege.collidable.rpm - rpmDamage);
   const { point, normal } = computeContactInfo(_playerCol, coreCol);
   emitSparks(point, normal, Math.floor(15 + hit.impactForce * 12), Math.min(1, hit.impactForce / 8));
@@ -377,7 +389,7 @@ registerCollisionPair('player', 'siege_part', (_playerCol, partCol, hit) => {
     const part = siege.parts.find(p => p.alive && p.collidable === partCol);
     if (!part) continue;
 
-    const hpDamage = hit.impactForce * 0.4;
+    const hpDamage = scalePlayerImpactDamage(hit.impactForce * 0.4);
 
     // Eject pickups outward from the hit part on significant impacts
     if (hit.impactForce > 2.0) {
@@ -416,10 +428,10 @@ registerCollisionPair('player', 'spider_core', (_playerCol, coreCol, hit) => {
 
   const safePlayerRpm = Math.max(0.01, playerBody.rpm);
   const safeEnemyRpm = Math.max(0.01, coreCol.rpm);
-  const rpmDamage = COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
+  const rpmDamage = scalePlayerImpactDamage(COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
     * hit.impactForce * (playerBody.mass / coreCol.mass)
     * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor
-    * getSpiderCoreDamageMultiplier(spider);
+    * getSpiderCoreDamageMultiplier(spider));
   spider.collidable.rpm = Math.max(0, spider.collidable.rpm - rpmDamage);
   emitSparks(point, normal, Math.floor(18 + hit.impactForce * 12), Math.min(1, hit.impactForce / 6));
 });
@@ -430,7 +442,7 @@ registerCollisionPair('player', 'spider_leg', (_playerCol, legCol, hit) => {
     const leg = spider.legs.find((entry) => entry.alive && entry.collidable === legCol);
     if (!leg) continue;
 
-    const hpDamage = hit.impactForce * 0.55 * Math.max(0.4, playerBody.rpm / playerBody.rpmCapacity);
+    const hpDamage = scalePlayerImpactDamage(hit.impactForce * 0.55 * Math.max(0.4, playerBody.rpm / playerBody.rpmCapacity));
     const { point, normal } = computeContactInfo(_playerCol, legCol);
     if (applyDamageToSpiderLeg(spider, leg, hpDamage)) {
       explosions.push(createExplosion({ x: legCol.pos.x, z: legCol.pos.z }));
@@ -454,10 +466,10 @@ registerCollisionPair('player', 'octoboss_core', (_playerCol, coreCol, hit) => {
 
   const safePlayerRpm = Math.max(0.01, playerBody.rpm);
   const safeEnemyRpm = Math.max(0.01, coreCol.rpm);
-  const rpmDamage = COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
+  const rpmDamage = scalePlayerImpactDamage(COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
     * hit.impactForce * (playerBody.mass / coreCol.mass)
     * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor
-    * getOctobossCoreDamageMultiplier(boss);
+    * getOctobossCoreDamageMultiplier(boss));
   boss.collidable.rpm = Math.max(0, boss.collidable.rpm - rpmDamage);
   emitSparks(point, normal, Math.floor(22 + hit.impactForce * 12), Math.min(1, hit.impactForce / 6));
 });
@@ -482,7 +494,7 @@ registerCollisionPair('player', 'octoboss_tip', (_playerCol, tipCol, hit) => {
 registerCollisionPair('player', 'robot', (_playerCol, robotCol, hit) => {
   const robot = RobotEntities.getAll().find(r => r.collidable === robotCol);
   if (!robot?.alive) return;
-  const hpDamage = hit.impactForce * 2.5 * (playerBody.rpm / playerBody.rpmCapacity);
+  const hpDamage = scalePlayerImpactDamage(hit.impactForce * 2.5 * (playerBody.rpm / playerBody.rpmCapacity));
   applyDamageToRobot(robot, hpDamage);
   const { point, normal } = computeContactInfo(_playerCol, robotCol);
   emitSparks(point, normal, Math.floor(8 + hit.impactForce * 6), Math.min(1, hit.impactForce / 10));
@@ -503,7 +515,7 @@ registerCollisionPair('player', 'hive_core', (_playerCol, coreCol, hit) => {
   const aliveCount = hive.flock.filter(f => f.alive).length;
   // Damage reduced while flock protects
   const shieldMult = aliveCount >= 3 ? 0.1 : aliveCount >= 1 ? 0.4 : 1.0;
-  const hpDamage = hit.impactForce * 3.0 * (playerBody.rpm / playerBody.rpmCapacity) * shieldMult;
+  const hpDamage = scalePlayerImpactDamage(hit.impactForce * 3.0 * (playerBody.rpm / playerBody.rpmCapacity) * shieldMult);
   applyDamageToHiveCore(hive, hpDamage);
   const { point, normal } = computeContactInfo(_playerCol, coreCol);
   emitSparks(point, normal, Math.floor(15 + hit.impactForce * 10), Math.min(1, hit.impactForce / 8));
@@ -519,9 +531,9 @@ registerCollisionPair('player', 'boss', (_playerCol, bossCol, hit) => {
   // Damage TO boss (RPM drain)
   const safePlayerRpm = Math.max(0.01, playerBody.rpm);
   const safeEnemyRpm  = Math.max(0.01, bossCol.rpm);
-  const baseDamage = COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
+  const baseDamage = scalePlayerImpactDamage(COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
     * hit.impactForce * (playerBody.mass / bossCol.mass)
-    * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor;
+    * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor);
   boss.collidable.rpm = Math.max(0, boss.collidable.rpm - baseDamage * bossDamageMult);
 
   // Damage TO player (RPM drain) — frontal hits punish hard
@@ -557,7 +569,7 @@ registerCollisionPair('player', 'slug_big', (_playerCol, slugCol, hit) => {
     emitGoo(point, Math.floor(6 + hit.impactForce * 3), Math.min(1, hit.impactForce / 8));
   } else {
     // Belly hit — damage the slug
-    const hpDamage = hit.impactForce * 2.0 * (playerBody.rpm / playerBody.rpmCapacity);
+    const hpDamage = scalePlayerImpactDamage(hit.impactForce * 2.0 * (playerBody.rpm / playerBody.rpmCapacity));
     applyDamageToSlug(slug, hpDamage);
     // Goo splatter on belly hit
     emitGoo(point, Math.floor(10 + hit.impactForce * 6), Math.min(1, hit.impactForce / 6));
@@ -569,7 +581,7 @@ registerCollisionPair('player', 'slug_baby', (_playerCol, slugCol, hit) => {
   const slug = BabySlugEntities.getAll().find(s => s.collidable === slugCol);
   if (!slug?.alive) return;
 
-  const hpDamage = hit.impactForce * 4.0 * (playerBody.rpm / playerBody.rpmCapacity);
+  const hpDamage = scalePlayerImpactDamage(hit.impactForce * 4.0 * (playerBody.rpm / playerBody.rpmCapacity));
   applyDamageToSlug(slug, hpDamage);
 
   const { point } = computeContactInfo(_playerCol, slugCol);
@@ -589,8 +601,17 @@ registerProximityPair('player', 'pickup', (_playerProx, pickupProx) => {
   } else if (pickup.type === 'hyper') {
     playerBody.rpm += HYPER_BOOST;
     playPickupSound('hyper');
-  } else {
+  } else if (pickup.type === 'growth') {
     addPlayerCapacity(spinnerConfig.growthPickupCapacityGain);
+    playPickupSound('growth');
+  } else if (pickup.type === 'combo_unlock') {
+    playerAbilityUnlocks.combo = true;
+    playPickupSound('growth');
+  } else if (pickup.type === 'heat_unlock') {
+    playerAbilityUnlocks.heatAttack = true;
+    playPickupSound('growth');
+  } else if (pickup.type === 'spinning_laser_unlock') {
+    playerAbilityUnlocks.spinningLaser = true;
     playPickupSound('growth');
   }
   collectPickup(pickup);
@@ -1655,6 +1676,15 @@ function spawnLevelEntity(ent: LevelEntity): void {
     case 'pickup_hyper':
       pickups.push(createHyperPickup(pos));
       break;
+    case 'pickup_combo':
+      pickups.push(createComboUnlockPickup(pos));
+      break;
+    case 'pickup_laser_focus':
+      pickups.push(createHeatUnlockPickup(pos));
+      break;
+    case 'pickup_laser_spin':
+      pickups.push(createSpinningLaserUnlockPickup(pos));
+      break;
     case 'checkpoint': {
       const checkpoint = createCheckpointMarker(pos);
       checkpoint.id = ent.id;
@@ -2034,7 +2064,7 @@ menuOverlay.innerHTML = `
       <button type="button" class="overlay-btn overlay-btn-primary" id="menu-start-btn">Start Run</button>
       <button type="button" class="overlay-btn" id="menu-editor-btn">Open Level Editor</button>
     </div>
-    <p class="overlay-meta" id="menu-status">WASD to move, Shift to sprint, X for combo, M to return to the menu.</p>
+    <p class="overlay-meta" id="menu-status">WASD to move, Shift to sprint, X combo, C heat, V spin laser, M to return to the menu.</p>
   </div>
 `;
 document.body.appendChild(menuOverlay);
@@ -2212,7 +2242,11 @@ function resetGame(): void {
   resetPlayer();
   setupPlayer();
   resetComboState();
-  setPlayerControlLocked(false);
+  resetPlayerLaserState();
+  resetPlayerHeatState();
+  playerAbilityUnlocks.combo = false;
+  playerAbilityUnlocks.heatAttack = false;
+  playerAbilityUnlocks.spinningLaser = false;
   resetAmbientTrack();
   respawnPending = false;
   respawnInvulnerabilityTimer = 0;
@@ -2220,6 +2254,7 @@ function resetGame(): void {
 
   gameOver = false;
   gameOverOverlay.style.display = 'none';
+  syncPlayerControlLock();
   octobossParasiteOwners.clear();
   octobossDroneOwners.clear();
   runtimeEncounterEntityIds.clear();
@@ -2290,7 +2325,7 @@ async function startSelectedLevel(): Promise<void> {
   }
 
   hideLoadingOverlay();
-  setMenuBusy(false, 'WASD to move, Shift to sprint, X for combo, M to return to the menu.');
+  setMenuBusy(false, 'WASD to move, Shift to sprint, X combo, C heat, V spin laser, M to return to the menu.');
 }
 
 function returnToMenu(): void {
@@ -2368,6 +2403,66 @@ interface ComboState {
   segment: ComboSegment | null;
 }
 
+interface PlayerAbilityUnlocks {
+  combo: boolean;
+  heatAttack: boolean;
+  spinningLaser: boolean;
+}
+
+type PlayerLaserMode = 'idle' | 'spinning';
+
+interface PlayerLaserBeamSegment {
+  start: Vec2;
+  end: Vec2;
+}
+
+interface PlayerLaserState {
+  mode: PlayerLaserMode;
+  angle: number;
+  dir: Vec2;
+  segment: PlayerLaserBeamSegment | null;
+}
+
+interface PlayerHeatState {
+  active: boolean;
+  auraStrength: number;
+  activeTimer: number;
+  cooldownTimer: number;
+}
+
+interface PlayerLaserVisualRig {
+  group: THREE.Group;
+  beam: THREE.Mesh;
+  glow: THREE.Mesh;
+}
+
+interface PlayerHeatAuraVisualRig {
+  group: THREE.Group;
+  innerShell: THREE.Mesh;
+  outerShell: THREE.Mesh;
+  ring: THREE.Mesh;
+}
+
+const playerAbilityUnlocks: PlayerAbilityUnlocks = {
+  combo: false,
+  heatAttack: false,
+  spinningLaser: false,
+};
+
+const playerLaserState: PlayerLaserState = {
+  mode: 'idle',
+  angle: 0,
+  dir: { x: 0, z: -1 },
+  segment: null,
+};
+
+const playerHeatState: PlayerHeatState = {
+  active: false,
+  auraStrength: 0,
+  activeTimer: 0,
+  cooldownTimer: 0,
+};
+
 const comboState: ComboState = {
   phase: 'idle',
   cooldownTimer: 0,
@@ -2384,6 +2479,122 @@ function cloneVec2(vec: Vec2): Vec2 {
   return { x: vec.x, z: vec.z };
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normalizeDir(x: number, z: number): Vec2 {
+  const len = Math.hypot(x, z);
+  if (len <= 0.00001) return { x: 0, z: -1 };
+  return { x: x / len, z: z / len };
+}
+
+function crossVec2(a: Vec2, b: Vec2): number {
+  return a.x * b.z - a.z * b.x;
+}
+
+function setBeamSegmentMesh(mesh: THREE.Mesh, start: Vec2, end: Vec2, width: number): void {
+  const dx = end.x - start.x;
+  const dz = end.z - start.z;
+  const len = Math.max(0.001, Math.hypot(dx, dz));
+  mesh.visible = true;
+  mesh.position.set(start.x + dx * 0.5, 0.26, start.z + dz * 0.5);
+  mesh.rotation.y = Math.atan2(dx, dz);
+  mesh.scale.set(width, 0.18, len);
+}
+
+function createPlayerLaserVisuals(): PlayerLaserVisualRig {
+  const group = new THREE.Group();
+
+  const beam = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshBasicMaterial({
+      color: 0xffb36b,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  beam.visible = false;
+  beam.renderOrder = 6;
+  group.add(beam);
+
+  const glow = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshBasicMaterial({
+      color: 0xfff3d1,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  glow.visible = false;
+  glow.renderOrder = 7;
+  group.add(glow);
+
+  scene.add(group);
+  return { group, beam, glow };
+}
+
+const playerLaserVisuals = createPlayerLaserVisuals();
+let lastPlayerAimDir: Vec2 = { x: 0, z: -1 };
+
+function createPlayerHeatAuraVisuals(): PlayerHeatAuraVisualRig {
+  const group = new THREE.Group();
+
+  const innerShell = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 28, 18),
+    new THREE.MeshBasicMaterial({
+      color: 0xff8b2c,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.BackSide,
+    }),
+  );
+  innerShell.visible = false;
+  innerShell.renderOrder = 5;
+  group.add(innerShell);
+
+  const outerShell = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 22, 16),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd27d,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.BackSide,
+    }),
+  );
+  outerShell.visible = false;
+  outerShell.renderOrder = 5;
+  group.add(outerShell);
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(1, 0.08, 16, 48),
+    new THREE.MeshBasicMaterial({
+      color: 0xffb45a,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.visible = false;
+  ring.renderOrder = 5;
+  group.add(ring);
+
+  scene.add(group);
+  return { group, innerShell, outerShell, ring };
+}
+
+const playerHeatAuraVisuals = createPlayerHeatAuraVisuals();
+
 function resetComboState(): void {
   comboState.phase = 'idle';
   comboState.cooldownTimer = 0;
@@ -2394,6 +2605,28 @@ function resetComboState(): void {
   comboState.slotTargets = [];
   comboState.hitCounts.clear();
   comboState.segment = null;
+}
+
+function resetPlayerLaserState(): void {
+  playerLaserState.mode = 'idle';
+  playerLaserState.angle = 0;
+  playerLaserState.dir = cloneVec2(lastPlayerAimDir);
+  playerLaserState.segment = null;
+  playerLaserVisuals.group.visible = false;
+  playerLaserVisuals.beam.visible = false;
+  playerLaserVisuals.glow.visible = false;
+}
+
+function resetPlayerHeatState(): void {
+  playerHeatState.active = false;
+  playerHeatState.auraStrength = 0;
+  playerHeatState.activeTimer = 0;
+  playerHeatState.cooldownTimer = 0;
+  playerHeatAuraVisuals.group.visible = false;
+  playerHeatAuraVisuals.innerShell.visible = false;
+  playerHeatAuraVisuals.outerShell.visible = false;
+  playerHeatAuraVisuals.ring.visible = false;
+  setPlayerImpactDamageMultiplier(1);
 }
 
 function isComboInvulnerable(): boolean {
@@ -2503,6 +2736,21 @@ function buildComboTargets(): ComboTarget[] {
         if (!enemy.alive) return;
         enemy.collidable.rpm = Math.max(0, enemy.collidable.rpm - damage);
         onEnemyCollision(enemy);
+      },
+    });
+  }
+
+  for (const enemy of LaserSpinnerEntities.getAll()) {
+    if (!enemy.alive || !isCollidableEnabled(enemy.collidable)) continue;
+    targets.push({
+      id: makeComboTargetId('laser-spinner', enemy.collidable),
+      collidable: enemy.collidable,
+      getPos: () => cloneVec2(enemy.collidable.pos),
+      isValid: () => enemy.alive && isCollidableEnabled(enemy.collidable),
+      applyDamage: (damage) => {
+        if (!enemy.alive) return;
+        enemy.collidable.rpm = Math.max(0, enemy.collidable.rpm - damage);
+        onLaserSpinnerCollision(enemy);
       },
     });
   }
@@ -2866,17 +3114,19 @@ function computeComboHpDamage(hitCount: number): number {
     * comboRepeatFalloff(hitCount);
 }
 
+function isHpComboTarget(targetId: string): boolean {
+  return targetId.startsWith('turret')
+    || targetId.startsWith('zombie')
+    || targetId.startsWith('siege-part')
+    || targetId.startsWith('spider-leg')
+    || targetId.startsWith('robot')
+    || targetId.startsWith('hive-core')
+    || targetId.startsWith('slug');
+}
+
 function applyComboHit(target: ComboTarget): void {
   const hitCount = comboState.hitCounts.get(target.collidable) ?? 0;
-  const type = target.id;
-  const isHpTarget = type.startsWith('turret')
-    || type.startsWith('zombie')
-    || type.startsWith('siege-part')
-    || type.startsWith('spider-leg')
-    || type.startsWith('robot')
-    || type.startsWith('hive-core')
-    || type.startsWith('slug');
-  const damage = isHpTarget ? computeComboHpDamage(hitCount) : computeComboRpmDamage(hitCount);
+  const damage = isHpComboTarget(target.id) ? computeComboHpDamage(hitCount) : computeComboRpmDamage(hitCount);
 
   comboState.hitCounts.set(target.collidable, hitCount + 1);
   target.applyDamage(damage);
@@ -2931,23 +3181,52 @@ function isComboBusy(): boolean {
   return comboState.phase !== 'idle';
 }
 
+function isPlayerLaserActive(): boolean {
+  return playerLaserState.mode !== 'idle';
+}
+
+function isPlayerHeatActive(): boolean {
+  return playerHeatState.active;
+}
+
+function isAnyPlayerSpecialBusy(): boolean {
+  return isComboBusy() || isPlayerLaserActive() || isPlayerHeatActive();
+}
+
+function syncPlayerControlLock(): void {
+  const shouldLock = gameOver || respawnPending || enemyComboLockTimer > 0 || isComboBusy();
+  setPlayerControlLocked(shouldLock);
+}
+
 function shouldSnapComboCamera(): boolean {
-  return comboState.phase === 'active' || comboState.phase === 'returning';
+  return comboState.phase === 'active'
+    || comboState.phase === 'returning'
+    || playerHeatState.active
+    || playerLaserState.mode === 'spinning';
 }
 
 function getComboMinRpm(): number {
   return spinnerConfig.rpmCapacity * spinnerConfig.comboMinRpmRatio;
 }
 
+function getHeatMinRpm(): number {
+  return spinnerConfig.rpmCapacity * spinnerConfig.heatMinRpmRatio;
+}
+
+function getSpinningLaserMinRpm(): number {
+  return spinnerConfig.rpmCapacity * spinnerConfig.spinningLaserMinRpmRatio;
+}
+
 function canStartPlayerCombo(): boolean {
-  return !isComboBusy()
+  return playerAbilityUnlocks.combo
+    && !isAnyPlayerSpecialBusy()
     && comboState.cooldownTimer <= 0
     && playerBody.rpm >= getComboMinRpm()
     && getNearestComboTargets(playerBody.pos).length > 0;
 }
 
 function tryStartPlayerCombo(): void {
-  if (!consumeSpecialPressed()) return;
+  if (!consumeComboPressed()) return;
   if (!canStartPlayerCombo()) return;
 
   const nearest = getNearestComboTargets(playerBody.pos);
@@ -2967,7 +3246,7 @@ function tryStartPlayerCombo(): void {
   comboState.segment = null;
 
   playerBody.rpm = Math.max(0, playerBody.rpm - spinnerConfig.rpmCapacity * spinnerConfig.comboCostRatio);
-  setPlayerControlLocked(true);
+  syncPlayerControlLock();
   syncPlayerInvulnerability();
   playerBody.vel.x = 0;
   playerBody.vel.z = 0;
@@ -2990,7 +3269,7 @@ function updatePlayerCombo(delta: number): void {
       comboState.phase = 'idle';
       comboState.slotTargets = [];
       comboState.segment = null;
-      setPlayerControlLocked(false);
+      syncPlayerControlLock();
       syncPlayerInvulnerability();
     }
     return;
@@ -3035,19 +3314,284 @@ function updatePlayerCombo(delta: number): void {
   syncPlayerInvulnerability();
 }
 
-function getComboHudState(): ComboHudState {
-  const cooldownFraction = comboState.cooldownTimer > 0
-    ? 1 - comboState.cooldownTimer / spinnerConfig.comboCooldown
-    : 1;
-  const ready = comboState.cooldownTimer <= 0;
-  const blockedByRpm = ready && playerBody.rpm < getComboMinRpm();
+function refreshPlayerAimDir(): void {
+  const speed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
+  if (speed <= 0.12) return;
+  lastPlayerAimDir = normalizeDir(playerBody.vel.x, playerBody.vel.z);
+}
+
+function raycastSegment(origin: Vec2, dir: Vec2, seg: Segment): { distance: number; point: Vec2 } | null {
+  const segVec = { x: seg.p2.x - seg.p1.x, z: seg.p2.z - seg.p1.z };
+  const denom = crossVec2(dir, segVec);
+  if (Math.abs(denom) < 0.00001) return null;
+
+  const delta = { x: seg.p1.x - origin.x, z: seg.p1.z - origin.z };
+  const t = crossVec2(delta, segVec) / denom;
+  const u = crossVec2(delta, dir) / denom;
+  if (t <= 0.001 || u < -0.0001 || u > 1.0001) return null;
 
   return {
-    cooldownFraction: Math.max(0, Math.min(1, cooldownFraction)),
-    active: comboState.phase === 'active' || comboState.phase === 'returning',
-    ready,
-    blockedByRpm,
+    distance: t,
+    point: { x: origin.x + dir.x * t, z: origin.z + dir.z * t },
   };
+}
+
+function tracePlayerLaserSegment(dir: Vec2, range: number): PlayerLaserBeamSegment {
+  const start = {
+    x: playerBody.pos.x + dir.x * (playerBody.radius * 0.2),
+    z: playerBody.pos.z + dir.z * (playerBody.radius * 0.2),
+  };
+
+  let closestDistance = range;
+  let end = {
+    x: start.x + dir.x * range,
+    z: start.z + dir.z * range,
+  };
+
+  for (const wall of walls) {
+    const hit = raycastSegment(start, dir, wall);
+    if (!hit || hit.distance >= closestDistance) continue;
+    closestDistance = hit.distance;
+    end = hit.point;
+  }
+
+  return { start, end };
+}
+
+function computePlayerLaserDamagePerSecond(targetId: string, rpmRatio: number, hpRatio: number): number {
+  const rpmFrac = clamp(playerBody.rpm / Math.max(playerBody.rpmCapacity, 1), 0, 1.25);
+  const ratio = isHpComboTarget(targetId) ? hpRatio : rpmRatio;
+  return playerBody.rpmCapacity * ratio * (0.72 + rpmFrac * 0.58);
+}
+
+function damageTargetsAlongPlayerLaser(
+  segment: PlayerLaserBeamSegment,
+  beamWidth: number,
+  rpmRatio: number,
+  hpRatio: number,
+  delta: number,
+): boolean {
+  let hitAny = false;
+  const beamRadius = beamWidth * 0.5;
+  const beamSegment: Segment = { p1: segment.start, p2: segment.end };
+
+  for (const target of buildComboTargets()) {
+    if (!target.isValid()) continue;
+    const hitRadius = beamRadius + target.collidable.radius * 0.82;
+    if (pointSegmentDistanceSq(target.getPos(), beamSegment) > hitRadius * hitRadius) continue;
+    target.applyDamage(computePlayerLaserDamagePerSecond(target.id, rpmRatio, hpRatio) * delta);
+    hitAny = true;
+  }
+
+  return hitAny;
+}
+
+function beginSpinningLaser(): void {
+  const dir = cloneVec2(lastPlayerAimDir);
+  playerLaserState.mode = 'spinning';
+  playerLaserState.dir = dir;
+  playerLaserState.angle = Math.atan2(dir.x, dir.z);
+  playerLaserState.segment = null;
+}
+
+function canActivateHeatAttack(): boolean {
+  return playerAbilityUnlocks.heatAttack
+    && !isComboBusy()
+    && playerLaserState.mode === 'idle'
+    && playerHeatState.cooldownTimer <= 0
+    && !playerHeatState.active
+    && playerBody.rpm >= getHeatMinRpm();
+}
+
+function canStartSpinningLaser(): boolean {
+  return playerAbilityUnlocks.spinningLaser
+    && !playerHeatState.active
+    && playerBody.rpm >= getSpinningLaserMinRpm();
+}
+
+function stopPlayerLaser(): void {
+  playerLaserState.mode = 'idle';
+  playerLaserState.segment = null;
+}
+
+function resolveWantedPlayerLaserMode(): PlayerLaserMode {
+  if (isComboBusy()) return 'idle';
+  if (spinningLaserHeld && canStartSpinningLaser()) return 'spinning';
+  return 'idle';
+}
+
+function tryStartHeatAttack(): void {
+  if (!consumeHeatPressed()) return;
+  if (!canActivateHeatAttack()) return;
+
+  playerHeatState.active = true;
+  playerHeatState.activeTimer = spinnerConfig.heatDuration;
+  playerHeatState.cooldownTimer = spinnerConfig.heatCooldown;
+}
+
+function updatePlayerHeat(delta: number, time: number): void {
+  if (playerHeatState.cooldownTimer > 0) {
+    playerHeatState.cooldownTimer = Math.max(0, playerHeatState.cooldownTimer - delta);
+  }
+
+  if (playerHeatState.active) {
+    playerHeatState.activeTimer = Math.max(0, playerHeatState.activeTimer - delta);
+    playerBody.rpm = Math.max(0, playerBody.rpm - spinnerConfig.rpmCapacity * spinnerConfig.heatRpmDrainRatioPerSecond * delta);
+    if (playerHeatState.activeTimer <= 0 || playerBody.rpm <= 0.5) {
+      playerHeatState.active = false;
+      playerHeatState.activeTimer = 0;
+    }
+  }
+
+  const targetStrength = playerHeatState.active ? 1 : 0;
+  const lerpRate = playerHeatState.active ? 9.5 : 6.2;
+  playerHeatState.auraStrength += (targetStrength - playerHeatState.auraStrength) * Math.min(1, delta * lerpRate);
+
+  if (!playerHeatState.active) {
+    setPlayerImpactDamageMultiplier(1);
+    return;
+  }
+
+  setPlayerImpactDamageMultiplier(spinnerConfig.heatDamageMultiplier);
+  const pulse = 0.84 + 0.16 * Math.sin(time * Math.PI * 5.2);
+  playerHeatState.auraStrength = Math.max(playerHeatState.auraStrength, pulse * 0.9);
+}
+
+function updatePlayerLaser(delta: number): void {
+  const wantedMode = resolveWantedPlayerLaserMode();
+  if (wantedMode === 'idle') {
+    if (playerLaserState.mode !== 'idle') stopPlayerLaser();
+    else playerLaserState.segment = null;
+    return;
+  }
+
+  if (playerLaserState.mode !== wantedMode) {
+    beginSpinningLaser();
+  }
+
+  playerLaserState.angle += spinnerConfig.spinningLaserAngularSpeed * delta;
+  playerLaserState.dir = normalizeDir(Math.sin(playerLaserState.angle), Math.cos(playerLaserState.angle));
+  lastPlayerAimDir = cloneVec2(playerLaserState.dir);
+
+  playerBody.rpm = Math.max(0, playerBody.rpm - spinnerConfig.rpmCapacity * spinnerConfig.spinningLaserRpmDrainRatioPerSecond * delta);
+  if (playerBody.rpm <= 0.5) {
+    stopPlayerLaser();
+    return;
+  }
+
+  playerLaserState.segment = tracePlayerLaserSegment(playerLaserState.dir, spinnerConfig.spinningLaserRange);
+  const hitAny = damageTargetsAlongPlayerLaser(
+    playerLaserState.segment,
+    spinnerConfig.spinningLaserWidth,
+    spinnerConfig.spinningLaserRpmDamageRatioPerSecond,
+    spinnerConfig.spinningLaserHpDamageRatioPerSecond,
+    delta,
+  );
+  playLaserSound(playerBody.pos, 0.82);
+
+  if (hitAny) {
+    const end = playerLaserState.segment.end;
+    emitPlasma({ x: end.x, y: 0.42, z: end.z }, 5, 0.18);
+  }
+}
+
+function updatePlayerLaserVisuals(time: number): void {
+  const { group, beam, glow } = playerLaserVisuals;
+  const segment = playerLaserState.segment;
+  if (!segment || playerLaserState.mode === 'idle') {
+    group.visible = false;
+    beam.visible = false;
+    glow.visible = false;
+    return;
+  }
+
+  group.visible = true;
+  setBeamSegmentMesh(beam, segment.start, segment.end, spinnerConfig.spinningLaserWidth);
+  setBeamSegmentMesh(glow, segment.start, segment.end, spinnerConfig.spinningLaserWidth * 0.58);
+
+  const pulse = 0.78 + 0.22 * Math.sin(time * Math.PI * 18);
+  const beamMat = beam.material as THREE.MeshBasicMaterial;
+  const glowMat = glow.material as THREE.MeshBasicMaterial;
+  beamMat.color.set(0xff6fe5);
+  glowMat.color.set(0xffdcfb);
+  beamMat.opacity = 0.48 * pulse;
+  glowMat.opacity = 0.92 * pulse;
+}
+
+function updatePlayerHeatAuraVisuals(time: number): void {
+  const strength = clamp(playerHeatState.auraStrength, 0, 1);
+  const { group, innerShell, outerShell, ring } = playerHeatAuraVisuals;
+
+  if (strength <= 0.01) {
+    group.visible = false;
+    innerShell.visible = false;
+    outerShell.visible = false;
+    ring.visible = false;
+    return;
+  }
+
+  group.visible = true;
+  innerShell.visible = true;
+  outerShell.visible = true;
+  ring.visible = true;
+
+  group.position.set(playerBody.pos.x, 0.32, playerBody.pos.z);
+  const pulse = 0.86 + 0.14 * Math.sin(time * Math.PI * 6.6);
+  const baseScale = spinnerConfig.heatAuraScale * playerBody.radius;
+  innerShell.scale.setScalar(baseScale * (1.02 + pulse * 0.06));
+  outerShell.scale.setScalar(baseScale * (1.14 + pulse * 0.09));
+  ring.scale.setScalar(baseScale * (1.06 + pulse * 0.08));
+  ring.rotation.z += 0.01 + strength * 0.035;
+
+  const innerMat = innerShell.material as THREE.MeshBasicMaterial;
+  const outerMat = outerShell.material as THREE.MeshBasicMaterial;
+  const ringMat = ring.material as THREE.MeshBasicMaterial;
+  innerMat.opacity = strength * 0.18 * pulse;
+  outerMat.opacity = strength * 0.11 * pulse;
+  ringMat.opacity = strength * 0.3 * pulse;
+}
+
+function getPlayerAbilityHudStates(): AbilityHudState[] {
+  const comboCooldownFraction = comboState.cooldownTimer > 0
+    ? 1 - comboState.cooldownTimer / spinnerConfig.comboCooldown
+    : 1;
+  const comboReady = comboState.cooldownTimer <= 0;
+  const comboBlockedByRpm = comboReady && playerBody.rpm < getComboMinRpm();
+
+  const heatCooldownFraction = playerHeatState.cooldownTimer > 0
+    ? 1 - playerHeatState.cooldownTimer / spinnerConfig.heatCooldown
+    : 1;
+  const heatReady = playerAbilityUnlocks.heatAttack && playerHeatState.cooldownTimer <= 0;
+  const heatBlockedByRpm = heatReady && !playerHeatState.active && playerBody.rpm < getHeatMinRpm();
+
+  const spinningReady = playerAbilityUnlocks.spinningLaser;
+  const spinningBlockedByRpm = spinningReady && playerLaserState.mode !== 'spinning' && playerBody.rpm < getSpinningLaserMinRpm();
+
+  return [{
+    keyLabel: 'X',
+    cooldownFraction: Math.max(0, Math.min(1, comboCooldownFraction)),
+    active: comboState.phase === 'active' || comboState.phase === 'returning',
+    ready: comboReady,
+    blockedByRpm: comboBlockedByRpm,
+    unlocked: playerAbilityUnlocks.combo,
+    accent: 'combo',
+  }, {
+    keyLabel: 'C',
+    cooldownFraction: Math.max(0, Math.min(1, heatCooldownFraction)),
+    active: playerHeatState.active,
+    ready: heatReady,
+    blockedByRpm: heatBlockedByRpm,
+    unlocked: playerAbilityUnlocks.heatAttack,
+    accent: 'heat',
+  }, {
+    keyLabel: 'V',
+    cooldownFraction: spinningReady ? 1 : 0,
+    active: playerLaserState.mode === 'spinning',
+    ready: spinningReady,
+    blockedByRpm: spinningBlockedByRpm,
+    unlocked: playerAbilityUnlocks.spinningLaser,
+    accent: 'spinning',
+  }];
 }
 
 function getRespawnPoint(): Vec2 {
@@ -3060,7 +3604,9 @@ function beginPlayerRespawnSequence(mode: 'topple' | 'pit'): void {
   respawnPending = true;
   respawnInvulnerabilityTimer = 0;
   resetComboState();
-  setPlayerControlLocked(true);
+  resetPlayerLaserState();
+  resetPlayerHeatState();
+  syncPlayerControlLock();
   syncPlayerInvulnerability();
   playerBody.vel.x = 0;
   playerBody.vel.z = 0;
@@ -3087,7 +3633,8 @@ function finishPlayerRespawn(): void {
   resetPlayer(getRespawnPoint());
   resetAwakenableEncounterEntitiesForRespawn();
   resetComboState();
-  setPlayerControlLocked(false);
+  resetPlayerLaserState();
+  resetPlayerHeatState();
   resetAmbientTrack();
   resetAmbientTriggerZones();
   respawnPending = false;
@@ -3098,6 +3645,7 @@ function finishPlayerRespawn(): void {
   enemyComboLockTimer = 0;
   playerLaserHitFxTimer = 0;
   playerKillFallTimer = 0;
+  syncPlayerControlLock();
   syncPlayerInvulnerability();
 }
 
@@ -3192,6 +3740,9 @@ function updateSpiderSystem(delta: number): void {
         playerBody.vel.z += (dz / len) * event.knockback;
       } else if (event.kind === 'web') {
         playerWebTimer = Math.max(playerWebTimer, event.webDuration ?? 0.8);
+        spider.webTetherTimer = Math.max(spider.webTetherTimer, event.webDuration ?? 0.8);
+        spider.webTetherDuration = Math.max(spider.webTetherDuration, event.webDuration ?? 0.8);
+        spider.webTetherTarget.set(playerBody.pos.x, 0.72, playerBody.pos.z);
         playerBody.vel.x *= 0.18;
         playerBody.vel.z *= 0.18;
         emitPlasma(event.point, 18, 0.55);
@@ -3877,6 +4428,8 @@ function animate(): void {
     for (const door of SlidingDoorEntities.getAll()) updateSlidingDoor(door, delta);
     updateCheckpointVisuals(time);
     updatePlayerVisuals(time, 0);
+    updatePlayerHeatAuraVisuals(time);
+    updatePlayerLaserVisuals(time);
     updateCamera(playerBody.pos, playerBody.vel, delta, false);
     updateClashFlashes(delta);
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
@@ -3896,7 +4449,9 @@ function animate(): void {
     updateCheckpointVisuals(time);
     const done = updateTopple(delta);
     if (done) gameOverOverlay.style.display = 'flex';
-    updateHud(playerBody.rpm, time, delta, getComboHudState());
+    updatePlayerHeatAuraVisuals(time);
+    updatePlayerLaserVisuals(time);
+    updateHud(playerBody.rpm, time, delta, getPlayerAbilityHudStates());
     updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
     updateClashFlashes(delta);
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
@@ -3916,7 +4471,9 @@ function animate(): void {
     updateCheckpointVisuals(time);
     const done = updateTopple(delta);
     if (done) completePlayerDeathSequence();
-    updateHud(playerBody.rpm, time, delta, getComboHudState());
+    updatePlayerHeatAuraVisuals(time);
+    updatePlayerLaserVisuals(time);
+    updateHud(playerBody.rpm, time, delta, getPlayerAbilityHudStates());
     updateCamera(playerBody.pos, playerBody.vel, delta, false);
     updateClashFlashes(delta);
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
@@ -3931,12 +4488,12 @@ function animate(): void {
   updateAmbientTriggers();
   if (enemyComboLockTimer > 0) {
     enemyComboLockTimer = Math.max(0, enemyComboLockTimer - delta);
-    if (enemyComboLockTimer <= 0 && !isPlayerInvulnerable()) {
-      setPlayerControlLocked(false);
-    }
+    if (enemyComboLockTimer <= 0) syncPlayerControlLock();
   }
   updateAwakenableEncounterEntities();
+  refreshPlayerAimDir();
   tryStartPlayerCombo();
+  tryStartHeatAttack();
   entityUpdateSystem(delta);
   const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
   for (const e of EnemyEntities.getAll()) updateEnemyAI(e, playerBody.pos, playerBody.radius, playerSpeed, delta);
@@ -3958,6 +4515,8 @@ function animate(): void {
     setMovementMaxSpeed(playerId, spinnerConfig.maxSpeed * PLAYER_WEB_SPEED_MULT);
   }
   updatePlayerCombo(delta);
+  updatePlayerHeat(delta, time);
+  updatePlayerLaser(delta);
 
   // 2. Movement (friction, clamp, position for all registered movables)
   profiler?.nextPhase('movement');
@@ -3985,7 +4544,7 @@ function animate(): void {
       if (respawnPending) completePlayerDeathSequence();
       else gameOverOverlay.style.display = 'flex';
     }
-    updateHud(playerBody.rpm, time, delta, getComboHudState());
+    updateHud(playerBody.rpm, time, delta, getPlayerAbilityHudStates());
     updateCamera(playerBody.pos, playerBody.vel, delta, respawnPending ? false : shouldSnapComboCamera());
     updateClashFlashes(delta);
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
@@ -4086,7 +4645,7 @@ function animate(): void {
     syncWallScrapeLoop(0, 1);
     syncSpinnerMotorLoops([]);
     profiler?.nextPhase('visuals');
-    updateHud(0, time, delta, getComboHudState());
+    updateHud(0, time, delta, getPlayerAbilityHudStates());
     updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
     updateClashFlashes(delta);
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
@@ -4101,6 +4660,8 @@ function animate(): void {
   for (const obs of ObstacleEntities.getAll()) syncObstacle(obs);
   updatePickups(pickups, time, delta);
   updatePlayerVisuals(time, delta);
+  updatePlayerHeatAuraVisuals(time);
+  updatePlayerLaserVisuals(time);
   for (const e of EnemyEntities.getAll()) updateEnemyVisuals(e, time, delta);
   for (const e of LaserSpinnerEntities.getAll()) updateLaserSpinnerVisuals(e, time, delta);
   for (const z of ZombieEntities.getAll()) updateZombieVisuals(z, playerBody.pos, delta, time);
@@ -4114,7 +4675,7 @@ function animate(): void {
   for (const s of BabySlugEntities.getAll()) updateSlugwormVisuals(s, time, delta);
   for (const door of SlidingDoorEntities.getAll()) updateSlidingDoor(door, delta);
   updateCheckpointVisuals(time);
-  updateHud(playerBody.rpm, time, delta, getComboHudState());
+  updateHud(playerBody.rpm, time, delta, getPlayerAbilityHudStates());
   updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
   sampleSpiderMotionDebug(delta);
   profiler?.nextPhase('effects');

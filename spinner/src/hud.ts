@@ -4,17 +4,20 @@ import { spinnerConfig } from './spinnerConfig';
 let el!: HTMLDivElement;
 let labelEl!: HTMLDivElement;
 let fpsEl!: HTMLDivElement;
-let comboWrapEl!: HTMLDivElement;
-let comboFillEl!: HTMLDivElement;
-let comboLabelEl!: HTMLDivElement;
 let wrapEl!: HTMLDivElement;
 let smoothedFps = 60;
+const abilityWrapEls: HTMLDivElement[] = [];
+const abilityFillEls: HTMLDivElement[] = [];
+const abilityLabelEls: HTMLDivElement[] = [];
 
-export interface ComboHudState {
+export interface AbilityHudState {
+  keyLabel: string;
   cooldownFraction: number;
   active: boolean;
   ready: boolean;
   blockedByRpm: boolean;
+  unlocked: boolean;
+  accent: 'combo' | 'heat' | 'spinning';
 }
 
 export function initHud(): void {
@@ -28,23 +31,34 @@ export function initHud(): void {
   labelEl.style.cssText = 'font:600 0.75rem monospace;opacity:0.4;color:#fff;margin-top:-2px';
   labelEl.textContent = 'RPM';
 
-  comboWrapEl = document.createElement('div');
-  comboWrapEl.style.cssText = 'width:148px;height:7px;margin-top:12px;border:1px solid rgba(255,255,255,0.24);background:rgba(7,13,18,0.55);box-shadow:0 0 12px rgba(0,0,0,0.18) inset';
+  abilityWrapEls.length = 0;
+  abilityFillEls.length = 0;
+  abilityLabelEls.length = 0;
+  for (let i = 0; i < 3; i += 1) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'width:158px;height:7px;margin-top:12px;border:1px solid rgba(255,255,255,0.24);background:rgba(7,13,18,0.55);box-shadow:0 0 12px rgba(0,0,0,0.18) inset';
 
-  comboFillEl = document.createElement('div');
-  comboFillEl.style.cssText = 'height:100%;width:0%;transform-origin:left center;transition:width .08s linear, background-color .15s linear, box-shadow .15s linear';
-  comboWrapEl.appendChild(comboFillEl);
+    const fill = document.createElement('div');
+    fill.style.cssText = 'height:100%;width:0%;transform-origin:left center;transition:width .08s linear, background-color .15s linear, box-shadow .15s linear';
+    wrap.appendChild(fill);
 
-  comboLabelEl = document.createElement('div');
-  comboLabelEl.style.cssText = 'font:600 0.7rem monospace;letter-spacing:.06em;opacity:0.68;color:#d7e8ef;margin-top:5px';
+    const label = document.createElement('div');
+    label.style.cssText = 'font:600 0.7rem monospace;letter-spacing:.06em;opacity:0.68;color:#d7e8ef;margin-top:5px';
+
+    abilityWrapEls.push(wrap);
+    abilityFillEls.push(fill);
+    abilityLabelEls.push(label);
+  }
 
   fpsEl = document.createElement('div');
   fpsEl.style.cssText = 'font:600 0.8rem monospace;opacity:0.75;color:#cfd8dc;margin-top:10px';
 
   wrapEl.appendChild(el);
   wrapEl.appendChild(labelEl);
-  wrapEl.appendChild(comboWrapEl);
-  wrapEl.appendChild(comboLabelEl);
+  for (let i = 0; i < abilityWrapEls.length; i += 1) {
+    wrapEl.appendChild(abilityWrapEls[i]);
+    wrapEl.appendChild(abilityLabelEls[i]);
+  }
   wrapEl.appendChild(fpsEl);
   document.body.appendChild(wrapEl);
 }
@@ -54,7 +68,38 @@ export function setHudVisible(visible: boolean): void {
   wrapEl.style.display = visible ? '' : 'none';
 }
 
-export function updateHud(rpm: number, time: number, delta: number, combo: ComboHudState): void {
+function getAbilityPalette(accent: AbilityHudState['accent']): {
+  readyFill: string;
+  readyGlow: string;
+  activeFill: string;
+  activeGlow: string;
+} {
+  switch (accent) {
+    case 'heat':
+      return {
+        readyFill: '#ffb36b',
+        readyGlow: '0 0 12px rgba(255,179,107,0.72)',
+        activeFill: '#ffe3c0',
+        activeGlow: '0 0 14px rgba(255,227,192,0.85)',
+      };
+    case 'spinning':
+      return {
+        readyFill: '#ff79ea',
+        readyGlow: '0 0 12px rgba(255,121,234,0.72)',
+        activeFill: '#ffd5fa',
+        activeGlow: '0 0 14px rgba(255,213,250,0.85)',
+      };
+    default:
+      return {
+        readyFill: '#7ff9ff',
+        readyGlow: '0 0 12px rgba(127,249,255,0.72)',
+        activeFill: '#d7fbff',
+        activeGlow: '0 0 14px rgba(215,251,255,0.85)',
+      };
+  }
+}
+
+export function updateHud(rpm: number, time: number, delta: number, abilities: AbilityHudState[]): void {
   const softCap  = spinnerConfig.rpmCapacity * RPM_SOFT_CAP_RATIO;
   const value    = Math.ceil(Math.max(0, rpm));
   const fraction = Math.max(0, Math.min(rpm, softCap) / softCap);
@@ -83,29 +128,48 @@ export function updateHud(rpm: number, time: number, delta: number, combo: Combo
     el.style.textShadow = `0 0 14px rgba(${r},${g},${b},0.5)`;
   }
 
-  const comboFrac = Math.max(0, Math.min(1, combo.cooldownFraction));
-  comboFillEl.style.width = `${comboFrac * 100}%`;
+  for (let i = 0; i < abilityFillEls.length; i += 1) {
+    const ability = abilities[i];
+    const fill = abilityFillEls[i];
+    const label = abilityLabelEls[i];
+    const palette = getAbilityPalette(ability?.accent ?? 'combo');
 
-  if (combo.active) {
-    comboFillEl.style.backgroundColor = '#d7fbff';
-    comboFillEl.style.boxShadow = '0 0 14px rgba(215,251,255,0.85)';
-    comboLabelEl.textContent = 'X ACTIVE';
-    comboLabelEl.style.color = '#f2fdff';
-  } else if (combo.ready && !combo.blockedByRpm) {
-    comboFillEl.style.backgroundColor = '#7ff9ff';
-    comboFillEl.style.boxShadow = '0 0 12px rgba(127,249,255,0.72)';
-    comboLabelEl.textContent = 'X READY';
-    comboLabelEl.style.color = '#dffcff';
-  } else if (combo.ready) {
-    comboFillEl.style.backgroundColor = '#ff9a5c';
-    comboFillEl.style.boxShadow = '0 0 10px rgba(255,154,92,0.55)';
-    comboLabelEl.textContent = 'LOW RPM';
-    comboLabelEl.style.color = '#ffbf97';
-  } else {
-    comboFillEl.style.backgroundColor = '#8ac6df';
-    comboFillEl.style.boxShadow = '0 0 8px rgba(138,198,223,0.35)';
-    comboLabelEl.textContent = 'X CHARGING';
-    comboLabelEl.style.color = '#a9c6d4';
+    if (!ability) {
+      fill.style.width = '0%';
+      fill.style.backgroundColor = '#445566';
+      fill.style.boxShadow = 'none';
+      label.textContent = '';
+      continue;
+    }
+
+    fill.style.width = `${Math.max(0, Math.min(1, ability.cooldownFraction)) * 100}%`;
+
+    if (!ability.unlocked) {
+      fill.style.backgroundColor = '#4f6370';
+      fill.style.boxShadow = '0 0 8px rgba(79,99,112,0.25)';
+      label.textContent = `${ability.keyLabel} LOCKED`;
+      label.style.color = '#8fa4af';
+    } else if (ability.active) {
+      fill.style.backgroundColor = palette.activeFill;
+      fill.style.boxShadow = palette.activeGlow;
+      label.textContent = `${ability.keyLabel} ACTIVE`;
+      label.style.color = '#f6fbff';
+    } else if (ability.ready && !ability.blockedByRpm) {
+      fill.style.backgroundColor = palette.readyFill;
+      fill.style.boxShadow = palette.readyGlow;
+      label.textContent = `${ability.keyLabel} READY`;
+      label.style.color = '#f1f8fc';
+    } else if (ability.ready) {
+      fill.style.backgroundColor = '#ff9a5c';
+      fill.style.boxShadow = '0 0 10px rgba(255,154,92,0.55)';
+      label.textContent = `${ability.keyLabel} LOW RPM`;
+      label.style.color = '#ffbf97';
+    } else {
+      fill.style.backgroundColor = '#8ac6df';
+      fill.style.boxShadow = '0 0 8px rgba(138,198,223,0.35)';
+      label.textContent = `${ability.keyLabel} CHARGING`;
+      label.style.color = '#a9c6d4';
+    }
   }
 }
 

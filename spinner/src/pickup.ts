@@ -50,7 +50,7 @@ export interface Pickup {
   radius:         number;
   mesh:           THREE.Group;
   collected:      boolean;
-  type:           'normal' | 'hyper' | 'growth';
+  type:           'normal' | 'hyper' | 'growth' | 'combo_unlock' | 'heat_unlock' | 'spinning_laser_unlock';
   floatY:         number;       // base Y for float animation
   proximityBody:  ProximityBody;
   vel:            Vec2;         // eject velocity (zero when settled)
@@ -74,15 +74,24 @@ interface PickupVisual {
   orbitSpeed:  number;
 }
 
-function makePickupVisual(type: 'normal' | 'hyper' | 'growth'): PickupVisual {
+function makePickupVisual(type: Pickup['type']): PickupVisual {
   const isHyper = type === 'hyper';
   const isGrowth = type === 'growth';
+  const isComboUnlock = type === 'combo_unlock';
+  const isHeatUnlock = type === 'heat_unlock';
+  const isSpinningLaserUnlock = type === 'spinning_laser_unlock';
   const color = new THREE.Color(
-    isHyper ? 0x00eeff : isGrowth ? 0xffc05a : 0x00ff88,
+    isHyper ? 0x00eeff
+      : isGrowth ? 0xffc05a
+        : isComboUnlock ? 0x7ff9ff
+          : isHeatUnlock ? 0xff914a
+            : isSpinningLaserUnlock ? 0xff4ad8
+              : 0x00ff88,
   );
-  const orbitRadius = isHyper ? 0.76 : isGrowth ? 0.62 : 0.54;
-  const orbitWidth = isHyper ? 0.075 : isGrowth ? 0.06 : 0.052;
-  const orbitSpeed = -(isHyper ? 8.2 : isGrowth ? 7.1 : 6.6);
+  const isAbilityUnlock = isComboUnlock || isHeatUnlock || isSpinningLaserUnlock;
+  const orbitRadius = isHyper ? 0.76 : isGrowth ? 0.62 : isAbilityUnlock ? 0.66 : 0.54;
+  const orbitWidth = isHyper ? 0.075 : isGrowth ? 0.06 : isAbilityUnlock ? 0.07 : 0.052;
+  const orbitSpeed = -(isHyper ? 8.2 : isGrowth ? 7.1 : isAbilityUnlock ? 7.8 : 6.6);
 
   const mesh = new THREE.Group();
 
@@ -90,8 +99,8 @@ function makePickupVisual(type: 'normal' | 'hyper' | 'growth'): PickupVisual {
     uniforms: {
       uColor:       { value: new THREE.Vector3(color.r, color.g, color.b) },
       uHeadAngle:   { value: 0 },
-      uArcSpan:     { value: isHyper ? Math.PI * 0.34 : Math.PI * 0.26 },
-      uAlpha:       { value: isHyper ? 1.0 : 0.88 },
+      uArcSpan:     { value: isHyper ? Math.PI * 0.34 : isAbilityUnlock ? Math.PI * 0.4 : Math.PI * 0.26 },
+      uAlpha:       { value: isHyper ? 1.0 : isAbilityUnlock ? 0.96 : 0.88 },
       uInnerRadius: { value: orbitRadius - orbitWidth },
       uOuterRadius: { value: orbitRadius + orbitWidth },
     },
@@ -115,9 +124,9 @@ function makePickupVisual(type: 'normal' | 'hyper' | 'growth'): PickupVisual {
     new THREE.MeshStandardMaterial({
       color,
       emissive: color,
-      emissiveIntensity: isHyper ? 0.42 : isGrowth ? 0.34 : 0.28,
+      emissiveIntensity: isHyper ? 0.42 : isGrowth ? 0.34 : isAbilityUnlock ? 0.48 : 0.28,
       transparent: true,
-      opacity: isHyper ? 0.24 : isGrowth ? 0.2 : 0.18,
+      opacity: isHyper ? 0.24 : isGrowth ? 0.2 : isAbilityUnlock ? 0.24 : 0.18,
       roughness: 0.2,
       metalness: 0.08,
       depthWrite: false,
@@ -144,8 +153,8 @@ function makePickupVisual(type: 'normal' | 'hyper' | 'growth'): PickupVisual {
 
   const light = new THREE.PointLight(
     color,
-    isHyper ? 3.8 : isGrowth ? 2.8 : 2.4,
-    isHyper ? 8.5 : isGrowth ? 7.0 : 6.2,
+    isHyper ? 3.8 : isGrowth ? 2.8 : isAbilityUnlock ? 3.3 : 2.4,
+    isHyper ? 8.5 : isGrowth ? 7.0 : isAbilityUnlock ? 7.6 : 6.2,
     1.5,
   );
   mesh.add(light);
@@ -269,6 +278,59 @@ export function createGrowthPickup(pos: Vec2): Pickup {
   return pickup;
 }
 
+function createAbilityPickup(
+  pos: Vec2,
+  type: 'combo_unlock' | 'heat_unlock' | 'spinning_laser_unlock',
+): Pickup {
+  const visual = makePickupVisual(type);
+  const mesh = visual.mesh;
+  mesh.position.set(pos.x, 0.96, pos.z);
+  scene.add(mesh);
+
+  const pickupPos = { x: pos.x, z: pos.z };
+  const proxBody: ProximityBody = {
+    pos: pickupPos,
+    radius: 1.05,
+    active: true,
+    owner: null as unknown,
+  };
+
+  const pickup: Pickup = {
+    pos: pickupPos,
+    radius: 1.05,
+    mesh,
+    collected: false,
+    type,
+    floatY: 0.96,
+    proximityBody: proxBody,
+    vel: { x: 0, z: 0 },
+    settleTimer: 0,
+    orbMat: visual.orbMat,
+    trailMat: visual.trailMat,
+    light: visual.light,
+    orbitRadius: visual.orbitRadius,
+    orbitSpeed: visual.orbitSpeed,
+    orbitPhase: Math.random() * Math.PI * 2,
+  };
+
+  proxBody.owner = pickup;
+  registerProximityBody('pickup', proxBody);
+
+  return pickup;
+}
+
+export function createComboUnlockPickup(pos: Vec2): Pickup {
+  return createAbilityPickup(pos, 'combo_unlock');
+}
+
+export function createHeatUnlockPickup(pos: Vec2): Pickup {
+  return createAbilityPickup(pos, 'heat_unlock');
+}
+
+export function createSpinningLaserUnlockPickup(pos: Vec2): Pickup {
+  return createAbilityPickup(pos, 'spinning_laser_unlock');
+}
+
 // ─── Collection ─────────────────────────────────────────────────────────────
 
 /** Mark a pickup as collected and remove it from the scene. */
@@ -337,6 +399,12 @@ export function updatePickups(
       p.orbMat.emissiveIntensity = pulse * 1.35;
       p.trailMat.uniforms.uAlpha.value = 0.76 + pulse * 0.16;
       p.light.intensity = 1.5 + pulse * 0.8;
+    } else if (p.type === 'combo_unlock' || p.type === 'heat_unlock' || p.type === 'spinning_laser_unlock') {
+      const pulse = 0.78 + 0.22 * Math.sin(time * 4.1 + p.orbitPhase);
+      p.mesh.position.y = p.floatY + Math.sin(time * 2.5 + p.pos.x * 0.4) * 0.16;
+      p.orbMat.emissiveIntensity = pulse * 1.7;
+      p.trailMat.uniforms.uAlpha.value = 0.84 + pulse * 0.18;
+      p.light.intensity = 1.8 + pulse * 1.0;
     } else {
       p.mesh.position.y  = p.floatY + Math.sin(time * 2 + p.pos.x) * 0.15;
       const pulse = 0.82 + 0.18 * Math.sin(time * 3.4 + p.orbitPhase);
