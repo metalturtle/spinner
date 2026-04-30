@@ -247,7 +247,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
   function makeSurfaceMat(color?: string, textureId?: string): THREE.MeshStandardMaterial {
     const hasTexture = Boolean(textureId);
     const baseMap = TextureManager.get(textureId);
-    const debugNormalMap = TextureManager.getNormal(textureId, true);
+    const debugNormalMap = DEBUG_SHOW_NORMAL_AS_ALBEDO ? TextureManager.getNormal(textureId, true) : null;
     const map = DEBUG_SHOW_NORMAL_AS_ALBEDO && debugNormalMap ? debugNormalMap : baseMap;
     return new THREE.MeshStandardMaterial({
       color: getSurfaceColor(color, FLOOR_COLOR, hasTexture),

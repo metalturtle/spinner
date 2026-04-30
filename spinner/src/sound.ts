@@ -23,6 +23,22 @@ const SPIDERLEG_SOUND_KEY = 'spiderleg';
 const SPINNER_MOTOR_SOUND_URL = '/sounds/spinner-motor.mp3';
 const SPINNER_MOTOR_PREFIX = 'spinner-motor:';
 const SPATIAL_MAX_DISTANCE = 64;
+const ONE_SHOT_SOUND_DEFINITIONS = [
+  { key: CLASH_SOUND_KEY, url: CLASH_SOUND_URL },
+  { key: CLASH_SOUND_KEY_2, url: CLASH_SOUND_URL_2 },
+  { key: EXPLOSION_SOUND_KEY, url: EXPLOSION_SOUND_URL },
+  { key: EXPLOSION_SOUND_KEY_2, url: EXPLOSION_SOUND_URL_2 },
+  { key: LASER_SOUND_KEY, url: LASER_SOUND_URL },
+  { key: PICKUP_SOUND_KEY, url: PICKUP_SOUND_URL },
+  { key: ZOMBIE_SLASH_SOUND_KEY, url: ZOMBIE_SLASH_SOUND_URL },
+  { key: ZOMBIE_ROAR_SOUND_KEY, url: ZOMBIE_ROAR_SOUND_URL },
+  { key: SPIDERLEG_SOUND_KEY, url: SPIDERLEG_SOUND_URL },
+] as const;
+const LOOP_SOUND_DEFINITIONS = [
+  { key: SCRAPE_SOUND_KEY, url: SCRAPE_SOUND_URL },
+  { key: getAmbientLoopKey(DEFAULT_AMBIENT_SOUND_URL), url: DEFAULT_AMBIENT_SOUND_URL },
+  { key: `${SPINNER_MOTOR_PREFIX}template`, url: SPINNER_MOTOR_SOUND_URL },
+] as const;
 
 let audioEnabled = false;
 let listenersInstalled = false;
@@ -31,6 +47,7 @@ const preloadedAudio = new Map<string, HTMLAudioElement>();
 const loopingAudio = new Map<string, HTMLAudioElement>();
 const oneShotVoicePools = new Map<string, HTMLAudioElement[]>();
 const oneShotPoolIndices = new Map<string, number>();
+const pendingAudioLoads = new WeakMap<HTMLAudioElement, Promise<void>>();
 const listenerPosition = { x: 0, z: 0 };
 let ambientTrackUrl = DEFAULT_AMBIENT_SOUND_URL;
 let ambientTrackVolume = 0.18;
@@ -75,6 +92,41 @@ function getAmbientLoopKey(url: string): string {
 function resolveAmbientTrackUrl(track: string): string {
   if (track.startsWith('/')) return track;
   return `/sounds/${track}`;
+}
+
+function waitForAudioReady(audio: HTMLAudioElement): Promise<void> {
+  const existing = pendingAudioLoads.get(audio);
+  if (existing) return existing;
+
+  if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+    return Promise.resolve();
+  }
+
+  const promise = new Promise<void>((resolve, reject) => {
+    const cleanup = (): void => {
+      audio.removeEventListener('loadeddata', handleLoaded);
+      audio.removeEventListener('canplaythrough', handleLoaded);
+      audio.removeEventListener('error', handleError);
+      pendingAudioLoads.delete(audio);
+    };
+
+    const handleLoaded = (): void => {
+      cleanup();
+      resolve();
+    };
+
+    const handleError = (): void => {
+      cleanup();
+      reject(audio.error ?? new Error(`Failed to load audio: ${audio.src}`));
+    };
+
+    audio.addEventListener('loadeddata', handleLoaded, { once: true });
+    audio.addEventListener('canplaythrough', handleLoaded, { once: true });
+    audio.addEventListener('error', handleError, { once: true });
+  });
+
+  pendingAudioLoads.set(audio, promise);
+  return promise;
 }
 
 function getPreloadedAudio(key: string, url: string): HTMLAudioElement {
@@ -211,20 +263,37 @@ export function initSound(): void {
   if (listenersInstalled) return;
   listenersInstalled = true;
 
-  getOneShotPool(CLASH_SOUND_KEY, CLASH_SOUND_URL);
-  getOneShotPool(CLASH_SOUND_KEY_2, CLASH_SOUND_URL_2);
-  getOneShotPool(EXPLOSION_SOUND_KEY, EXPLOSION_SOUND_URL);
-  getOneShotPool(EXPLOSION_SOUND_KEY_2, EXPLOSION_SOUND_URL_2);
-  getOneShotPool(LASER_SOUND_KEY, LASER_SOUND_URL);
-  getPreloadedAudio(SCRAPE_SOUND_KEY, SCRAPE_SOUND_URL);
-  getOneShotPool(PICKUP_SOUND_KEY, PICKUP_SOUND_URL);
-  getOneShotPool(ZOMBIE_SLASH_SOUND_KEY, ZOMBIE_SLASH_SOUND_URL);
-  getOneShotPool(ZOMBIE_ROAR_SOUND_KEY, ZOMBIE_ROAR_SOUND_URL);
-  getOneShotPool(SPIDERLEG_SOUND_KEY, SPIDERLEG_SOUND_URL);
-  getLoopingAudio(getAmbientLoopKey(DEFAULT_AMBIENT_SOUND_URL), DEFAULT_AMBIENT_SOUND_URL);
-  getPreloadedAudio(`${SPINNER_MOTOR_PREFIX}template`, SPINNER_MOTOR_SOUND_URL);
+  for (const sound of ONE_SHOT_SOUND_DEFINITIONS) {
+    getOneShotPool(sound.key, sound.url);
+  }
+  for (const sound of LOOP_SOUND_DEFINITIONS) {
+    if (sound.key.startsWith(SPINNER_MOTOR_PREFIX)) getPreloadedAudio(sound.key, sound.url);
+    else getLoopingAudio(sound.key, sound.url);
+  }
   window.addEventListener('pointerdown', unlockAudio, { once: true, passive: true });
   window.addEventListener('keydown', unlockAudio, { once: true });
+}
+
+export async function preloadSoundAssets(extraAmbientTracks: readonly string[] = []): Promise<void> {
+  initSound();
+
+  const pending: Promise<void>[] = [];
+
+  for (const sound of ONE_SHOT_SOUND_DEFINITIONS) {
+    const pool = getOneShotPool(sound.key, sound.url);
+    if (pool.length > 0) pending.push(waitForAudioReady(pool[0]));
+  }
+
+  pending.push(waitForAudioReady(getPreloadedAudio(SCRAPE_SOUND_KEY, SCRAPE_SOUND_URL)));
+  pending.push(waitForAudioReady(getPreloadedAudio(`${SPINNER_MOTOR_PREFIX}template`, SPINNER_MOTOR_SOUND_URL)));
+  pending.push(waitForAudioReady(getLoopingAudio(getAmbientLoopKey(DEFAULT_AMBIENT_SOUND_URL), DEFAULT_AMBIENT_SOUND_URL)));
+
+  for (const track of extraAmbientTracks) {
+    const url = resolveAmbientTrackUrl(track);
+    pending.push(waitForAudioReady(getLoopingAudio(getAmbientLoopKey(url), url)));
+  }
+
+  await Promise.all(pending);
 }
 
 export function setSoundListenerPosition(pos: { x: number; z: number }): void {

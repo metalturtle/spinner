@@ -70,6 +70,13 @@ canvas {
   background: rgba(0, 0, 0, 0.68);
 }
 
+.loading-overlay {
+  background:
+    radial-gradient(circle at top, rgba(255, 141, 43, 0.14), transparent 42%),
+    linear-gradient(180deg, rgba(2, 8, 14, 0.72), rgba(2, 8, 14, 0.92));
+  z-index: 30;
+}
+
 .overlay-card {
   width: min(520px, 100%);
   padding: 28px 30px 24px;
@@ -87,6 +94,10 @@ canvas {
 
 .overlay-card-compact {
   width: min(420px, 100%);
+}
+
+.loading-card h2 {
+  color: var(--ui-text);
 }
 
 .overlay-kicker {
@@ -186,6 +197,34 @@ canvas {
   border-color: rgba(127, 249, 255, 0.6);
   background: linear-gradient(135deg, var(--ui-accent), var(--ui-accent-strong));
   box-shadow: 0 10px 24px rgba(39, 214, 255, 0.2);
+}
+
+.loading-meter {
+  margin-top: 18px;
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 208, 143, 0.28);
+  border-radius: 999px;
+  background: rgba(4, 12, 18, 0.78);
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.24);
+}
+
+.loading-meter-fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ff9a3c, #ffe080);
+  box-shadow: 0 0 20px rgba(255, 174, 74, 0.32);
+  transition: width 0.18s ease;
+}
+
+.loading-meta {
+  margin-top: 10px;
+  color: rgba(255, 229, 192, 0.78);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
 @media (max-width: 640px) {

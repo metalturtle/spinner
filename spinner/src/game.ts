@@ -55,6 +55,7 @@ import {
 import {
   createZombieEnemy, updateZombieAI, updateZombieVisuals, setZombieAwake,
   applyDamageToZombie, isZombieDead, destroyZombieEnemy,
+  preloadZombieAssets,
   ZOMBIE_TIER_1, type ZombieState,
 } from './zombieEnemy';
 import {
@@ -84,6 +85,7 @@ import {
 import {
   createRobotEnemy, updateRobotAI, updateRobotVisuals, setRobotAwake,
   applyDamageToRobot, isRobotDead, destroyRobotEnemy, ROBOT_TIER_1,
+  preloadRobotAssets,
   type RobotEnemyState,
 } from './robotEnemy';
 import {
@@ -121,6 +123,7 @@ import { createSpectorCaptureController } from './spectorCapture';
 import { updateTopDownCulling } from './sceneCulling';
 import {
   initSound,
+  preloadSoundAssets,
   playClashSound,
   playPickupSound,
   playZombieSlashSound,
@@ -132,6 +135,10 @@ import {
   syncWallScrapeLoop,
   type SpinnerMotorLoop,
 } from './sound';
+import { TextureManager } from './textureUtils';
+import { collectLevelAssetManifest } from './levelAssets';
+import { hideLoadingOverlay, showLoadingOverlay, updateLoadingOverlay } from './loadingOverlay';
+import { runLoadTasks, type LoadTask } from './assetLoader';
 
 
 // ─── Level-driven state ──────────────────────────────────────────────────────
@@ -148,6 +155,7 @@ const bundledLevels: Record<Exclude<LevelChoiceId, 'active'>, LevelData> = {
 };
 
 const bundledActiveLevel = levelActive as LevelData;
+const EMPTY_LEVEL: LevelData = { version: 1, gridSize: 1, entities: [] };
 const levelChoices: Array<{ id: LevelChoiceId; label: string }> = [
   { id: 'active', label: 'Active Level (Editor)' },
   { id: 'level1', label: 'Level 1' },
@@ -178,13 +186,51 @@ async function resolveLevel(choice: LevelChoiceId): Promise<LevelData> {
   return bundledLevels[choice];
 }
 
-let currentLevel: LevelData = bundledActiveLevel;
+function buildLevelLoadTasks(level: LevelData): LoadTask[] {
+  const manifest = collectLevelAssetManifest(level);
+  const tasks: LoadTask[] = [];
+
+  if (manifest.textures.length > 0) {
+    tasks.push({
+      label: `Loading textures (${manifest.textures.length})`,
+      weight: Math.max(2, manifest.textures.length * 0.7),
+      run: () => Promise.all(
+        manifest.textures.map((request) => TextureManager.preloadTextureSet(request.textureId, request.useReliefMap)),
+      ).then(() => undefined),
+    });
+  }
+
+  tasks.push({
+    label: 'Loading sound bank',
+    weight: 2.5,
+    run: () => preloadSoundAssets(manifest.ambientTracks),
+  });
+
+  if (manifest.includesRobotAssets) {
+    tasks.push({
+      label: 'Loading drone model',
+      weight: 3,
+      run: () => preloadRobotAssets(),
+    });
+  }
+
+  if (manifest.includesZombieAssets) {
+    tasks.push({
+      label: 'Loading zombie rig',
+      weight: 3.5,
+      run: () => preloadZombieAssets(),
+    });
+  }
+
+  // Shader precompile should slot in here once we add scene warmup.
+  return tasks;
+}
+
+let currentLevel: LevelData = EMPTY_LEVEL;
 
 
 // ─── Scene Setup ─────────────────────────────────────────────────────────────
 
-createArena(scene, currentLevel);
-setupLevelLights(scene, currentLevel);
 initHud();
 setHudVisible(false);
 initCamera();
@@ -2222,9 +2268,14 @@ async function startSelectedLevel(): Promise<void> {
   setMenuBusy(true, selectedLevelId === 'active'
     ? 'Loading the editor level...'
     : 'Loading the arena...');
+  showLoadingOverlay('Loading Arena', selectedLevelId === 'active'
+    ? 'Reading the editor level...'
+    : 'Reading level data...');
 
   try {
-    currentLevel = await resolveLevel(selectedLevelId);
+    const resolvedLevel = await resolveLevel(selectedLevelId);
+    await runLoadTasks(buildLevelLoadTasks(resolvedLevel), updateLoadingOverlay);
+    currentLevel = resolvedLevel;
     createArena(scene, currentLevel);
     resetGame();
     gameOver = false;
@@ -2232,10 +2283,13 @@ async function startSelectedLevel(): Promise<void> {
     setMenuVisible(false);
   } catch (error) {
     console.error('Failed to start level:', error);
+    hideLoadingOverlay();
+    setMenuVisible(true);
     setMenuBusy(false, 'Could not load that level. Check the console for details.');
     return;
   }
 
+  hideLoadingOverlay();
   setMenuBusy(false, 'WASD to move, Shift to sprint, X for combo, M to return to the menu.');
 }
 

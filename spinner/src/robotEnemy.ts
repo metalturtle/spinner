@@ -15,35 +15,60 @@ const DRONE_MODEL_SCALE = 1.35;
 
 let cachedDroneGltf: { scene: THREE.Group; animations: THREE.AnimationClip[] } | null = null;
 const pendingDroneCallbacks: Array<(payload: { scene: THREE.Group; animations: THREE.AnimationClip[] }) => void> = [];
+let pendingDroneLoad: Promise<{ scene: THREE.Group; animations: THREE.AnimationClip[] }> | null = null;
+
+function cloneDronePayload(payload: { scene: THREE.Group; animations: THREE.AnimationClip[] }): {
+  scene: THREE.Group;
+  animations: THREE.AnimationClip[];
+} {
+  return {
+    scene: clone(payload.scene) as THREE.Group,
+    animations: payload.animations,
+  };
+}
+
+function loadDroneAsset(): Promise<{ scene: THREE.Group; animations: THREE.AnimationClip[] }> {
+  if (cachedDroneGltf) return Promise.resolve(cachedDroneGltf);
+  if (pendingDroneLoad) return pendingDroneLoad;
+
+  const loader = new GLTFLoader();
+  pendingDroneLoad = new Promise((resolve, reject) => {
+    loader.load(
+      DRONE_URL,
+      (gltf) => {
+        cachedDroneGltf = { scene: gltf.scene, animations: gltf.animations };
+        pendingDroneLoad = null;
+        for (const fn of pendingDroneCallbacks) {
+          fn(cloneDronePayload(cachedDroneGltf));
+        }
+        pendingDroneCallbacks.length = 0;
+        resolve(cachedDroneGltf);
+      },
+      undefined,
+      (err) => {
+        pendingDroneLoad = null;
+        pendingDroneCallbacks.length = 0;
+        console.error('[robotEnemy] Failed to load drone model:', err);
+        reject(err);
+      },
+    );
+  });
+  return pendingDroneLoad;
+}
+
+export async function preloadRobotAssets(): Promise<void> {
+  await loadDroneAsset();
+}
 
 function getDroneAsset(cb: (payload: { scene: THREE.Group; animations: THREE.AnimationClip[] }) => void): void {
   if (cachedDroneGltf) {
-    cb({
-      scene: clone(cachedDroneGltf.scene) as THREE.Group,
-      animations: cachedDroneGltf.animations,
-    });
+    cb(cloneDronePayload(cachedDroneGltf));
     return;
   }
 
   pendingDroneCallbacks.push(cb);
   if (pendingDroneCallbacks.length > 1) return;
-
-  const loader = new GLTFLoader();
-  loader.load(
-    DRONE_URL,
-    (gltf) => {
-      cachedDroneGltf = { scene: gltf.scene, animations: gltf.animations };
-      for (const fn of pendingDroneCallbacks) {
-        fn({
-          scene: clone(gltf.scene) as THREE.Group,
-          animations: gltf.animations,
-        });
-      }
-      pendingDroneCallbacks.length = 0;
-    },
-    undefined,
-    (err) => console.error('[robotEnemy] Failed to load drone model:', err),
-  );
+  void loadDroneAsset().catch(() => {});
 }
 
 // ─── Config ──────────────────────────────────────────────────────────────────

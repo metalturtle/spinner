@@ -67,8 +67,20 @@ export function applyWallExtrusionUVs(
 
 export class TextureManager {
   private static cache = new Map<string, THREE.Texture>();
+  private static pending = new Map<string, Promise<THREE.Texture>>();
   private static loader = new THREE.TextureLoader();
   private static exrLoader = new EXRLoader();
+
+  private static configureTexture(texture: THREE.Texture, isColor: boolean, isExr: boolean): THREE.Texture {
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.colorSpace = isColor ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = isExr ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter;
+    texture.generateMipmaps = !isExr;
+    texture.needsUpdate = true;
+    return texture;
+  }
 
   private static load(src: string, isColor: boolean): THREE.Texture {
     const cacheKey = `${isColor ? 'color' : 'data'}:${src}`;
@@ -77,16 +89,32 @@ export class TextureManager {
 
     const isExr = src.toLowerCase().endsWith('.exr');
     const loader = isExr ? this.exrLoader : this.loader;
-    const texture = loader.load(src);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.colorSpace = isColor ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-    texture.magFilter = THREE.LinearFilter;
-    texture.minFilter = isExr ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter;
-    texture.generateMipmaps = !isExr;
-    texture.needsUpdate = true;
+    const texture = this.configureTexture(loader.load(src), isColor, isExr);
     this.cache.set(cacheKey, texture);
     return texture;
+  }
+
+  private static async preload(src: string, isColor: boolean): Promise<THREE.Texture> {
+    const cacheKey = `${isColor ? 'color' : 'data'}:${src}`;
+    const existing = this.cache.get(cacheKey);
+    if (existing) return existing;
+
+    const pending = this.pending.get(cacheKey);
+    if (pending) return pending;
+
+    const isExr = src.toLowerCase().endsWith('.exr');
+    const loader = isExr ? this.exrLoader : this.loader;
+    const promise = loader.loadAsync(src).then((texture) => {
+      const configured = this.configureTexture(texture, isColor, isExr);
+      this.cache.set(cacheKey, configured);
+      this.pending.delete(cacheKey);
+      return configured;
+    }).catch((error) => {
+      this.pending.delete(cacheKey);
+      throw error;
+    });
+    this.pending.set(cacheKey, promise);
+    return promise;
   }
 
   static get(textureId?: string): THREE.Texture | null {
@@ -108,5 +136,22 @@ export class TextureManager {
     const definition = getTextureDefinition(textureId);
     if (!definition?.bumpSrc) return null;
     return this.load(definition.bumpSrc, false);
+  }
+
+  static async preloadTextureSet(textureId?: string, useReliefMap = false): Promise<void> {
+    const definition = getTextureDefinition(textureId);
+    if (!definition) return;
+
+    await this.preload(definition.src, true);
+    if (!useReliefMap) return;
+
+    const extraLoads: Promise<THREE.Texture>[] = [];
+    if (definition.normalSrc && !definition.normalSrc.toLowerCase().endsWith('.exr')) {
+      extraLoads.push(this.preload(definition.normalSrc, false));
+    }
+    if (definition.bumpSrc) {
+      extraLoads.push(this.preload(definition.bumpSrc, false));
+    }
+    await Promise.all(extraLoads);
   }
 }

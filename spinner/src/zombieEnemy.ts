@@ -10,7 +10,7 @@ import {
 } from './systems';
 import { playZombieRoarSound } from './sound';
 
-const ZOMBIE_MODEL_URL = new URL('../models/zombie/ZombieSmooth.fbx', import.meta.url).href;
+const ZOMBIE_MODEL_URL = new URL('../models/zombie/Zombie.fbx', import.meta.url).href;
 const ZOMBIE_IDLE_URL = new URL('../models/zombie/sword and shield idle.fbx', import.meta.url).href;
 const ZOMBIE_ATTACK_URL = new URL('../models/zombie/sword and shield attack.fbx', import.meta.url).href;
 
@@ -27,80 +27,94 @@ interface ZombieAssetBundle {
 
 let cachedZombieAssets: ZombieAssetBundle | null = null;
 const pendingZombieCallbacks: Array<(bundle: ZombieAssetBundle) => void> = [];
+let pendingZombieLoad: Promise<ZombieAssetBundle> | null = null;
+
+function cloneZombieBundle(bundle: ZombieAssetBundle): ZombieAssetBundle {
+  return {
+    scene: clone(bundle.scene) as THREE.Group,
+    clips: bundle.clips,
+  };
+}
 
 function fulfillPendingZombieCallbacks(bundle: ZombieAssetBundle): void {
   cachedZombieAssets = bundle;
   while (pendingZombieCallbacks.length > 0) {
-    pendingZombieCallbacks.shift()!(bundle);
+    pendingZombieCallbacks.shift()!(cloneZombieBundle(bundle));
   }
 }
 
-function loadZombieAssets(): void {
+function loadZombieAssets(): Promise<ZombieAssetBundle> {
+  if (cachedZombieAssets) return Promise.resolve(cachedZombieAssets);
+  if (pendingZombieLoad) return pendingZombieLoad;
+
   const loader = new FBXLoader();
-  const clips: Partial<Record<ZombieAnim, THREE.AnimationClip>> = {};
-  let baseScene: THREE.Group | null = null;
-  let remaining = 3;
+  pendingZombieLoad = new Promise((resolve) => {
+    const clips: Partial<Record<ZombieAnim, THREE.AnimationClip>> = {};
+    let baseScene: THREE.Group | null = null;
+    let remaining = 3;
 
-  const finish = (): void => {
-    remaining -= 1;
-    if (remaining > 0) return;
+    const finish = (): void => {
+      remaining -= 1;
+      if (remaining > 0) return;
 
-    if (!baseScene) {
-      baseScene = new THREE.Group();
-    }
+      if (!baseScene) {
+        baseScene = new THREE.Group();
+      }
 
-    baseScene.traverse((obj) => {
-      const mesh = obj as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-    });
+      baseScene.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      });
 
-    fulfillPendingZombieCallbacks({ scene: baseScene, clips });
-  };
+      const bundle = { scene: baseScene, clips };
+      pendingZombieLoad = null;
+      fulfillPendingZombieCallbacks(bundle);
+      resolve(bundle);
+    };
 
-  const onModelLoad = (fbx: THREE.Group): void => {
-    baseScene = fbx;
-    const clip = fbx.animations[0];
-    if (clip) clips.walk = clip;
-    finish();
-  };
+    const onModelLoad = (fbx: THREE.Group): void => {
+      baseScene = fbx;
+      const clip = fbx.animations[0];
+      if (clip) clips.walk = clip;
+      finish();
+    };
 
-  const onAnimationLoad = (anim: ZombieAnim) => (fbx: THREE.Group): void => {
-    const clip = fbx.animations[0];
-    if (clip) clips[anim] = clip;
-    finish();
-  };
+    const onAnimationLoad = (anim: ZombieAnim) => (fbx: THREE.Group): void => {
+      const clip = fbx.animations[0];
+      if (clip) clips[anim] = clip;
+      finish();
+    };
 
-  const onError = (label: string) => (err: unknown): void => {
-    console.error(`[zombieEnemy] Failed to load ${label}:`, err);
-    finish();
-  };
+    const onError = (label: string) => (err: unknown): void => {
+      console.error(`[zombieEnemy] Failed to load ${label}:`, err);
+      finish();
+    };
 
-  loader.load(ZOMBIE_MODEL_URL, onModelLoad, undefined, onError('model'));
-  loader.load(ZOMBIE_IDLE_URL, onAnimationLoad('idle'), undefined, onError('idle'));
-  loader.load(ZOMBIE_ATTACK_URL, onAnimationLoad('attack'), undefined, onError('attack'));
+    loader.load(ZOMBIE_MODEL_URL, onModelLoad, undefined, onError('model'));
+    loader.load(ZOMBIE_IDLE_URL, onAnimationLoad('idle'), undefined, onError('idle'));
+    loader.load(ZOMBIE_ATTACK_URL, onAnimationLoad('attack'), undefined, onError('attack'));
+  });
+
+  return pendingZombieLoad;
 }
 
 function getZombieAssets(cb: (bundle: ZombieAssetBundle) => void): void {
   if (cachedZombieAssets) {
-    cb({
-      scene: clone(cachedZombieAssets.scene) as THREE.Group,
-      clips: cachedZombieAssets.clips,
-    });
+    cb(cloneZombieBundle(cachedZombieAssets));
     return;
   }
 
-  pendingZombieCallbacks.push((bundle) => {
-    cb({
-      scene: clone(bundle.scene) as THREE.Group,
-      clips: bundle.clips,
-    });
-  });
+  pendingZombieCallbacks.push(cb);
 
   if (pendingZombieCallbacks.length === 1) {
-    loadZombieAssets();
+    void loadZombieAssets();
   }
+}
+
+export async function preloadZombieAssets(): Promise<void> {
+  await loadZombieAssets();
 }
 
 export interface ZombieConfig {
