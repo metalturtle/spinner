@@ -20,10 +20,10 @@ export interface TurretConfig {
 
 export const TURRET_TIER_1: TurretConfig = {
   hp:                  10,
-  fireCooldown:        2.0,
-  projectileSpeed:     14.0,
+  fireCooldown:        .2,
+  projectileSpeed:     30.0,
   projectileDamage:    15,
-  barrelRotationSpeed: 2.5,
+  barrelRotationSpeed: 5.5,
   heatFactor:          0.1,
   mass:                2.0,
   radius:              0.75,

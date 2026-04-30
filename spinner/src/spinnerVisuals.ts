@@ -4,7 +4,7 @@ import type { SpinnerMotionVisuals } from './top';
 
 // ─── Shared visual constants for all spinners ────────────────────────────────
 
-export const MAX_TILT   = 0.28;
+export const MAX_TILT   = 0.25;
 export const TILT_SPEED = 8;
 const GREY = new THREE.Color(0x555555);
 
@@ -84,9 +84,13 @@ export function updateSpinnerVisuals(
     const haloStrength = Math.max(0, spinFrac * 0.18 + speedFrac * 0.2 - 0.04);
     const haloPulse = 0.94 + Math.sin(time * Math.PI * 10) * 0.06;
     const haloScale = 1 + speedFrac * 0.16 + Math.max(0, spinFrac - 0.75) * 0.08;
+    const overFrac = spinFrac > 1 ? Math.min(1.25, spinFrac - 1) : 0;
+    const auraPulse = 0.9 + Math.sin(time * Math.PI * 8) * 0.1;
 
     motionVisuals.speedHalo.visible = haloStrength > 0.015;
     motionVisuals.speedHalo.scale.setScalar(haloScale * haloPulse);
     motionVisuals.speedHaloMat.opacity = Math.min(0.52, haloStrength);
+    motionVisuals.auraLight.intensity = (20.25 + rpmFrac * 0.6 + speedFrac * 0.4 + overFrac * 0.5) * auraPulse;
+    motionVisuals.auraLight.distance = 10 + rpmFrac * 2.4 + overFrac * 1.6;
   }
 }

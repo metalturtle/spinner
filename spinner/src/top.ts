@@ -3,6 +3,7 @@ import * as THREE from 'three';
 export interface SpinnerMotionVisuals {
   speedHalo: THREE.Mesh;
   speedHaloMat: THREE.MeshBasicMaterial;
+  auraLight: THREE.PointLight;
 }
 
 export interface TopResult {
@@ -85,6 +86,13 @@ export function createTop(color: number = 0xe94560): TopResult {
     side: THREE.DoubleSide,
     depthWrite: false,
   });
+  const auraLight = new THREE.PointLight(
+    color,
+    15.25,
+    10,
+    1.8,
+  );
+  auraLight.castShadow = false;
 
   const root = new THREE.Group();
   root.position.y = 0.48;
@@ -180,8 +188,10 @@ export function createTop(color: number = 0xe94560): TopResult {
     speedHaloMat,
   );
   speedHalo.rotation.x = -Math.PI / 2;
-  speedHalo.position.y = -0.32;
+  speedHalo.position.y = 0.22;
   root.add(speedHalo);
+  auraLight.position.y = 0.86;
+  root.add(auraLight);
 
   const syncColor = new THREE.Color();
   const glowColor = new THREE.Color();
@@ -206,6 +216,6 @@ export function createTop(color: number = 0xe94560): TopResult {
     tiltGroup,
     spinGroup,
     bodyMat,
-    motionVisuals: { speedHalo, speedHaloMat },
+    motionVisuals: { speedHalo, speedHaloMat, auraLight },
   };
 }
