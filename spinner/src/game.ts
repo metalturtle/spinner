@@ -101,6 +101,10 @@ import { updateLavaSurfaces } from './lavaSurface';
 import { initLavaEmbers, resetLavaEmbers, updateLavaEmbers } from './lavaEmbers';
 import { createFireTorch, destroyFireTorch, type FireTorch, updateFireTorch } from './fireTorch';
 import { initSpaceBackground, updateSpaceBackground } from './spaceBackground';
+import {
+  createSlidingDoor, defaultSlidingDoorConfig, destroySlidingDoor,
+  setSlidingDoorOpen, updateSlidingDoor, type SlidingDoorState,
+} from './slidingDoor';
 import type { LevelCircle, LevelEntity, LevelPolygon } from './levelLoader';
 import { consumeSpecialPressed } from './input';
 
@@ -179,6 +183,7 @@ const RobotEntities       = defineEntityType({ create: createRobotEnemy,    dest
 const HiveEntities        = defineEntityType({ create: createHiveBoss,      destroy: destroyHiveBoss      });
 const BigSlugEntities     = defineEntityType({ create: createSlugworm,      destroy: destroySlugworm      });
 const BabySlugEntities    = defineEntityType({ create: createSlugworm,      destroy: destroySlugworm      });
+const SlidingDoorEntities = defineEntityType({ create: createSlidingDoor,   destroy: destroySlidingDoor   });
 
 // ─── Collision Pair Handlers (permanent, registered once) ────────────────────
 
@@ -192,6 +197,7 @@ registerCollisionPair('player', 'turret', (_playerCol, turretCol, hit) => {
     * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor;
   if (applyDamageToTurret(turret, hpDamage)) {
     const pos = { x: turret.pos.x, z: turret.pos.z };
+    unregisterEncounterMember(turret.id);
     TurretEntities.destroy(turret);
     explosions.push(createExplosion(pos));
   }
@@ -583,6 +589,14 @@ interface SpawnTriggerZone extends AreaZone {
   fired: boolean;
 }
 
+interface EncounterState extends AreaZone {
+  id: string;
+  activated: boolean;
+  cleared: boolean;
+  liveEntityIds: Set<number>;
+  doorIds: Set<number>;
+}
+
 interface FallingVictim {
   roots: THREE.Object3D[];
   primaryRoot: THREE.Object3D;
@@ -604,12 +618,38 @@ interface FallableActor {
   beginFall: () => void;
 }
 
+interface CheckpointState {
+  id: string;
+  pos: Vec2;
+  radius: number;
+  pulseOffset: number;
+  activated: boolean;
+  current: boolean;
+  group: THREE.Group;
+  baseRing: THREE.Mesh;
+  haloRing: THREE.Mesh;
+  beacon: THREE.Mesh;
+  core: THREE.Mesh;
+}
+
 const spawnTriggerZones: SpawnTriggerZone[] = [];
 const killFallZones: AreaZone[] = [];
+const encounters = new Map<string, EncounterState>();
+const levelEntityEncounterIds = new Map<string, string>();
+const runtimeEncounterEntityIds = new Map<number, string>();
+const slidingDoorsById = new Map<number, SlidingDoorState>();
+const closeTriggerDoorIds = new Map<string, Set<number>>();
 const fallingVictims: FallingVictim[] = [];
 const fallableActors: FallableActor[] = [];
+const checkpoints: CheckpointState[] = [];
 const KILL_FALL_DELAY = 0.5;
+const DEFAULT_CHECKPOINT_RADIUS = 1.6;
+const RESPAWN_INVULNERABILITY_DURATION = 1.6;
 let playerKillFallTimer = 0;
+let playerSpawnPoint: Vec2 = { x: 0, z: 0 };
+let activeCheckpoint: CheckpointState | null = null;
+let respawnPending = false;
+let respawnInvulnerabilityTimer = 0;
 
 function readStringProperty(props: Record<string, unknown> | undefined, key: string): string | null {
   const raw = props?.[key];
@@ -621,6 +661,180 @@ function readStringProperty(props: Record<string, unknown> | undefined, key: str
 function readBooleanProperty(props: Record<string, unknown> | undefined, key: string): boolean {
   const raw = props?.[key];
   return raw === true || raw === 'true' || raw === '1';
+}
+
+function readNumberProperty(props: Record<string, unknown> | undefined, key: string, fallback: number, min?: number): number {
+  const raw = props?.[key];
+  const parsed = typeof raw === 'number' ? raw : parseFloat(String(raw ?? ''));
+  if (!Number.isFinite(parsed)) return fallback;
+  return min === undefined ? parsed : Math.max(min, parsed);
+}
+
+function disposeObject3D(root: THREE.Object3D): void {
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (mesh.geometry) mesh.geometry.dispose();
+
+    const { material } = mesh;
+    if (Array.isArray(material)) {
+      for (const entry of material) entry.dispose();
+    } else {
+      material?.dispose();
+    }
+  });
+}
+
+function createCheckpointMarker(pos: Vec2): CheckpointState {
+  const group = new THREE.Group();
+  group.position.set(pos.x, 0, pos.z);
+
+  const baseRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.9, 0.09, 12, 42),
+    new THREE.MeshStandardMaterial({
+      color: 0xc8863f,
+      emissive: 0x6a2e07,
+      emissiveIntensity: 0.7,
+      metalness: 0.15,
+      roughness: 0.35,
+    }),
+  );
+  baseRing.rotation.x = Math.PI / 2;
+  baseRing.position.y = 0.06;
+  group.add(baseRing);
+
+  const haloRing = new THREE.Mesh(
+    new THREE.TorusGeometry(1.18, 0.05, 10, 32),
+    new THREE.MeshBasicMaterial({
+      color: 0xffc66f,
+      transparent: true,
+      opacity: 0.38,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  haloRing.rotation.x = Math.PI / 2;
+  haloRing.position.y = 0.1;
+  group.add(haloRing);
+
+  const beacon = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.16, 1.35, 8),
+    new THREE.MeshStandardMaterial({
+      color: 0xf8d084,
+      emissive: 0xc07a19,
+      emissiveIntensity: 1.1,
+      metalness: 0.05,
+      roughness: 0.28,
+    }),
+  );
+  beacon.position.y = 0.72;
+  group.add(beacon);
+
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(0.2, 16, 16),
+    new THREE.MeshBasicMaterial({
+      color: 0xfff2bf,
+      transparent: true,
+      opacity: 0.92,
+    }),
+  );
+  core.position.y = 1.42;
+  group.add(core);
+
+  scene.add(group);
+
+  return {
+    id: '',
+    pos: cloneVec2(pos),
+    radius: DEFAULT_CHECKPOINT_RADIUS,
+    pulseOffset: Math.random() * Math.PI * 2,
+    activated: false,
+    current: false,
+    group,
+    baseRing,
+    haloRing,
+    beacon,
+    core,
+  };
+}
+
+function refreshCheckpointVisual(checkpoint: CheckpointState, now: number): void {
+  const pulse = 0.5 + 0.5 * Math.sin(now * 3.2 + checkpoint.pulseOffset);
+  const reached = checkpoint.activated;
+  const current = checkpoint.current;
+
+  const ringMat = checkpoint.baseRing.material as THREE.MeshStandardMaterial;
+  const haloMat = checkpoint.haloRing.material as THREE.MeshBasicMaterial;
+  const beaconMat = checkpoint.beacon.material as THREE.MeshStandardMaterial;
+  const coreMat = checkpoint.core.material as THREE.MeshBasicMaterial;
+
+  const ringColor = current ? 0x6cf0ff : reached ? 0x72ffb1 : 0xc8863f;
+  const emissiveColor = current ? 0x2aa4c5 : reached ? 0x159355 : 0x6a2e07;
+  const haloColor = current ? 0x8cf7ff : reached ? 0x8cffc4 : 0xffc66f;
+  const coreColor = current ? 0xe8ffff : reached ? 0xe9ffe7 : 0xfff2bf;
+
+  ringMat.color.setHex(ringColor);
+  ringMat.emissive.setHex(emissiveColor);
+  ringMat.emissiveIntensity = current ? 1.35 + pulse * 0.4 : reached ? 0.9 + pulse * 0.2 : 0.6 + pulse * 0.14;
+
+  haloMat.color.setHex(haloColor);
+  haloMat.opacity = current ? 0.42 + pulse * 0.22 : reached ? 0.26 + pulse * 0.1 : 0.24 + pulse * 0.08;
+
+  beaconMat.color.setHex(current ? 0xb9f7ff : reached ? 0xc4ffd7 : 0xf8d084);
+  beaconMat.emissive.setHex(current ? 0x46d0ff : reached ? 0x2dbb77 : 0xc07a19);
+  beaconMat.emissiveIntensity = current ? 1.6 + pulse * 0.45 : reached ? 1.0 + pulse * 0.18 : 1.0 + pulse * 0.12;
+
+  coreMat.color.setHex(coreColor);
+  coreMat.opacity = current ? 0.78 + pulse * 0.2 : reached ? 0.65 + pulse * 0.1 : 0.58 + pulse * 0.08;
+
+  checkpoint.baseRing.rotation.z = now * 0.35 + checkpoint.pulseOffset * 0.12;
+  checkpoint.haloRing.rotation.z = -now * 0.5 + checkpoint.pulseOffset * 0.18;
+  checkpoint.haloRing.scale.setScalar(0.98 + pulse * 0.08);
+  checkpoint.core.position.y = 1.36 + pulse * 0.14;
+}
+
+function updateCheckpointVisuals(now: number): void {
+  for (const checkpoint of checkpoints) {
+    refreshCheckpointVisual(checkpoint, now);
+  }
+}
+
+function clearCheckpoints(): void {
+  while (checkpoints.length > 0) {
+    const checkpoint = checkpoints.pop()!;
+    scene.remove(checkpoint.group);
+    disposeObject3D(checkpoint.group);
+  }
+  activeCheckpoint = null;
+}
+
+function setCurrentCheckpoint(checkpoint: CheckpointState | null): void {
+  activeCheckpoint = checkpoint;
+  for (const entry of checkpoints) {
+    entry.current = entry === checkpoint;
+    if (entry === checkpoint) entry.activated = true;
+  }
+}
+
+function activateCheckpoint(checkpoint: CheckpointState): void {
+  if (activeCheckpoint === checkpoint) return;
+  setCurrentCheckpoint(checkpoint);
+  emitPlasma({ x: checkpoint.pos.x, y: 0.95, z: checkpoint.pos.z }, 18, 0.55);
+  emitSparks(
+    { x: checkpoint.pos.x, y: 0.15, z: checkpoint.pos.z },
+    { x: 0, y: 1, z: 0 },
+    24,
+    0.8,
+  );
+}
+
+function updateCheckpointActivation(): void {
+  for (const checkpoint of checkpoints) {
+    const dx = playerBody.pos.x - checkpoint.pos.x;
+    const dz = playerBody.pos.z - checkpoint.pos.z;
+    if (dx * dx + dz * dz <= checkpoint.radius * checkpoint.radius) {
+      activateCheckpoint(checkpoint);
+    }
+  }
 }
 
 function isPointInPolygon(point: { x: number; z: number }, vertices: { x: number; z: number }[]): boolean {
@@ -662,9 +876,148 @@ function buildAreaZoneFromCircle(circle: LevelCircle): AreaZone | null {
   };
 }
 
+function isEncounterTargetEntity(ent: LevelEntity): boolean {
+  switch (ent.type) {
+    case 'turret':
+    case 'enemy_spinner':
+    case 'enemy_spinner_tier_1':
+    case 'enemy_spinner_tier_2':
+    case 'enemy_spinner_tier_3':
+    case 'zombie':
+    case 'robot':
+    case 'dreadnought':
+    case 'siege_engine':
+    case 'spider_reliquary':
+    case 'octoboss':
+    case 'hive_boss':
+    case 'slug_big':
+    case 'slug_baby':
+      return true;
+    default:
+      return readBooleanProperty(ent.properties, 'encounterTarget');
+  }
+}
+
+function getEncounterForPoint(point: Vec2): EncounterState | null {
+  for (const encounter of encounters.values()) {
+    if (encounter.contains(point)) return encounter;
+  }
+  return null;
+}
+
+function openEncounterDoors(encounter: EncounterState): void {
+  for (const doorId of encounter.doorIds) {
+    const door = slidingDoorsById.get(doorId);
+    if (door) setSlidingDoorOpen(door, true);
+  }
+}
+
+function closeEncounterDoors(encounter: EncounterState): void {
+  for (const doorId of encounter.doorIds) {
+    const door = slidingDoorsById.get(doorId);
+    if (door) setSlidingDoorOpen(door, false);
+  }
+}
+
+function clearEncounter(encounter: EncounterState): void {
+  encounter.cleared = true;
+  openEncounterDoors(encounter);
+}
+
+function activateEncounter(id: string): void {
+  const encounter = encounters.get(id);
+  if (!encounter || encounter.activated) return;
+  encounter.activated = true;
+  if (encounter.liveEntityIds.size === 0) {
+    clearEncounter(encounter);
+    return;
+  }
+  closeEncounterDoors(encounter);
+}
+
+function registerEncounterMember(levelEntity: LevelEntity, runtimeId: number): void {
+  const encounterId = levelEntityEncounterIds.get(levelEntity.id);
+  if (!encounterId) return;
+  const encounter = encounters.get(encounterId);
+  if (!encounter) return;
+
+  encounter.liveEntityIds.add(runtimeId);
+  runtimeEncounterEntityIds.set(runtimeId, encounterId);
+}
+
+function unregisterEncounterMember(runtimeId: number): void {
+  const encounterId = runtimeEncounterEntityIds.get(runtimeId);
+  if (!encounterId) return;
+  runtimeEncounterEntityIds.delete(runtimeId);
+
+  const encounter = encounters.get(encounterId);
+  if (!encounter) return;
+  encounter.liveEntityIds.delete(runtimeId);
+
+  if (encounter.activated && !encounter.cleared && encounter.liveEntityIds.size === 0) {
+    clearEncounter(encounter);
+  }
+}
+
+function registerEncounterDoor(door: SlidingDoorState): void {
+  slidingDoorsById.set(door.id, door);
+  if (!door.encounterId) return;
+
+  const encounter = encounters.get(door.encounterId);
+  if (!encounter) return;
+  encounter.doorIds.add(door.id);
+
+  if (encounter.cleared) {
+    setSlidingDoorOpen(door, true);
+  } else if (encounter.activated && encounter.liveEntityIds.size > 0) {
+    setSlidingDoorOpen(door, false);
+  }
+}
+
+function registerCloseTriggerDoor(door: SlidingDoorState): void {
+  if (!door.closeTriggerId) return;
+  const existing = closeTriggerDoorIds.get(door.closeTriggerId);
+  if (existing) existing.add(door.id);
+  else closeTriggerDoorIds.set(door.closeTriggerId, new Set([door.id]));
+}
+
+function unregisterEncounterDoor(door: SlidingDoorState): void {
+  slidingDoorsById.delete(door.id);
+  if (!door.encounterId) return;
+  const encounter = encounters.get(door.encounterId);
+  encounter?.doorIds.delete(door.id);
+}
+
+function unregisterCloseTriggerDoor(door: SlidingDoorState): void {
+  if (!door.closeTriggerId) return;
+  const ids = closeTriggerDoorIds.get(door.closeTriggerId);
+  if (!ids) return;
+  ids.delete(door.id);
+  if (ids.size === 0) closeTriggerDoorIds.delete(door.closeTriggerId);
+}
+
+function activateCloseTrigger(triggerId: string): void {
+  const doorIds = closeTriggerDoorIds.get(triggerId);
+  if (!doorIds) return;
+  for (const doorId of doorIds) {
+    const door = slidingDoorsById.get(doorId);
+    if (door) setSlidingDoorOpen(door, false);
+  }
+}
+
 function rebuildTriggerZones(level: LevelData): void {
   spawnTriggerZones.length = 0;
   killFallZones.length = 0;
+  encounters.clear();
+  levelEntityEncounterIds.clear();
+
+  const encounterZones = new Map<string, AreaZone[]>();
+
+  function recordEncounterZone(triggerId: string, zone: AreaZone): void {
+    const zonesForEncounter = encounterZones.get(triggerId);
+    if (zonesForEncounter) zonesForEncounter.push(zone);
+    else encounterZones.set(triggerId, [zone]);
+  }
 
   for (const poly of level.polygons ?? []) {
     if (poly.layer !== 'trigger') continue;
@@ -674,6 +1027,7 @@ function rebuildTriggerZones(level: LevelData): void {
     const triggerId = readStringProperty(poly.properties, 'triggerId');
     if (triggerId) {
       spawnTriggerZones.push({ id: triggerId, fired: false, contains: zone.contains });
+      recordEncounterZone(triggerId, zone);
     }
     if (readStringProperty(poly.properties, 'triggerAction') === 'kill_fall') {
       killFallZones.push(zone);
@@ -688,10 +1042,44 @@ function rebuildTriggerZones(level: LevelData): void {
     const triggerId = readStringProperty(circle.properties, 'triggerId');
     if (triggerId) {
       spawnTriggerZones.push({ id: triggerId, fired: false, contains: zone.contains });
+      recordEncounterZone(triggerId, zone);
     }
     if (readStringProperty(circle.properties, 'triggerAction') === 'kill_fall') {
       killFallZones.push(zone);
     }
+  }
+
+  for (const [id, zonesForEncounter] of encounterZones) {
+    encounters.set(id, {
+      id,
+      activated: false,
+      cleared: false,
+      liveEntityIds: new Set<number>(),
+      doorIds: new Set<number>(),
+      contains(point) {
+        return zonesForEncounter.some((zone) => zone.contains(point));
+      },
+    });
+  }
+
+  for (const entity of level.entities) {
+    if (!isEncounterTargetEntity(entity)) continue;
+
+    const explicitEncounterId = readStringProperty(entity.properties, 'encounterId');
+    if (explicitEncounterId && encounters.has(explicitEncounterId)) {
+      levelEntityEncounterIds.set(entity.id, explicitEncounterId);
+      continue;
+    }
+
+    const spawnTrigger = readStringProperty(entity.properties, 'spawnTrigger');
+    if (spawnTrigger && encounters.has(spawnTrigger)) {
+      levelEntityEncounterIds.set(entity.id, spawnTrigger);
+      continue;
+    }
+
+    const authoredPos = lvPos(entity.position);
+    const encounter = getEncounterForPoint(authoredPos);
+    if (encounter) levelEntityEncounterIds.set(entity.id, encounter.id);
   }
 }
 
@@ -751,6 +1139,7 @@ function deactivateEnemySpinnerForFall(enemy: EnemySpinnerState): THREE.Object3D
   enemy.alive = false;
   enemy.collidable.vel.x = 0;
   enemy.collidable.vel.z = 0;
+  unregisterEncounterMember(enemy.id);
   deregisterEntity(enemy.id);
   removeCollidableFromGameplay(enemy.collidable);
   return [enemy.topResult.tiltGroup];
@@ -760,6 +1149,7 @@ function deactivateZombieForFall(zombie: ZombieState): THREE.Object3D[] {
   zombie.alive = false;
   zombie.collidable.vel.x = 0;
   zombie.collidable.vel.z = 0;
+  unregisterEncounterMember(zombie.id);
   deregisterEntity(zombie.id);
   removeCollidableFromGameplay(zombie.collidable);
   return [zombie.group];
@@ -769,6 +1159,7 @@ function deactivateRobotForFall(robot: RobotEnemyState): THREE.Object3D[] {
   robot.alive = false;
   robot.collidable.vel.x = 0;
   robot.collidable.vel.z = 0;
+  unregisterEncounterMember(robot.id);
   deregisterEntity(robot.id);
   removeCollidableFromGameplay(robot.collidable);
   return [robot.group];
@@ -787,6 +1178,7 @@ function deactivateSlugForFall(slug: SlugwormState): THREE.Object3D[] {
   slug.alive = false;
   slug.collidable.vel.x = 0;
   slug.collidable.vel.z = 0;
+  unregisterEncounterMember(slug.id);
   deregisterEntity(slug.id);
   removeCollidableFromGameplay(slug.collidable);
   return [slug.group];
@@ -796,6 +1188,7 @@ function deactivateDreadnoughtForFall(boss: DreadnoughtState): THREE.Object3D[] 
   boss.alive = false;
   boss.collidable.vel.x = 0;
   boss.collidable.vel.z = 0;
+  unregisterEncounterMember(boss.id);
   deregisterEntity(boss.id);
   removeCollidableFromGameplay(boss.collidable);
   removeBossDrainZones(boss);
@@ -806,6 +1199,7 @@ function deactivateSiegeForFall(boss: SiegeEngineState): THREE.Object3D[] {
   boss.alive = false;
   boss.collidable.vel.x = 0;
   boss.collidable.vel.z = 0;
+  unregisterEncounterMember(boss.id);
   deregisterEntity(boss.id);
   removeCollidableFromGameplay(boss.collidable);
   for (const part of boss.parts) {
@@ -818,6 +1212,7 @@ function deactivateSpiderForFall(boss: SpiderReliquaryState): THREE.Object3D[] {
   boss.alive = false;
   boss.collidable.vel.x = 0;
   boss.collidable.vel.z = 0;
+  unregisterEncounterMember(boss.id);
   deregisterEntity(boss.id);
   removeCollidableFromGameplay(boss.collidable);
   for (const leg of boss.legs) {
@@ -830,6 +1225,7 @@ function deactivateOctobossForFall(boss: OctobossState): THREE.Object3D[] {
   boss.alive = false;
   boss.collidable.vel.x = 0;
   boss.collidable.vel.z = 0;
+  unregisterEncounterMember(boss.id);
   deregisterEntity(boss.id);
   removeCollidableFromGameplay(boss.collidable);
   for (const tentacle of boss.tentacles) {
@@ -842,6 +1238,7 @@ function deactivateHiveForFall(boss: HiveBossState): THREE.Object3D[] {
   boss.alive = false;
   boss.collidable.vel.x = 0;
   boss.collidable.vel.z = 0;
+  unregisterEncounterMember(boss.id);
   deregisterEntity(boss.id);
   removeCollidableFromGameplay(boss.collidable);
   for (const spinner of boss.flock) {
@@ -880,16 +1277,13 @@ function updateFallingVictims(delta: number): void {
 }
 
 function triggerPlayerPitFall(): void {
-  if (gameOver) return;
-  playerBody.rpm = 0;
-  startPlayerPitFallDeath();
-  gameOver = true;
+  beginPlayerRespawnSequence('pit');
 }
 
 function updateKillFallZones(delta: number): void {
   if (killFallZones.length === 0) return;
 
-  if (!gameOver) {
+  if (!gameOver && !respawnPending) {
     if (killFallZones.some((zone) => zone.contains(playerBody.pos))) {
       playerKillFallTimer += delta;
       if (playerKillFallTimer >= KILL_FALL_DELAY) {
@@ -927,6 +1321,7 @@ function spawnLevelEntity(ent: LevelEntity): void {
   const pos = lvPos(ent.position);
   const spawnEnemySpinnerEntity = (config: typeof ENEMY_SPINNER_TIER_1): void => {
     const enemy = EnemyEntities.spawn(pos, config);
+    registerEncounterMember(ent, enemy.id);
     if (isEntityFallable(ent)) {
       registerFallableActor(enemy.collidable, () => {
         const roots = deactivateEnemySpinnerForFall(enemy);
@@ -947,6 +1342,16 @@ function spawnLevelEntity(ent: LevelEntity): void {
     case 'pickup_hyper':
       pickups.push(createHyperPickup(pos));
       break;
+    case 'checkpoint': {
+      const checkpoint = createCheckpointMarker(pos);
+      checkpoint.id = ent.id;
+      checkpoint.radius = readNumberProperty(ent.properties, 'radius', DEFAULT_CHECKPOINT_RADIUS, 0.5);
+      checkpoints.push(checkpoint);
+      if (readBooleanProperty(ent.properties, 'startActive')) {
+        setCurrentCheckpoint(checkpoint);
+      }
+      break;
+    }
     case 'obstacle': {
       const cfg = ent.properties?.config === 'barrel' ? BARREL_CONFIG : CRATE_CONFIG;
       const obstacle = ObstacleEntities.spawn(pos, cfg);
@@ -964,6 +1369,7 @@ function spawnLevelEntity(ent: LevelEntity): void {
     }
     case 'robot': {
       const robot = RobotEntities.spawn(pos, ROBOT_TIER_1);
+      registerEncounterMember(ent, robot.id);
       if (isEntityFallable(ent)) {
         registerFallableActor(robot.collidable, () => {
           const roots = deactivateRobotForFall(robot);
@@ -978,6 +1384,7 @@ function spawnLevelEntity(ent: LevelEntity): void {
     }
     case 'siege_engine': {
       const siege = SiegeEntities.spawn(pos, SIEGE_ENGINE_TIER_1);
+      registerEncounterMember(ent, siege.id);
       if (isEntityFallable(ent)) {
         registerFallableActor(siege.collidable, () => {
           const roots = deactivateSiegeForFall(siege);
@@ -993,6 +1400,7 @@ function spawnLevelEntity(ent: LevelEntity): void {
     }
     case 'spider_reliquary': {
       const spider = SpiderEntities.spawn(pos, SPIDER_RELIQUARY_TIER_1);
+      registerEncounterMember(ent, spider.id);
       if (isEntityFallable(ent)) {
         registerFallableActor(spider.collidable, () => {
           const roots = deactivateSpiderForFall(spider);
@@ -1007,6 +1415,7 @@ function spawnLevelEntity(ent: LevelEntity): void {
     }
     case 'octoboss': {
       const octoboss = OctobossEntities.spawn(pos, OCTOBOSS_TIER_1);
+      registerEncounterMember(ent, octoboss.id);
       if (isEntityFallable(ent)) {
         registerFallableActor(octoboss.collidable, () => {
           const roots = deactivateOctobossForFall(octoboss);
@@ -1019,9 +1428,11 @@ function spawnLevelEntity(ent: LevelEntity): void {
       }
       break;
     }
-    case 'turret':
-      TurretEntities.spawn(pos, TURRET_TIER_1);
+    case 'turret': {
+      const turret = TurretEntities.spawn(pos, TURRET_TIER_1);
+      registerEncounterMember(ent, turret.id);
       break;
+    }
     case 'enemy_spinner':
     case 'enemy_spinner_tier_2': {
       spawnEnemySpinnerEntity(ENEMY_SPINNER_TIER_2);
@@ -1037,6 +1448,7 @@ function spawnLevelEntity(ent: LevelEntity): void {
     }
     case 'zombie': {
       const zombie = ZombieEntities.spawn(pos, ZOMBIE_TIER_1);
+      registerEncounterMember(ent, zombie.id);
       if (isEntityFallable(ent)) {
         registerFallableActor(zombie.collidable, () => {
           const roots = deactivateZombieForFall(zombie);
@@ -1051,6 +1463,7 @@ function spawnLevelEntity(ent: LevelEntity): void {
     }
     case 'dreadnought': {
       const dreadnought = DreadnoughtEntities.spawn(pos, DREADNOUGHT_TIER_1);
+      registerEncounterMember(ent, dreadnought.id);
       if (isEntityFallable(ent)) {
         registerFallableActor(dreadnought.collidable, () => {
           const roots = deactivateDreadnoughtForFall(dreadnought);
@@ -1066,6 +1479,7 @@ function spawnLevelEntity(ent: LevelEntity): void {
     }
     case 'hive_boss': {
       const hive = HiveEntities.spawn(pos, HIVE_TIER_1);
+      registerEncounterMember(ent, hive.id);
       if (isEntityFallable(ent)) {
         registerFallableActor(hive.collidable, () => {
           const roots = deactivateHiveForFall(hive);
@@ -1080,6 +1494,7 @@ function spawnLevelEntity(ent: LevelEntity): void {
     }
     case 'slug_big': {
       const slug = BigSlugEntities.spawn(pos, BIG_SLUGWORM);
+      registerEncounterMember(ent, slug.id);
       if (isEntityFallable(ent)) {
         registerFallableActor(slug.collidable, () => {
           const roots = deactivateSlugForFall(slug);
@@ -1094,6 +1509,7 @@ function spawnLevelEntity(ent: LevelEntity): void {
     }
     case 'slug_baby': {
       const slug = BabySlugEntities.spawn(pos, BABY_SLUGWORM);
+      registerEncounterMember(ent, slug.id);
       if (isEntityFallable(ent)) {
         registerFallableActor(slug.collidable, () => {
           const roots = deactivateSlugForFall(slug);
@@ -1115,6 +1531,28 @@ function spawnLevelEntity(ent: LevelEntity): void {
       scene.add(root);
       break;
     }
+    case 'sliding_door': {
+      const encounterId = readStringProperty(ent.properties, 'encounterId');
+      const closeTriggerId = readStringProperty(ent.properties, 'closeTriggerId');
+      const rotationDeg = ent.rotation ?? 0;
+      const defaults = defaultSlidingDoorConfig(rotationDeg, encounterId, closeTriggerId);
+      const door = SlidingDoorEntities.spawn(pos, {
+        rotationDeg,
+        width: readNumberProperty(ent.properties, 'width', defaults.width, 1.5),
+        height: readNumberProperty(ent.properties, 'height', defaults.height, 0.8),
+        thickness: readNumberProperty(ent.properties, 'thickness', defaults.thickness, 0.12),
+        slideDistance: readNumberProperty(ent.properties, 'travel', defaults.slideDistance, 0),
+        openSpeed: readNumberProperty(ent.properties, 'openSpeed', defaults.openSpeed, 0.1),
+        startOpen: ent.properties?.startOpen === undefined
+          ? defaults.startOpen
+          : readBooleanProperty(ent.properties, 'startOpen'),
+        encounterId,
+        closeTriggerId,
+      });
+      registerEncounterDoor(door);
+      registerCloseTriggerDoor(door);
+      break;
+    }
   }
 }
 
@@ -1130,13 +1568,20 @@ function spawnTriggeredEntities(triggerId: string): void {
 
 function spawnAll(level: LevelData): void {
   pendingTriggeredEntities.clear();
+  runtimeEncounterEntityIds.clear();
+  slidingDoorsById.clear();
+  closeTriggerDoorIds.clear();
   fallableActors.length = 0;
+  clearCheckpoints();
   playerKillFallTimer = 0;
+  playerSpawnPoint = { x: 0, z: 0 };
+  activeCheckpoint = null;
   rebuildTriggerZones(level);
 
   for (const ent of level.entities) {
     const pos = lvPos(ent.position);
-    if (ent.type === 'player_spawn') {
+    if (ent.type === 'player_spawn' || ent.type === 'spawn') {
+      playerSpawnPoint = cloneVec2(pos);
       playerBody.pos.x = pos.x;
       playerBody.pos.z = pos.z;
       continue;
@@ -1160,7 +1605,9 @@ function updateTriggerSpawns(): void {
     if (zone.fired) continue;
     if (!zone.contains(playerBody.pos)) continue;
     zone.fired = true;
+    activateCloseTrigger(zone.id);
     spawnTriggeredEntities(zone.id);
+    activateEncounter(zone.id);
   }
 }
 
@@ -1228,9 +1675,9 @@ gameOverOverlay.innerHTML = `
   <div class="overlay-card overlay-card-compact">
     <div class="overlay-kicker">Run Ended</div>
     <h2>Game Over</h2>
-    <p class="overlay-copy">Press R to restart the current level or head back to the menu to switch maps.</p>
+    <p class="overlay-copy">Press R to respawn at the active checkpoint, or head back to the menu to switch maps.</p>
     <div class="overlay-actions">
-      <button type="button" class="overlay-btn overlay-btn-primary" id="gameover-restart-btn">Restart</button>
+      <button type="button" class="overlay-btn overlay-btn-primary" id="gameover-restart-btn">Respawn</button>
       <button type="button" class="overlay-btn" id="gameover-menu-btn">Main Menu</button>
     </div>
   </div>
@@ -1278,27 +1725,32 @@ function resetGame(): void {
   HiveEntities.destroyAll();
   BigSlugEntities.destroyAll();
   BabySlugEntities.destroyAll();
+  for (const door of SlidingDoorEntities.getAll()) {
+    unregisterEncounterDoor(door);
+    unregisterCloseTriggerDoor(door);
+  }
+  SlidingDoorEntities.destroyAll();
 
   // Clear ECS registrations and reset player
   resetEntityRegistrations();
   resetSpinnerConfig();
   resetPlayer();
   setupPlayer();
-  comboState.phase = 'idle';
-  comboState.cooldownTimer = 0;
-  comboState.recoveryTimer = 0;
-  comboState.pauseTimer = 0;
-  comboState.strikeIndex = 0;
-  comboState.slotTargets = [];
-  comboState.segment = null;
-  comboState.hitCounts.clear();
+  resetComboState();
   setPlayerControlLocked(false);
-  setPlayerInvulnerable(false);
+  respawnPending = false;
+  respawnInvulnerabilityTimer = 0;
+  syncPlayerInvulnerability();
 
   gameOver = false;
   gameOverOverlay.style.display = 'none';
   octobossParasiteOwners.clear();
   octobossDroneOwners.clear();
+  runtimeEncounterEntityIds.clear();
+  slidingDoorsById.clear();
+  closeTriggerDoorIds.clear();
+  encounters.clear();
+  levelEntityEncounterIds.clear();
 
   // Clear all pickups (level + dynamic drops) — meshes still in scene need removal
   for (const p of pickups) { if (!p.collected) scene.remove(p.mesh); }
@@ -1323,9 +1775,11 @@ function resetGame(): void {
   playerWebTimer = 0;
   enemyComboLockTimer = 0;
   clearDynamicLevelLights();
+  clearCheckpoints();
   clearLevelLights(scene);
   setupLevelLights(scene, currentLevel);
   spawnAll(currentLevel);
+  updateCheckpointVisuals(time);
 }
 
 async function startSelectedLevel(): Promise<void> {
@@ -1376,7 +1830,7 @@ menuEditorBtn.addEventListener('click', () => {
 
 gameOverRestartBtn.addEventListener('click', () => {
   if (!gameOver) return;
-  resetGame();
+  finishPlayerRespawn();
 });
 
 gameOverMenuBtn.addEventListener('click', () => {
@@ -1384,7 +1838,7 @@ gameOverMenuBtn.addEventListener('click', () => {
 });
 
 window.addEventListener('keydown', (e) => {
-  if (e.key.toLowerCase() === 'r' && gameOver) resetGame();
+  if (e.key.toLowerCase() === 'r' && gameOver) finishPlayerRespawn();
   if (e.key.toLowerCase() === 'm' && !menuVisible) returnToMenu();
 });
 
@@ -1439,6 +1893,26 @@ const comboState: ComboState = {
 
 function cloneVec2(vec: Vec2): Vec2 {
   return { x: vec.x, z: vec.z };
+}
+
+function resetComboState(): void {
+  comboState.phase = 'idle';
+  comboState.cooldownTimer = 0;
+  comboState.recoveryTimer = 0;
+  comboState.pauseTimer = 0;
+  comboState.strikeIndex = 0;
+  comboState.originPos = cloneVec2(playerBody.pos);
+  comboState.slotTargets = [];
+  comboState.hitCounts.clear();
+  comboState.segment = null;
+}
+
+function isComboInvulnerable(): boolean {
+  return comboState.phase === 'active' || comboState.phase === 'returning';
+}
+
+function syncPlayerInvulnerability(): void {
+  setPlayerInvulnerable(respawnInvulnerabilityTimer > 0 || isComboInvulnerable());
 }
 
 function lerpVec2(a: Vec2, b: Vec2, t: number): Vec2 {
@@ -1521,6 +1995,7 @@ function buildComboTargets(): ComboTarget[] {
         if (!turret.alive) return;
         if (applyDamageToTurret(turret, damage)) {
           const deathPos = cloneVec2(turret.collidable.pos);
+          unregisterEncounterMember(turret.id);
           TurretEntities.destroy(turret);
           explosions.push(createExplosion(deathPos));
         }
@@ -1921,7 +2396,7 @@ function tryStartPlayerCombo(): void {
 
   playerBody.rpm = Math.max(0, playerBody.rpm - spinnerConfig.rpmCapacity * spinnerConfig.comboCostRatio);
   setPlayerControlLocked(true);
-  setPlayerInvulnerable(true);
+  syncPlayerInvulnerability();
   playerBody.vel.x = 0;
   playerBody.vel.z = 0;
 
@@ -1944,6 +2419,7 @@ function updatePlayerCombo(delta: number): void {
       comboState.slotTargets = [];
       comboState.segment = null;
       setPlayerControlLocked(false);
+      syncPlayerInvulnerability();
     }
     return;
   }
@@ -1984,7 +2460,7 @@ function updatePlayerCombo(delta: number): void {
   comboState.phase = 'recovering';
   comboState.recoveryTimer = spinnerConfig.comboRecovery;
   comboState.segment = null;
-  setPlayerInvulnerable(false);
+  syncPlayerInvulnerability();
 }
 
 function getComboHudState(): ComboHudState {
@@ -2000,6 +2476,52 @@ function getComboHudState(): ComboHudState {
     ready,
     blockedByRpm,
   };
+}
+
+function getRespawnPoint(): Vec2 {
+  return cloneVec2(activeCheckpoint?.pos ?? playerSpawnPoint);
+}
+
+function beginPlayerRespawnSequence(mode: 'topple' | 'pit'): void {
+  if (gameOver || respawnPending) return;
+
+  respawnPending = true;
+  respawnInvulnerabilityTimer = 0;
+  resetComboState();
+  setPlayerControlLocked(true);
+  syncPlayerInvulnerability();
+  playerBody.vel.x = 0;
+  playerBody.vel.z = 0;
+  playerWebTimer = 0;
+  enemyComboLockTimer = 0;
+  playerKillFallTimer = 0;
+
+  if (mode === 'pit') {
+    playerBody.rpm = 0;
+    startPlayerPitFallDeath();
+  } else {
+    startPlayerToppleDeath();
+  }
+}
+
+function completePlayerDeathSequence(): void {
+  respawnPending = false;
+  gameOver = true;
+  gameOverOverlay.style.display = 'flex';
+}
+
+function finishPlayerRespawn(): void {
+  resetPlayer(getRespawnPoint());
+  resetComboState();
+  setPlayerControlLocked(false);
+  respawnPending = false;
+  gameOver = false;
+  gameOverOverlay.style.display = 'none';
+  respawnInvulnerabilityTimer = RESPAWN_INVULNERABILITY_DURATION;
+  playerWebTimer = 0;
+  enemyComboLockTimer = 0;
+  playerKillFallTimer = 0;
+  syncPlayerInvulnerability();
 }
 
 // ─── Turret System (AI + projectiles) ────────────────────────────────────────
@@ -2348,6 +2870,7 @@ function checkEnemyDeath(): void {
     if (isEnemyDead(enemy)) {
       const deathPos = { x: enemy.collidable.pos.x, z: enemy.collidable.pos.z };
       octobossParasiteOwners.delete(enemy.id);
+      unregisterEncounterMember(enemy.id);
       EnemyEntities.destroy(enemy);
       explosions.push(createExplosion(deathPos));
       spawnPickupAt(pickups, deathPos);
@@ -2362,6 +2885,7 @@ function checkBossDeath(): void {
   for (const boss of [...DreadnoughtEntities.getAll()]) {
     if (isDreadnoughtDead(boss)) {
       const deathPos = { x: boss.collidable.pos.x, z: boss.collidable.pos.z };
+      unregisterEncounterMember(boss.id);
       DreadnoughtEntities.destroy(boss);
       explosions.push(createExplosion(deathPos));
       // Big reward: drop multiple pickups
@@ -2388,6 +2912,7 @@ function killZombie(zombie: ZombieState, gib: boolean): void {
   if (!zombie.alive) return;
 
   const deathPos = { x: zombie.collidable.pos.x, z: zombie.collidable.pos.z };
+  unregisterEncounterMember(zombie.id);
   ZombieEntities.destroy(zombie);
 
   if (gib) {
@@ -2422,6 +2947,7 @@ function checkRobotDeath(): void {
     if (isRobotDead(robot)) {
       const deathPos = { x: robot.collidable.pos.x, z: robot.collidable.pos.z };
       octobossDroneOwners.delete(robot.id);
+      unregisterEncounterMember(robot.id);
       RobotEntities.destroy(robot);
       explosions.push(createRobotExplosion(deathPos));
       spawnPickupAt(pickups, deathPos);
@@ -2443,6 +2969,7 @@ function checkSiegeDeath(): void {
   for (const siege of [...SiegeEntities.getAll()]) {
     if (isSiegeEngineDead(siege)) {
       const deathPos = { x: siege.collidable.pos.x, z: siege.collidable.pos.z };
+      unregisterEncounterMember(siege.id);
       SiegeEntities.destroy(siege);
       explosions.push(createExplosion(deathPos));
       spawnPickupAt(pickups, deathPos);
@@ -2458,6 +2985,7 @@ function checkSpiderDeath(): void {
   for (const spider of [...SpiderEntities.getAll()]) {
     if (!isSpiderReliquaryDead(spider)) continue;
     const deathPos = { x: spider.collidable.pos.x, z: spider.collidable.pos.z };
+    unregisterEncounterMember(spider.id);
     SpiderEntities.destroy(spider);
     explosions.push(createExplosion(deathPos));
     explosions.push(createExplosion({ x: deathPos.x + 1.2, z: deathPos.z + 0.8 }));
@@ -2480,6 +3008,7 @@ function checkOctobossDeath(): void {
     for (const [robotId, ownerId] of octobossDroneOwners) {
       if (ownerId === boss.id) octobossDroneOwners.delete(robotId);
     }
+    unregisterEncounterMember(boss.id);
     OctobossEntities.destroy(boss);
     explosions.push(createExplosion(deathPos));
     explosions.push(createExplosion({ x: deathPos.x + 1.1, z: deathPos.z + 0.9 }));
@@ -2528,6 +3057,7 @@ function checkSlugDeath(): void {
       // Dramatic chainsaw goo explosion
       emitGoo({ x: deathPos.x, y: 0.5, z: deathPos.z }, 60, 1.0);
       spawnGooSplat(deathPos, 12, time);
+      unregisterEncounterMember(slug.id);
       BigSlugEntities.destroy(slug);
       explosions.push(createExplosion(deathPos));
       spawnPickupAt(pickups, deathPos);
@@ -2541,6 +3071,7 @@ function checkSlugDeath(): void {
       // Huge goo burst for baby — chainsaw splatter
       emitGoo({ x: deathPos.x, y: 0.4, z: deathPos.z }, 40, 0.8);
       spawnGooSplat(deathPos, 8, time);
+      unregisterEncounterMember(slug.id);
       BabySlugEntities.destroy(slug);
       spawnPickupAt(pickups, deathPos);
     }
@@ -2566,6 +3097,7 @@ function checkHiveDeath(): void {
   for (const hive of [...HiveEntities.getAll()]) {
     if (isHiveBossDead(hive)) {
       const deathPos = { x: hive.collidable.pos.x, z: hive.collidable.pos.z };
+      unregisterEncounterMember(hive.id);
       HiveEntities.destroy(hive);
       explosions.push(createExplosion(deathPos));
       // Big reward
@@ -2596,8 +3128,15 @@ function animate(): void {
   const delta = Math.min(timer.getDelta(), 0.05);
   time += delta;
 
+  if (respawnInvulnerabilityTimer > 0) {
+    respawnInvulnerabilityTimer = Math.max(0, respawnInvulnerabilityTimer - delta);
+    syncPlayerInvulnerability();
+  }
+
   if (menuVisible) {
     for (const obs of ObstacleEntities.getAll()) syncObstacle(obs);
+    for (const door of SlidingDoorEntities.getAll()) updateSlidingDoor(door, delta);
+    updateCheckpointVisuals(time);
     updatePlayerVisuals(time, 0);
     updateCamera(playerBody.pos, playerBody.vel, delta, false);
     renderer.render(scene, camera);
@@ -2607,10 +3146,25 @@ function animate(): void {
   if (gameOver) {
     updateFallingVictims(delta);
     updateGibs(delta);
+    for (const door of SlidingDoorEntities.getAll()) updateSlidingDoor(door, delta);
+    updateCheckpointVisuals(time);
     const done = updateTopple(delta);
     if (done) gameOverOverlay.style.display = 'flex';
     updateHud(playerBody.rpm, time, delta, getComboHudState());
     updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
+    renderer.render(scene, camera);
+    return;
+  }
+
+  if (respawnPending) {
+    updateFallingVictims(delta);
+    updateGibs(delta);
+    for (const door of SlidingDoorEntities.getAll()) updateSlidingDoor(door, delta);
+    updateCheckpointVisuals(time);
+    const done = updateTopple(delta);
+    if (done) completePlayerDeathSequence();
+    updateHud(playerBody.rpm, time, delta, getComboHudState());
+    updateCamera(playerBody.pos, playerBody.vel, delta, false);
     renderer.render(scene, camera);
     return;
   }
@@ -2657,12 +3211,16 @@ function animate(): void {
   // 2c. Kill-fall trigger zones
   updateKillFallZones(delta);
   updateFallingVictims(delta);
-  if (gameOver) {
+  if (gameOver || respawnPending) {
     const done = updateTopple(delta);
     updateGibs(delta);
-    if (done) gameOverOverlay.style.display = 'flex';
+    updateCheckpointVisuals(time);
+    if (done) {
+      if (respawnPending) completePlayerDeathSequence();
+      else gameOverOverlay.style.display = 'flex';
+    }
     updateHud(playerBody.rpm, time, delta, getComboHudState());
-    updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
+    updateCamera(playerBody.pos, playerBody.vel, delta, respawnPending ? false : shouldSnapComboCamera());
     renderer.render(scene, camera);
     return;
   }
@@ -2726,6 +3284,7 @@ function animate(): void {
 
   // 5b. Level trigger spawns
   updateTriggerSpawns();
+  updateCheckpointActivation();
 
   // 6. RPM system (base decay) + player-specific hooks
   rpmSystem(delta);
@@ -2743,8 +3302,7 @@ function animate(): void {
   checkSlugDeath();
 
   if (playerBody.rpm <= 0) {
-    startPlayerToppleDeath();
-    gameOver = true;
+    beginPlayerRespawnSequence('topple');
     updateHud(0, time, delta, getComboHudState());
     updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
     renderer.render(scene, camera);
@@ -2765,6 +3323,8 @@ function animate(): void {
   for (const h of HiveEntities.getAll()) updateHiveVisuals(h, playerBody.pos, time, delta);
   for (const s of BigSlugEntities.getAll()) updateSlugwormVisuals(s, time, delta);
   for (const s of BabySlugEntities.getAll()) updateSlugwormVisuals(s, time, delta);
+  for (const door of SlidingDoorEntities.getAll()) updateSlidingDoor(door, delta);
+  updateCheckpointVisuals(time);
   updateHud(playerBody.rpm, time, delta, getComboHudState());
   updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
   sampleSpiderMotionDebug(delta);

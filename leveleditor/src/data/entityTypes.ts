@@ -8,6 +8,7 @@ export const CUSTOM_ENTITY_TYPE_VALUE = '__custom__';
 
 export const ENTITY_TYPE_OPTIONS: EntityTypeOption[] = [
   { value: 'player_spawn', label: 'Player Spawn', color: 0x44ff44 },
+  { value: 'checkpoint', label: 'Checkpoint', color: 0x66f0ff },
   { value: 'pickup', label: 'Pickup', color: 0x4dd0e1 },
   { value: 'pickup_hyper', label: 'Hyper Pickup', color: 0x80ffff },
   { value: 'obstacle', label: 'Obstacle', color: 0xb08b5b },
@@ -26,6 +27,7 @@ export const ENTITY_TYPE_OPTIONS: EntityTypeOption[] = [
   { value: 'slug_baby', label: 'Baby Slug', color: 0xaaff88 },
   { value: 'fire_torch', label: 'Fire Torch', color: 0xff8a33 },
   { value: 'light_point', label: 'Point Light', color: 0xffd066 },
+  { value: 'sliding_door', label: 'Sliding Door', color: 0x8aa8d9 },
   { value: 'trigger', label: 'Trigger', color: 0xff8844 },
   { value: 'waypoint', label: 'Waypoint', color: 0x4488ff },
   { value: 'spawn', label: 'Spawn (Legacy)', color: 0x44ff44 },

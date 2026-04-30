@@ -56,6 +56,11 @@ export class EntityRenderer {
       return;
     }
 
+    if (entity.type === 'sliding_door') {
+      this.buildSlidingDoorVisual(group, entity, color);
+      return;
+    }
+
     if (entity.type === 'octoboss') {
       this.buildOctobossVisual(group, entity, color);
       return;
@@ -202,6 +207,68 @@ export class EntityRenderer {
     const glow = this.createLightDisc(glowRange, flameColor, 0.12);
     glow.position.set(x, y + flameHeight, -0.02);
     group.add(glow);
+  }
+
+  private buildSlidingDoorVisual(group: THREE.Group, entity: EntityData, color: number): void {
+    const x = entity.position.x;
+    const y = entity.position.y;
+    const width = this.readNumber(entity.properties.width, 5, 1.5);
+    const height = this.readNumber(entity.properties.height, 1.8, 0.5);
+    const travel = this.readNumber(entity.properties.travel, 1.8, 0);
+    const thickness = this.readNumber(entity.properties.thickness, 0.45, 0.08);
+    const startOpen = entity.properties.startOpen === 'true';
+    const rad = (entity.rotation * Math.PI) / 180;
+    const dirX = Math.cos(rad);
+    const dirY = Math.sin(rad);
+    const normalX = -dirY;
+    const normalY = dirX;
+    const panelLength = width * 0.5;
+    const panelHalf = panelLength * 0.5;
+    const centerBase = panelHalf;
+    const travelOffset = startOpen ? travel : 0;
+
+    const leftCenterX = x - dirX * (centerBase + travelOffset);
+    const leftCenterY = y - dirY * (centerBase + travelOffset);
+    const rightCenterX = x + dirX * (centerBase + travelOffset);
+    const rightCenterY = y + dirY * (centerBase + travelOffset);
+
+    const makePanel = (centerX: number, centerY: number): void => {
+      const shape = new THREE.Shape();
+      shape.moveTo(-panelHalf, -thickness * 0.5);
+      shape.lineTo(panelHalf, -thickness * 0.5);
+      shape.lineTo(panelHalf, thickness * 0.5);
+      shape.lineTo(-panelHalf, thickness * 0.5);
+      shape.closePath();
+      const mesh = new THREE.Mesh(
+        new THREE.ShapeGeometry(shape),
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.92,
+          depthTest: false,
+        }),
+      );
+      mesh.position.set(centerX, centerY, 0);
+      mesh.rotation.z = rad;
+      mesh.userData = { type: 'entity', id: entity.id };
+      group.add(mesh);
+    };
+
+    makePanel(leftCenterX, leftCenterY);
+    makePanel(rightCenterX, rightCenterY);
+
+    const railGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x - dirX * (width * 0.5), y - dirY * (width * 0.5), 0.01),
+      new THREE.Vector3(x + dirX * (width * 0.5), y + dirY * (width * 0.5), 0.01),
+    ]);
+    const rail = new THREE.Line(railGeo, new THREE.LineBasicMaterial({ color: 0xe8eefc, depthTest: false }));
+    group.add(rail);
+
+    const frameGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x - normalX * (height * 0.18), y - normalY * (height * 0.18), 0.02),
+      new THREE.Vector3(x + normalX * (height * 0.18), y + normalY * (height * 0.18), 0.02),
+    ]);
+    group.add(new THREE.Line(frameGeo, new THREE.LineBasicMaterial({ color: 0x2f394a, depthTest: false })));
   }
 
   private buildOctobossVisual(group: THREE.Group, entity: EntityData, color: number): void {

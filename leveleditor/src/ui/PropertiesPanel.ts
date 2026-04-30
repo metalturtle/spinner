@@ -177,6 +177,7 @@ export class PropertiesPanel {
           <input type="number" data-field="rotation" value="${entity.rotation}" step="15" />
         </div>
         ${this.spawnSection(entity.properties)}
+        ${this.isSlidingDoorEntity(entity.type) ? this.slidingDoorSection(entity.properties) : ''}
         ${this.isLightEmitterEntity(entity.type) ? this.lightSection(entity.properties) : ''}
         ${this.kvSection(entity.properties)}
       `;
@@ -303,6 +304,51 @@ export class PropertiesPanel {
 
   private isLightEmitterEntity(type: string): boolean {
     return type === 'light_point' || type === 'fire_torch';
+  }
+
+  private isSlidingDoorEntity(type: string): boolean {
+    return type === 'sliding_door';
+  }
+
+  private slidingDoorSection(properties: Record<string, string>): string {
+    const startOpen = properties.startOpen === 'true';
+    return `
+      <div class="prop-section">
+        <h4>Sliding Door</h4>
+        <div class="prop-row">
+          <label>Close Trigger</label>
+          <input type="text" data-field="closeTriggerId" value="${this.esc(properties.closeTriggerId ?? '')}" placeholder="arena_entry_1" />
+        </div>
+        <div class="prop-row">
+          <label>Encounter ID</label>
+          <input type="text" data-field="encounterId" value="${this.esc(properties.encounterId ?? '')}" placeholder="arena_wave_1" />
+        </div>
+        <div class="prop-row">
+          <label>Width</label>
+          <input type="number" data-field="width" value="${this.esc(properties.width ?? '5')}" step="0.25" min="1.5" />
+        </div>
+        <div class="prop-row">
+          <label>Height</label>
+          <input type="number" data-field="height" value="${this.esc(properties.height ?? '1.85')}" step="0.1" min="0.5" />
+        </div>
+        <div class="prop-row">
+          <label>Thickness</label>
+          <input type="number" data-field="thickness" value="${this.esc(properties.thickness ?? '0.5')}" step="0.05" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Travel</label>
+          <input type="number" data-field="travel" value="${this.esc(properties.travel ?? '1.8')}" step="0.1" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Open Speed</label>
+          <input type="number" data-field="openSpeed" value="${this.esc(properties.openSpeed ?? '1.9')}" step="0.1" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Start Open</label>
+          <input type="checkbox" data-field="startOpen"${startOpen ? ' checked' : ''} />
+        </div>
+      </div>
+    `;
   }
 
   private surfaceSection(properties: Record<string, string>): string {

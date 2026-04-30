@@ -688,7 +688,8 @@
         }
       ],
       "properties": {},
-      "color": "#5577aa"
+      "color": "#5577aa",
+      "textureId": "rock_wall_16_diff_1k"
     },
     {
       "id": "poly_mokfs7z556ql5q",
@@ -2597,6 +2598,96 @@
         "triggerId": "zombie_1"
       },
       "color": "#33cc66"
+    },
+    {
+      "id": "poly_mokiy77d6o7nzp",
+      "name": "Rect 52",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": -3,
+          "y": 47
+        },
+        {
+          "x": 3,
+          "y": 47
+        },
+        {
+          "x": 3,
+          "y": 49
+        },
+        {
+          "x": -3,
+          "y": 49
+        }
+      ],
+      "properties": {
+        "triggerId": "drone_1"
+      },
+      "color": "#3388ff"
+    },
+    {
+      "id": "poly_mol1e77ltj0k0z",
+      "name": "Polygon 53",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": -22,
+          "y": 70
+        },
+        {
+          "x": -20,
+          "y": 71
+        },
+        {
+          "x": -20,
+          "y": 68
+        },
+        {
+          "x": -19,
+          "y": 64
+        },
+        {
+          "x": -16,
+          "y": 59
+        },
+        {
+          "x": -11,
+          "y": 54
+        },
+        {
+          "x": -7,
+          "y": 52
+        },
+        {
+          "x": -8,
+          "y": 50
+        },
+        {
+          "x": -11,
+          "y": 51
+        },
+        {
+          "x": -16,
+          "y": 55
+        },
+        {
+          "x": -19,
+          "y": 59
+        },
+        {
+          "x": -21,
+          "y": 64
+        },
+        {
+          "x": -22,
+          "y": 67
+        }
+      ],
+      "properties": {
+        "surfaceType": "lava"
+      },
+      "color": "#3388ff"
     }
   ],
   "circles": [
@@ -2842,6 +2933,86 @@
       "rotation": 0,
       "properties": {
         "spawnTrigger": "zombie_1"
+      }
+    },
+    {
+      "id": "ent_mokh5u7u2rzrgf",
+      "name": "Turret 17",
+      "type": "turret",
+      "position": {
+        "x": 112,
+        "y": 274
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "zombie_1"
+      }
+    },
+    {
+      "id": "ent_mokiviknv9ebvd",
+      "name": "Robot 18",
+      "type": "enemy_spinner",
+      "position": {
+        "x": -2,
+        "y": 77
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "drone_1"
+      }
+    },
+    {
+      "id": "ent_mokivwbysb2tpn",
+      "name": "Sliding Door 19",
+      "type": "sliding_door",
+      "position": {
+        "x": 22,
+        "y": 69
+      },
+      "rotation": 90,
+      "properties": {
+        "height": "2",
+        "width": "8",
+        "startOpen": "false",
+        "encounterId": "drone_1"
+      }
+    },
+    {
+      "id": "ent_mol1azk7w7kuw0",
+      "name": "Fire Torch 20",
+      "type": "fire_torch",
+      "position": {
+        "x": -4,
+        "y": 8
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#ff9a3c",
+        "intensity": "30.4",
+        "range": "9.5",
+        "decay": "1.6",
+        "height": "1.8",
+        "poleHeight": "1.55",
+        "flameSize": "0.22"
+      }
+    },
+    {
+      "id": "ent_mol1b1nxcvidof",
+      "name": "Fire Torch 21",
+      "type": "fire_torch",
+      "position": {
+        "x": 4,
+        "y": 8
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#ff9a3c",
+        "intensity": "30.4",
+        "range": "9.5",
+        "decay": "1.6",
+        "height": "1.8",
+        "poleHeight": "1.55",
+        "flameSize": "0.22"
       }
     }
   ]

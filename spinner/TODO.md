@@ -121,9 +121,14 @@ refinement
 sound effects
 
 refinement ideas:
+    level load
+    entities idle
+    more entities types in temple
+    checkpoints
     turret shooting fire arrows
     open closing doors
     arena waves
+    mirror room with laser spinner
 
 bugs:
     sometimes entities slip through walls

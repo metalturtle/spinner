@@ -130,8 +130,8 @@ export function setupPlayer(): void {
 
 // ─── Reset ───────────────────────────────────────────────────────────────────
 
-export function resetPlayer(): void {
-  playerBody.pos.x = 0;  playerBody.pos.z = 0;
+export function resetPlayer(spawnPos: { x: number; z: number } = { x: 0, z: 0 }): void {
+  playerBody.pos.x = spawnPos.x;  playerBody.pos.z = spawnPos.z;
   playerBody.vel.x = 0;  playerBody.vel.z = 0;
   playerBody.rpm         = spinnerConfig.rpmCapacity * spinnerConfig.startingRpmRatio;
   playerBody.rpmCapacity = spinnerConfig.rpmCapacity;
@@ -146,7 +146,7 @@ export function resetPlayer(): void {
   playerControlLocked = false;
   playerInvulnerable = false;
   syncPlayerTopScale();
-  tiltGroup.position.set(0, 0, 0);
+  tiltGroup.position.set(spawnPos.x, 0, spawnPos.z);
   tiltGroup.rotation.set(0, 0, 0);
 }
 
