@@ -104,7 +104,7 @@ export function createObstacle(pos: Vec2, config: ObstacleConfig): ObstacleState
 
   const id = nextEntityId();
 
-  return {
+  const obstacle: ObstacleState = {
     id,
     config,
     collidable,
@@ -115,6 +115,8 @@ export function createObstacle(pos: Vec2, config: ObstacleConfig): ObstacleState
     alive:       true,
     originalPos: { x: pos.x, z: pos.z },
   };
+  collidable.owner = obstacle;
+  return obstacle;
 }
 
 // ─── Sync (movable only) ─────────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { scene } from './renderer';
 import { ARENA_SIZE, RPM_SOFT_CAP_RATIO } from './constants';
 import { collidables, type Collidable, type Vec2 } from './physics';
-import { createTop, TOP_BASE_RADIUS, type TopResult } from './top';
+import { createTop, type TopResult } from './top';
 import { updateSpinnerVisuals, type SpinnerTiltState } from './spinnerVisuals';
 import { createHpBar, updateHpBar } from './hpBar';
 import {
@@ -255,7 +255,7 @@ export function createHiveBoss(pos: Vec2, config: HiveConfig): HiveBossState {
     const spawnZ = pos.z + Math.cos(angle) * config.flockOrbitRadius;
 
     const topResult = createTop(config.flockColor);
-    const scale = config.flockRadius / TOP_BASE_RADIUS;
+    const scale = config.flockRadius / 0.5;
     topResult.spinGroup.scale.set(scale, scale, scale);
     topResult.tiltGroup.position.set(spawnX, 0, spawnZ);
     scene.add(topResult.tiltGroup);
@@ -292,7 +292,7 @@ export function createHiveBoss(pos: Vec2, config: HiveConfig): HiveBossState {
     });
   }
 
-  return {
+  const boss: HiveBossState = {
     id:              coreId,
     config,
     collidable:      coreCol,
@@ -311,6 +311,9 @@ export function createHiveBoss(pos: Vec2, config: HiveConfig): HiveBossState {
     fireCooldown:    config.chaingunFireRate[0],
     coreBaseColor:   new THREE.Color(config.coreColor),
   };
+  coreCol.owner = boss;
+  for (const spinner of flock) spinner.collidable.owner = { boss, spinner };
+  return boss;
 }
 
 // ─── AI (call in entity update phase, before movementSystem) ────────────────
@@ -595,7 +598,6 @@ export function updateHiveVisuals(
       tiltGroup,
       spinGroup,
       bodyMat,
-      motionVisuals: spinner.topResult.motionVisuals,
     }, time, delta);
 
     // Critical pulse when low RPM

@@ -736,6 +736,8 @@ export function createOctoboss(pos: Vec2, config: OctobossConfig): OctobossState
     tentacleReachScale: config.coiledReachScale,
     tentacleThicknessScale: config.coiledThicknessScale,
   };
+  collidable.owner = boss;
+  for (const tentacle of tentacles) tentacle.collidable.owner = { boss, tentacle };
 
   for (const tentacle of boss.tentacles) {
     tentacle.desiredTarget.copy(getIdleTarget(boss, tentacle));

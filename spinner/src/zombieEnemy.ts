@@ -145,6 +145,7 @@ export interface ZombieState {
   hp: number;
   maxHp: number;
   alive: boolean;
+  awakened: boolean;
   mixer: THREE.AnimationMixer | null;
   actions: Partial<Record<ZombieAnim, THREE.AnimationAction>>;
   currentAnim: ZombieAnim | null;
@@ -282,6 +283,7 @@ export function createZombieEnemy(pos: Vec2, config: ZombieConfig): ZombieState 
     hp: config.hp,
     maxHp: config.hp,
     alive: true,
+    awakened: true,
     mixer: null,
     actions: {},
     currentAnim: null,
@@ -292,13 +294,25 @@ export function createZombieEnemy(pos: Vec2, config: ZombieConfig): ZombieState 
 
   registerMovement(zombie.id, collidable, config.maxSpeed, config.friction);
   tagCollidable(collidable, 'zombie');
+  collidable.owner = zombie;
 
   getZombieAssets((bundle) => attachZombieModel(zombie, bundle));
   return zombie;
 }
 
+export function setZombieAwake(zombie: ZombieState, awakened: boolean): void {
+  zombie.awakened = awakened;
+  zombie.collidable.enabled = awakened;
+  zombie.collidable.vel.x = 0;
+  zombie.collidable.vel.z = 0;
+  zombie.attackAnimTimer = 0;
+  zombie.attackCooldown = 0;
+  setZombieAnimation(zombie, 'idle');
+}
+
 export function updateZombieAI(zombie: ZombieState, playerPos: Vec2, delta: number): boolean {
   if (!zombie.alive) return false;
+  if (!zombie.awakened) return false;
 
   const body = zombie.collidable;
   const cfg = zombie.config;

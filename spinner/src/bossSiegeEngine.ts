@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { scene } from './renderer';
 import { ARENA_SIZE } from './constants';
 import { collidables, type Collidable, type Vec2 } from './physics';
-import { createTop, TOP_BASE_RADIUS, type TopResult } from './top';
+import { createTop, type TopResult } from './top';
 import { updateSpinnerVisuals, type SpinnerTiltState } from './spinnerVisuals';
 import { createHpBar, updateHpBar } from './hpBar';
 import {
@@ -61,7 +61,7 @@ export interface SiegeEngineState extends SpinnerTiltState {
 export function createSiegeEngine(pos: Vec2, config: SiegeEngineConfig): SiegeEngineState {
   // Core top — scaled
   const topResult = createTop(config.color);
-  const scale = config.coreRadius / TOP_BASE_RADIUS;
+  const scale = config.coreRadius / 0.5;
   topResult.spinGroup.scale.set(scale, scale, scale);
   topResult.tiltGroup.position.set(pos.x, 0, pos.z);
   scene.add(topResult.tiltGroup);
@@ -131,13 +131,16 @@ export function createSiegeEngine(pos: Vec2, config: SiegeEngineConfig): SiegeEn
   // Tag all parts
   for (const p of parts) tagCollidable(p.collidable, 'siege_part');
 
-  return {
+  const boss: SiegeEngineState = {
     id, config, collidable: coreCol, topResult,
     baseColor: new THREE.Color(config.color),
     alive: true, facingAngle: 0,
     parts, shieldMesh, hpBarFill: fill, hpGroup,
     tiltX: 0, tiltZ: 0,
   };
+  coreCol.owner = boss;
+  for (const part of parts) part.collidable.owner = { boss, part };
+  return boss;
 }
 
 function createPart(
@@ -431,7 +434,7 @@ export function updateSiegeEngineVisuals(
     rpmFrac,
     spinFrac: rpmFrac,
     baseColor: boss.baseColor,
-    tiltGroup, spinGroup, bodyMat, motionVisuals: boss.topResult.motionVisuals,
+    tiltGroup, spinGroup, bodyMat,
   }, time, delta);
 
   // Phase-based emissive

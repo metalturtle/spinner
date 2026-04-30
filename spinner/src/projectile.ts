@@ -436,3 +436,9 @@ export function updateProjectiles(
 
   return { rpmDamage, hitFlash };
 }
+
+export function compactProjectiles(projectiles: Projectile[]): void {
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    if (!projectiles[i].alive) projectiles.splice(i, 1);
+  }
+}

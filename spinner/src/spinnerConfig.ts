@@ -11,8 +11,6 @@
 //
 // World rules (RESTITUTION, WALL_RPM_PENALTY, etc.) live in constants.ts.
 
-import { SPINNER_SIZE_SCALE } from './constants';
-
 export interface SpinnerConfig {
   // RPM economy — master stat
   rpmCapacity:   number;   // THE upgradeable power level; all RPM thresholds derive from this
@@ -73,7 +71,7 @@ const DEFAULT_SPINNER_CONFIG: SpinnerConfig = {
   rpmDecayRate:  1.0,
   rpmSpeedDrain: 0.3,
 
-  radius:        1.6875 * SPINNER_SIZE_SCALE,
+  radius:        1.6875,
   mass:          1.0,
 
   maxSpeed:      15,

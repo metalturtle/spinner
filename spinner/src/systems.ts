@@ -43,6 +43,11 @@ export function setMovementMaxSpeed(id: number, maxSpeed: number): void {
 export function movementSystem(delta: number): void {
   for (const m of movables) {
     const c = m.collidable;
+    if (c.enabled === false) {
+      c.vel.x = 0;
+      c.vel.z = 0;
+      continue;
+    }
     c.vel.x *= m.friction;
     c.vel.z *= m.friction;
 

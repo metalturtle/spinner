@@ -114,7 +114,7 @@ export function createTurret(pos: Vec2, config: TurretConfig): TurretState {
 
   const id = nextEntityId();
 
-  return {
+  const turret: TurretState = {
     id,
     pos,
     hp:          config.hp,
@@ -128,6 +128,8 @@ export function createTurret(pos: Vec2, config: TurretConfig): TurretState {
     collidable,
     alive:       true,
   };
+  collidable.owner = turret;
+  return turret;
 }
 
 // ─── Update ──────────────────────────────────────────────────────────────────

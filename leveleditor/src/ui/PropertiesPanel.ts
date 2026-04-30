@@ -266,7 +266,7 @@ export class PropertiesPanel {
   }
 
   private triggerSection(properties: Record<string, string>): string {
-    const triggerAction = properties.triggerAction ?? '';
+    const triggerKind = properties.triggerKind ?? (properties.triggerAction === 'kill_fall' ? 'kill_fall' : 'awaken');
     return `
       <div class="prop-section">
         <h4>Trigger</h4>
@@ -275,10 +275,11 @@ export class PropertiesPanel {
           <input type="text" data-field="triggerId" value="${this.esc(properties.triggerId ?? '')}" placeholder="arena_wave_1" />
         </div>
         <div class="prop-row">
-          <label>Action</label>
-          <select data-field="triggerAction">
-            <option value=""${triggerAction === '' ? ' selected' : ''}>None</option>
-            <option value="kill_fall"${triggerAction === 'kill_fall' ? ' selected' : ''}>Kill Fall</option>
+          <label>Kind</label>
+          <select data-field="triggerKind">
+            <option value="awaken"${triggerKind === 'awaken' ? ' selected' : ''}>Awaken Encounter</option>
+            <option value="visibility"${triggerKind === 'visibility' ? ' selected' : ''}>Visibility Zone</option>
+            <option value="kill_fall"${triggerKind === 'kill_fall' ? ' selected' : ''}>Kill Fall</option>
           </select>
         </div>
       </div>

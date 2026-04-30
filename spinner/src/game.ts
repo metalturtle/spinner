@@ -6,7 +6,7 @@ import {
   PICKUP_RPM_BOOST, HYPER_BOOST,
 } from './constants';
 import { spinnerConfig, resetSpinnerConfig } from './spinnerConfig';
-import { runCollisions, collidables, walls, zones, type Collidable, type Segment, type Vec2 } from './physics';
+import { runCollisions, collidables, walls, zones, isCollidableEnabled, type Collidable, type Segment, type Vec2 } from './physics';
 import { initHud, updateHud, setHudVisible, type ComboHudState } from './hud';
 import { initCamera, updateCamera } from './camera';
 import {
@@ -41,12 +41,12 @@ import {
   CRATE_CONFIG, BARREL_CONFIG, type ObstacleState,
 } from './obstacle';
 import {
-  createEnemySpinner, updateEnemyAI, updateEnemyVisuals,
+  createEnemySpinner, updateEnemyAI, updateEnemyVisuals, setEnemyAwake,
   onEnemyCollision, getEnemyComboLockDuration, isEnemyDead, destroyEnemySpinner,
   ENEMY_SPINNER_TIER_1, ENEMY_SPINNER_TIER_2, ENEMY_SPINNER_TIER_3, type EnemySpinnerState,
 } from './enemySpinner';
 import {
-  createZombieEnemy, updateZombieAI, updateZombieVisuals,
+  createZombieEnemy, updateZombieAI, updateZombieVisuals, setZombieAwake,
   applyDamageToZombie, isZombieDead, destroyZombieEnemy,
   ZOMBIE_TIER_1, type ZombieState,
 } from './zombieEnemy';
@@ -64,6 +64,7 @@ import {
 } from './bossSiegeEngine';
 import {
   createSpiderReliquary, updateSpiderReliquaryAI, syncSpiderReliquaryLegs,
+  setSpiderAwake,
   updateSpiderReliquaryVisuals, canDamageSpiderCore, getSpiderCoreDamageMultiplier,
   applyDamageToSpiderLeg, isSpiderReliquaryDead, destroySpiderReliquary,
   SPIDER_RELIQUARY_TIER_1, type SpiderReliquaryState,
@@ -74,7 +75,7 @@ import {
   isOctobossDead, destroyOctoboss, OCTOBOSS_TIER_1, type OctobossState,
 } from './bossOctoboss';
 import {
-  createRobotEnemy, updateRobotAI, updateRobotVisuals,
+  createRobotEnemy, updateRobotAI, updateRobotVisuals, setRobotAwake,
   applyDamageToRobot, isRobotDead, destroyRobotEnemy, ROBOT_TIER_1,
   type RobotEnemyState,
 } from './robotEnemy';
@@ -589,6 +590,17 @@ interface SpawnTriggerZone extends AreaZone {
   fired: boolean;
 }
 
+interface AwakenableEncounterEntity {
+  awakenId: string;
+  encounterId: string;
+  alerted: boolean;
+  isAlive: () => boolean;
+  isAwake: () => boolean;
+  setAwake: (awakened: boolean) => void;
+  getPos: () => Vec2;
+  getDetectionRadius: (alerted: boolean) => number;
+}
+
 interface EncounterState extends AreaZone {
   id: string;
   activated: boolean;
@@ -642,6 +654,7 @@ const closeTriggerDoorIds = new Map<string, Set<number>>();
 const fallingVictims: FallingVictim[] = [];
 const fallableActors: FallableActor[] = [];
 const checkpoints: CheckpointState[] = [];
+const awakenableEncounterEntities: AwakenableEncounterEntity[] = [];
 const KILL_FALL_DELAY = 0.5;
 const DEFAULT_CHECKPOINT_RADIUS = 1.6;
 const RESPAWN_INVULNERABILITY_DURATION = 1.6;
@@ -668,6 +681,14 @@ function readNumberProperty(props: Record<string, unknown> | undefined, key: str
   const parsed = typeof raw === 'number' ? raw : parseFloat(String(raw ?? ''));
   if (!Number.isFinite(parsed)) return fallback;
   return min === undefined ? parsed : Math.max(min, parsed);
+}
+
+function readTriggerKind(props: Record<string, unknown> | undefined): 'awaken' | 'visibility' | 'kill_fall' {
+  const triggerKind = readStringProperty(props, 'triggerKind');
+  if (triggerKind === 'kill_fall') return 'kill_fall';
+  if (triggerKind === 'visibility') return 'visibility';
+  if (readStringProperty(props, 'triggerAction') === 'kill_fall') return 'kill_fall';
+  return 'awaken';
 }
 
 function disposeObject3D(root: THREE.Object3D): void {
@@ -1005,6 +1026,68 @@ function activateCloseTrigger(triggerId: string): void {
   }
 }
 
+function shouldPreloadTriggeredEntity(ent: LevelEntity): boolean {
+  switch (ent.type) {
+    case 'enemy_spinner':
+    case 'enemy_spinner_tier_1':
+    case 'enemy_spinner_tier_2':
+    case 'enemy_spinner_tier_3':
+    case 'zombie':
+    case 'robot':
+    case 'spider_reliquary':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function registerAwakenableEncounterEntity(
+  ent: LevelEntity,
+  awakenId: string,
+  entry: Omit<AwakenableEncounterEntity, 'awakenId' | 'encounterId' | 'alerted'>,
+): void {
+  awakenableEncounterEntities.push({
+    awakenId,
+    encounterId: levelEntityEncounterIds.get(ent.id) ?? awakenId,
+    alerted: false,
+    ...entry,
+  });
+}
+
+function awakenEncounterEntities(triggerId: string): void {
+  for (const entry of awakenableEncounterEntities) {
+    if (entry.awakenId !== triggerId) continue;
+    if (!entry.isAlive()) continue;
+    entry.alerted = true;
+    activateEncounter(entry.encounterId);
+  }
+}
+
+function updateAwakenableEncounterEntities(): void {
+  for (const entry of awakenableEncounterEntities) {
+    if (!entry.isAlive() || entry.isAwake()) continue;
+
+    const pos = entry.getPos();
+    const radius = entry.getDetectionRadius(entry.alerted);
+    const dx = playerBody.pos.x - pos.x;
+    const dz = playerBody.pos.z - pos.z;
+    if (dx * dx + dz * dz > radius * radius) continue;
+
+    entry.alerted = true;
+    entry.setAwake(true);
+    activateEncounter(entry.encounterId);
+  }
+}
+
+function resetAwakenableEncounterEntitiesForRespawn(): void {
+  for (const entry of awakenableEncounterEntities) {
+    if (!entry.isAlive()) continue;
+    entry.setAwake(false);
+    const encounter = encounters.get(entry.encounterId);
+    entry.alerted = Boolean(encounter?.activated && !encounter.cleared);
+  }
+}
+
 function rebuildTriggerZones(level: LevelData): void {
   spawnTriggerZones.length = 0;
   killFallZones.length = 0;
@@ -1025,11 +1108,12 @@ function rebuildTriggerZones(level: LevelData): void {
     if (!zone) continue;
 
     const triggerId = readStringProperty(poly.properties, 'triggerId');
-    if (triggerId) {
+    const triggerKind = readTriggerKind(poly.properties);
+    if (triggerId && triggerKind !== 'kill_fall') {
       spawnTriggerZones.push({ id: triggerId, fired: false, contains: zone.contains });
       recordEncounterZone(triggerId, zone);
     }
-    if (readStringProperty(poly.properties, 'triggerAction') === 'kill_fall') {
+    if (triggerKind === 'kill_fall') {
       killFallZones.push(zone);
     }
   }
@@ -1040,11 +1124,12 @@ function rebuildTriggerZones(level: LevelData): void {
     if (!zone) continue;
 
     const triggerId = readStringProperty(circle.properties, 'triggerId');
-    if (triggerId) {
+    const triggerKind = readTriggerKind(circle.properties);
+    if (triggerId && triggerKind !== 'kill_fall') {
       spawnTriggerZones.push({ id: triggerId, fired: false, contains: zone.contains });
       recordEncounterZone(triggerId, zone);
     }
-    if (readStringProperty(circle.properties, 'triggerAction') === 'kill_fall') {
+    if (triggerKind === 'kill_fall') {
       killFallZones.push(zone);
     }
   }
@@ -1319,9 +1404,23 @@ function isEntityFallable(ent: LevelEntity): boolean {
 
 function spawnLevelEntity(ent: LevelEntity): void {
   const pos = lvPos(ent.position);
+  const spawnTrigger = readStringProperty(ent.properties, 'spawnTrigger');
+  const preloadTriggered = Boolean(spawnTrigger && shouldPreloadTriggeredEntity(ent));
   const spawnEnemySpinnerEntity = (config: typeof ENEMY_SPINNER_TIER_1): void => {
     const enemy = EnemyEntities.spawn(pos, config);
     registerEncounterMember(ent, enemy.id);
+    if (preloadTriggered && spawnTrigger) {
+      setEnemyAwake(enemy, false);
+      registerAwakenableEncounterEntity(ent, spawnTrigger, {
+        isAlive: () => enemy.alive,
+        isAwake: () => enemy.awakened,
+        setAwake: (awakened) => setEnemyAwake(enemy, awakened),
+        getPos: () => enemy.collidable.pos,
+        getDetectionRadius: (alerted) => alerted
+          ? Math.max(enemy.config.orbitRange + 4, enemy.config.chargeRange * 2.4)
+          : Math.max(enemy.config.orbitRange + 1, enemy.config.chargeRange * 1.5),
+      });
+    }
     if (isEntityFallable(ent)) {
       registerFallableActor(enemy.collidable, () => {
         const roots = deactivateEnemySpinnerForFall(enemy);
@@ -1370,6 +1469,18 @@ function spawnLevelEntity(ent: LevelEntity): void {
     case 'robot': {
       const robot = RobotEntities.spawn(pos, ROBOT_TIER_1);
       registerEncounterMember(ent, robot.id);
+      if (preloadTriggered && spawnTrigger) {
+        setRobotAwake(robot, false);
+        registerAwakenableEncounterEntity(ent, spawnTrigger, {
+          isAlive: () => robot.alive,
+          isAwake: () => robot.awakened,
+          setAwake: (awakened) => setRobotAwake(robot, awakened),
+          getPos: () => robot.collidable.pos,
+          getDetectionRadius: (alerted) => alerted
+            ? Math.max(robot.config.attackRange * 1.5, robot.config.preferredRange + 6)
+            : Math.max(robot.config.attackRange, robot.config.preferredRange + 2),
+        });
+      }
       if (isEntityFallable(ent)) {
         registerFallableActor(robot.collidable, () => {
           const roots = deactivateRobotForFall(robot);
@@ -1401,6 +1512,18 @@ function spawnLevelEntity(ent: LevelEntity): void {
     case 'spider_reliquary': {
       const spider = SpiderEntities.spawn(pos, SPIDER_RELIQUARY_TIER_1);
       registerEncounterMember(ent, spider.id);
+      if (preloadTriggered && spawnTrigger) {
+        setSpiderAwake(spider, false);
+        registerAwakenableEncounterEntity(ent, spawnTrigger, {
+          isAlive: () => spider.alive,
+          isAwake: () => spider.awakened,
+          setAwake: (awakened) => setSpiderAwake(spider, awakened),
+          getPos: () => spider.collidable.pos,
+          getDetectionRadius: (alerted) => alerted
+            ? Math.max(spider.config.legSlamTriggerRange + 4, spider.config.pulseRadius[0] + 3)
+            : Math.max(spider.config.legSlamTriggerRange + 1, spider.config.pulseRadius[0]),
+        });
+      }
       if (isEntityFallable(ent)) {
         registerFallableActor(spider.collidable, () => {
           const roots = deactivateSpiderForFall(spider);
@@ -1449,6 +1572,18 @@ function spawnLevelEntity(ent: LevelEntity): void {
     case 'zombie': {
       const zombie = ZombieEntities.spawn(pos, ZOMBIE_TIER_1);
       registerEncounterMember(ent, zombie.id);
+      if (preloadTriggered && spawnTrigger) {
+        setZombieAwake(zombie, false);
+        registerAwakenableEncounterEntity(ent, spawnTrigger, {
+          isAlive: () => zombie.alive,
+          isAwake: () => zombie.awakened,
+          setAwake: (awakened) => setZombieAwake(zombie, awakened),
+          getPos: () => zombie.collidable.pos,
+          getDetectionRadius: (alerted) => alerted
+            ? Math.max(zombie.config.attackRange * 5, 8)
+            : Math.max(zombie.config.attackRange * 3, 4.5),
+        });
+      }
       if (isEntityFallable(ent)) {
         registerFallableActor(zombie.collidable, () => {
           const roots = deactivateZombieForFall(zombie);
@@ -1572,6 +1707,7 @@ function spawnAll(level: LevelData): void {
   slidingDoorsById.clear();
   closeTriggerDoorIds.clear();
   fallableActors.length = 0;
+  awakenableEncounterEntities.length = 0;
   clearCheckpoints();
   playerKillFallTimer = 0;
   playerSpawnPoint = { x: 0, z: 0 };
@@ -1588,7 +1724,7 @@ function spawnAll(level: LevelData): void {
     }
 
     const spawnTrigger = readStringProperty(ent.properties, 'spawnTrigger');
-    if (spawnTrigger) {
+    if (spawnTrigger && !shouldPreloadTriggeredEntity(ent)) {
       const pending = pendingTriggeredEntities.get(spawnTrigger);
       if (pending) pending.push(ent);
       else pendingTriggeredEntities.set(spawnTrigger, [ent]);
@@ -1607,6 +1743,7 @@ function updateTriggerSpawns(): void {
     zone.fired = true;
     activateCloseTrigger(zone.id);
     spawnTriggeredEntities(zone.id);
+    awakenEncounterEntities(zone.id);
     activateEncounter(zone.id);
   }
 }
@@ -2004,12 +2141,12 @@ function buildComboTargets(): ComboTarget[] {
   }
 
   for (const enemy of EnemyEntities.getAll()) {
-    if (!enemy.alive) continue;
+    if (!enemy.alive || !isCollidableEnabled(enemy.collidable)) continue;
     targets.push({
       id: makeComboTargetId('enemy', enemy.collidable),
       collidable: enemy.collidable,
       getPos: () => cloneVec2(enemy.collidable.pos),
-      isValid: () => enemy.alive,
+      isValid: () => enemy.alive && isCollidableEnabled(enemy.collidable),
       applyDamage: (damage) => {
         if (!enemy.alive) return;
         enemy.collidable.rpm = Math.max(0, enemy.collidable.rpm - damage);
@@ -2019,12 +2156,12 @@ function buildComboTargets(): ComboTarget[] {
   }
 
   for (const zombie of ZombieEntities.getAll()) {
-    if (!zombie.alive) continue;
+    if (!zombie.alive || !isCollidableEnabled(zombie.collidable)) continue;
     targets.push({
       id: makeComboTargetId('zombie', zombie.collidable),
       collidable: zombie.collidable,
       getPos: () => cloneVec2(zombie.collidable.pos),
-      isValid: () => zombie.alive,
+      isValid: () => zombie.alive && isCollidableEnabled(zombie.collidable),
       applyDamage: (damage) => {
         if (!zombie.alive) return;
         applyDamageToZombie(zombie, damage);
@@ -2083,12 +2220,12 @@ function buildComboTargets(): ComboTarget[] {
   for (const spider of SpiderEntities.getAll()) {
     if (!spider.alive) continue;
 
-    if (canDamageSpiderCore(spider)) {
+    if (isCollidableEnabled(spider.collidable) && canDamageSpiderCore(spider)) {
       targets.push({
         id: makeComboTargetId('spider-core', spider.collidable),
         collidable: spider.collidable,
         getPos: () => cloneVec2(spider.collidable.pos),
-        isValid: () => spider.alive && canDamageSpiderCore(spider),
+        isValid: () => spider.alive && isCollidableEnabled(spider.collidable) && canDamageSpiderCore(spider),
         applyDamage: (damage) => {
           if (!spider.alive || !canDamageSpiderCore(spider)) return;
           spider.collidable.rpm = Math.max(
@@ -2100,12 +2237,12 @@ function buildComboTargets(): ComboTarget[] {
     }
 
     for (const leg of spider.legs) {
-      if (!leg.alive) continue;
+      if (!leg.alive || !isCollidableEnabled(leg.collidable)) continue;
       targets.push({
         id: makeComboTargetId('spider-leg', leg.collidable),
         collidable: leg.collidable,
         getPos: () => cloneVec2(leg.collidable.pos),
-        isValid: () => spider.alive && leg.alive,
+        isValid: () => spider.alive && leg.alive && isCollidableEnabled(leg.collidable),
         applyDamage: (damage) => {
           if (!spider.alive || !leg.alive) return;
           if (applyDamageToSpiderLeg(spider, leg, damage)) {
@@ -2134,12 +2271,12 @@ function buildComboTargets(): ComboTarget[] {
   }
 
   for (const robot of RobotEntities.getAll()) {
-    if (!robot.alive) continue;
+    if (!robot.alive || !isCollidableEnabled(robot.collidable)) continue;
     targets.push({
       id: makeComboTargetId('robot', robot.collidable),
       collidable: robot.collidable,
       getPos: () => cloneVec2(robot.collidable.pos),
-      isValid: () => robot.alive,
+      isValid: () => robot.alive && isCollidableEnabled(robot.collidable),
       applyDamage: (damage) => {
         if (!robot.alive) return;
         applyDamageToRobot(robot, damage);
@@ -2512,6 +2649,7 @@ function completePlayerDeathSequence(): void {
 
 function finishPlayerRespawn(): void {
   resetPlayer(getRespawnPoint());
+  resetAwakenableEncounterEntitiesForRespawn();
   resetComboState();
   setPlayerControlLocked(false);
   respawnPending = false;
@@ -3176,6 +3314,7 @@ function animate(): void {
       setPlayerControlLocked(false);
     }
   }
+  updateAwakenableEncounterEntities();
   tryStartPlayerCombo();
   entityUpdateSystem(delta);
   const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);

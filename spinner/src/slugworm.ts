@@ -233,7 +233,7 @@ export function createSlugworm(pos: Vec2, config: SlugwormConfig): SlugwormState
   // Pick random initial wander direction
   const wanderAngle = Math.random() * Math.PI * 2;
 
-  return {
+  const slug: SlugwormState = {
     id, config, collidable: col, group, bodyMat, headMat, bellyMats,
     hpBarFill: fill,
     hp: config.hp, maxHp: config.hp,
@@ -246,6 +246,8 @@ export function createSlugworm(pos: Vec2, config: SlugwormConfig): SlugwormState
     wanderDirZ: Math.sin(wanderAngle),
     fireCooldown: config.fireInterval,
   };
+  col.owner = slug;
+  return slug;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

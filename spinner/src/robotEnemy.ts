@@ -128,6 +128,7 @@ export interface RobotEnemyState {
   hp:           number;
   maxHp:        number;
   alive:        boolean;
+  awakened:     boolean;
 
   // AI
   aiState:      RobotAIState;
@@ -247,10 +248,12 @@ export function createRobotEnemy(pos: Vec2, config: RobotConfig): RobotEnemyStat
     hpBarFill: fill,
     hp: config.hp, maxHp: config.hp,
     alive: true,
+    awakened: true,
     aiState: 'chase',
     stateTimer: 0,
     strafeDir: 1,
   };
+  col.owner = robotState;
 
   getDroneAsset(({ scene: droneScene, animations }) => {
     if (!group.parent) return;
@@ -301,6 +304,15 @@ export function createRobotEnemy(pos: Vec2, config: RobotConfig): RobotEnemyStat
   return robotState;
 }
 
+export function setRobotAwake(robot: RobotEnemyState, awakened: boolean): void {
+  robot.awakened = awakened;
+  robot.collidable.enabled = awakened;
+  robot.collidable.vel.x = 0;
+  robot.collidable.vel.z = 0;
+  robot.aiState = 'chase';
+  robot.stateTimer = 0;
+}
+
 // ─── AI ──────────────────────────────────────────────────────────────────────
 
 /**
@@ -313,6 +325,7 @@ export function updateRobotAI(
   delta:     number,
 ): RobotFireEvent | null {
   if (!robot.alive) return null;
+  if (!robot.awakened) return null;
 
   const cfg  = robot.config;
   const body = robot.collidable;

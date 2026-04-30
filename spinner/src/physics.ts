@@ -13,9 +13,11 @@ export interface Collidable {
   radius: number;
   mass: number;
   isStatic: boolean;
+  enabled?: boolean;
   rpm: number;         // current RPM
   rpmCapacity: number; // spinner's power level — effective mass uses rpm / rpmCapacity
   heatFactor: number;  // damage multiplier (1.0 = normal, >1 = dangerous enemy)
+  owner?: unknown;     // back-reference to gameplay state for fast collision dispatch
 }
 
 export interface Segment {
@@ -51,6 +53,10 @@ export interface WallHit {
 export const collidables: Collidable[] = [];
 export const walls: Segment[] = [];
 export const zones: FloorZone[] = [];
+
+export function isCollidableEnabled(collidable: Collidable): boolean {
+  return collidable.enabled !== false;
+}
 
 // ─── Circle ↔ Segment ────────────────────────────────────────────────────────
 
@@ -171,6 +177,7 @@ export function runCollisions(): { wallHits: WallHit[]; circleHits: CircleHit[] 
 
   // All collidables vs walls
   for (let i = 0; i < collidables.length; i++) {
+    if (!isCollidableEnabled(collidables[i])) continue;
     for (const seg of walls) {
       const wh = resolveCircleSegment(collidables[i], seg, i);
       if (wh) wallHits.push(wh);
@@ -179,7 +186,9 @@ export function runCollisions(): { wallHits: WallHit[]; circleHits: CircleHit[] 
 
   // Circle ↔ Circle
   for (let i = 0; i < collidables.length; i++) {
+    if (!isCollidableEnabled(collidables[i])) continue;
     for (let j = i + 1; j < collidables.length; j++) {
+      if (!isCollidableEnabled(collidables[j])) continue;
       const impactForce = resolveCircleCircle(collidables[i], collidables[j]);
       if (impactForce > 0) circleHits.push({ i, j, impactForce });
     }

@@ -366,6 +366,14 @@ export function ejectPickupAt(pickups: Pickup[], pos: Vec2, vel: Vec2): void {
   pickup.proximityBody.active = false;   // not collectible until settled
   pickups.push(pickup);
 }
+export function compactPickups(pickups: Pickup[]): void {
+  for (let i = pickups.length - 1; i >= 0; i--) {
+    const pickup = pickups[i];
+    if (!pickup.collected) continue;
+    deregisterProximityBody('pickup', pickup.proximityBody);
+    pickups.splice(i, 1);
+  }
+}
 
 // ─── Reset ───────────────────────────────────────────────────────────────────
 

@@ -3014,6 +3014,17 @@
         "poleHeight": "1.55",
         "flameSize": "0.22"
       }
+    },
+    {
+      "id": "ent_mol278tuqywqkr",
+      "name": "Zombie 22",
+      "type": "zombie",
+      "position": {
+        "x": 1,
+        "y": 25
+      },
+      "rotation": 0,
+      "properties": {}
     }
   ]
 }

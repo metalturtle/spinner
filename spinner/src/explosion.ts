@@ -351,3 +351,9 @@ export function updateExplosions(explosions: Explosion[], delta: number): void {
     }
   }
 }
+
+export function compactExplosions(explosions: Explosion[]): void {
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    if (!explosions[i].alive) explosions.splice(i, 1);
+  }
+}

@@ -185,6 +185,7 @@ export interface SpiderReliquaryState {
   legs: SpiderLeg[];
   attacks: SpiderAttack[];
   alive: boolean;
+  awakened: boolean;
   facingAngle: number;
   collapseTimer: number;
   stompCooldown: number;
@@ -376,6 +377,17 @@ function removeAttack(attack: SpiderAttack): void {
   scene.remove(attack.mesh);
   attack.mesh.geometry.dispose();
   if (attack.mesh.material instanceof THREE.Material) attack.mesh.material.dispose();
+}
+
+function resetSpiderTransientState(boss: SpiderReliquaryState): void {
+  boss.collidable.vel.x = 0;
+  boss.collidable.vel.z = 0;
+  boss.oneLegHopWindup = 0;
+  boss.oneLegHopAir = 0;
+  boss.oneLegHopRecover = 0;
+  boss.corePassThroughCooldown = 0;
+  for (const attack of boss.attacks) removeAttack(attack);
+  boss.attacks.length = 0;
 }
 
 function scheduleStomp(
@@ -675,6 +687,7 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
     legs,
     attacks: [],
     alive: true,
+    awakened: true,
     facingAngle: 0,
     collapseTimer: 0,
     stompCooldown: 1.1,
@@ -700,8 +713,20 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
   bodyGroup.position.set(pos.x, 0, pos.z);
   hpGroup.position.set(pos.x, 0, pos.z);
   bodyRoot.scale.setScalar(config.bodyScale);
+  collidable.owner = boss;
+  for (const leg of legs) leg.collidable.owner = { boss, leg };
   syncSpiderReliquaryLegs(boss, 0);
   return boss;
+}
+
+export function setSpiderAwake(boss: SpiderReliquaryState, awakened: boolean): void {
+  boss.awakened = awakened;
+  boss.collidable.enabled = awakened;
+  for (const leg of boss.legs) {
+    if (!leg.alive) continue;
+    leg.collidable.enabled = awakened;
+  }
+  resetSpiderTransientState(boss);
 }
 
 export function syncSpiderReliquaryLegs(boss: SpiderReliquaryState, delta: number): void {
@@ -941,6 +966,7 @@ export function updateSpiderReliquaryAI(
   delta: number,
 ): SpiderReliquaryAttackEvent[] {
   if (!boss.alive) return [];
+  if (!boss.awakened) return [];
 
   const phase = getPhaseIndex(boss);
   const aliveLegs = boss.legs.filter((leg) => leg.alive);

@@ -144,6 +144,7 @@ export interface EnemySpinnerState extends SpinnerTiltState {
   topResult:     TopResult;
   baseColor:     THREE.Color;
   alive:         boolean;
+  awakened:      boolean;
   aiState:       AIState;
   attackState:   EnemyAttackState;
   recoveryTimer: number;
@@ -180,6 +181,23 @@ function applyWallAvoidance(enemy: EnemySpinnerState, delta: number): void {
   if (body.pos.z < -limit) body.vel.z += wallAvoidAccel * delta;
 }
 
+function resetEnemyCombatState(enemy: EnemySpinnerState): void {
+  enemy.aiState = 'orbit';
+  enemy.attackState = 'idle';
+  enemy.recoveryTimer = 0;
+  enemy.windupTimer = 0;
+  enemy.cutInTimer = 0;
+  enemy.dashCooldown = 0;
+  enemy.comboCooldown = 0;
+  enemy.heatCooldown = 0;
+  enemy.comboBurstsRemaining = 0;
+  enemy.comboPauseTimer = 0;
+  enemy.dashDirX = 0;
+  enemy.dashDirZ = 1;
+  resetOrbitTimer(enemy);
+  setMovementMaxSpeed(enemy.id, enemy.config.maxSpeed);
+}
+
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createEnemySpinner(pos: Vec2, config: EnemySpinnerConfig): EnemySpinnerState {
@@ -207,13 +225,14 @@ export function createEnemySpinner(pos: Vec2, config: EnemySpinnerConfig): Enemy
   registerRpm(id, collidable, config.rpmDecayRate, config.rpmSpeedDrain);
   tagCollidable(collidable, 'enemy');
 
-  return {
+  const enemy: EnemySpinnerState = {
     id,
     config,
     collidable,
     topResult,
     baseColor:     new THREE.Color(config.color),
     alive:         true,
+    awakened:      true,
     aiState:       'orbit',
     attackState:   'idle',
     recoveryTimer: 0,
@@ -231,6 +250,16 @@ export function createEnemySpinner(pos: Vec2, config: EnemySpinnerConfig): Enemy
     tiltX:         0,
     tiltZ:         0,
   };
+  collidable.owner = enemy;
+  return enemy;
+}
+
+export function setEnemyAwake(enemy: EnemySpinnerState, awakened: boolean): void {
+  enemy.awakened = awakened;
+  enemy.collidable.enabled = awakened;
+  enemy.collidable.vel.x = 0;
+  enemy.collidable.vel.z = 0;
+  resetEnemyCombatState(enemy);
 }
 
 function normalizeDir(x: number, z: number): { x: number; z: number } {
@@ -283,6 +312,7 @@ export function updateEnemyAI(
   delta:     number
 ): void {
   if (!enemy.alive) return;
+  if (!enemy.awakened) return;
 
   const cfg  = enemy.config;
   const body = enemy.collidable;
