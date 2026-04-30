@@ -121,16 +121,16 @@ refinement
 sound effects
 
 refinement ideas:
-    spider boss shooting webs
     spider boss after last leg destroyed, is a spinner
     octoboss shoots laser from eyes
     enemies dont walk off the floor area
-    zombie model improvement, crawling and walking zombie
-    menu improvement
-    combat improvement
     ambient zones
     laser room
-
+    hosting the game
+    menu improvement
+    combat improvement
+    zombie model improvement, crawling and walking zombie
+    holes in the octoboss chamber and several drones
 
 backburner:
     rain effect with spinners throwing out rain drops
@@ -145,6 +145,9 @@ backburner:
     turret shooting fire arrows
     octoboss more mechanical arms
     enemy spinner also effects ember
+    drag selection in level editor
+    saving custom level to cache and custom level option in main menu
+
 
 bugs:
     sometimes entities slip through walls
@@ -160,6 +163,7 @@ done:
     sound effects
     Heat attack
     platforming to space station
+    spider boss shooting webs
 
 refine:
     more bounciness when spinner hits the walls or enemy spinners
@@ -167,4 +171,3 @@ refine:
     octoboss eye improvement
     laser glow
     heat attack improvement
-    

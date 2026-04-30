@@ -75,12 +75,12 @@ import {
   createSpiderReliquary, updateSpiderReliquaryAI, syncSpiderReliquaryLegs,
   setSpiderAwake,
   updateSpiderReliquaryVisuals, canDamageSpiderCore, getSpiderCoreDamageMultiplier,
-  applyDamageToSpiderLeg, isSpiderReliquaryDead, destroySpiderReliquary,
+  applyDamageToSpiderLeg, onSpiderCoreCollision, isSpiderReliquaryDead, destroySpiderReliquary,
   SPIDER_RELIQUARY_TIER_1, type SpiderReliquaryState,
 } from './bossSpiderReliquary';
 import {
   createOctoboss, updateOctobossAI, syncOctobossTentacles, updateOctobossVisuals,
-  canDamageOctobossCore, getOctobossCoreDamageMultiplier, getOctobossTipDamage,
+  canDamageOctobossCore, getOctobossCoreDamageMultiplier, getOctobossTipDamage, traceOctobossEyeLaser,
   isOctobossDead, destroyOctoboss, OCTOBOSS_TIER_1, type OctobossState,
 } from './bossOctoboss';
 import {
@@ -433,6 +433,7 @@ registerCollisionPair('player', 'spider_core', (_playerCol, coreCol, hit) => {
     * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor
     * getSpiderCoreDamageMultiplier(spider));
   spider.collidable.rpm = Math.max(0, spider.collidable.rpm - rpmDamage);
+  onSpiderCoreCollision(spider);
   emitSparks(point, normal, Math.floor(18 + hit.impactForce * 12), Math.min(1, hit.impactForce / 6));
 });
 
@@ -3760,6 +3761,25 @@ function updateOctobossSystem(delta: number): void {
   }
 }
 
+function updateOctobossEyeLaserSystem(delta: number): void {
+  for (const boss of OctobossEntities.getAll()) {
+    if (!boss.alive) continue;
+    const rpmDamage = traceOctobossEyeLaser(
+      boss,
+      playerBody.pos,
+      playerBody.radius,
+      walls,
+      delta,
+      isPlayerInvulnerable(),
+    );
+    if (rpmDamage <= 0) continue;
+
+    playerBody.rpm = Math.max(0, playerBody.rpm - rpmDamage);
+    notifyPlayerHit();
+    emitPlasma({ x: playerBody.pos.x, y: 0.6, z: playerBody.pos.z }, 12, 0.38);
+  }
+}
+
 function getOctobossSummonPhase(boss: OctobossState): number {
   const frac = boss.collidable.rpm / boss.config.coreRpmCapacity;
   if (frac > 0.66) return 0;
@@ -4529,6 +4549,7 @@ function animate(): void {
   for (const boss of OctobossEntities.getAll()) syncOctobossTentacles(boss, delta);
   for (const h of HiveEntities.getAll()) syncFlockPositions(h);
   updateLaserSpinnerBeamSystem(delta);
+  updateOctobossEyeLaserSystem(delta);
   updateSpiderCorePassThroughHits();
 
   // 2c. Kill-fall trigger zones

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { scene } from './renderer';
-import { collidables, type Collidable, type Vec2 } from './physics';
+import { collidables, type Collidable, type Segment, type Vec2 } from './physics';
 import { createHpBar, updateHpBar } from './hpBar';
 import { getArenaBounds } from './arena';
 import {
@@ -57,6 +57,12 @@ export interface OctobossConfig {
   doubleRecover: [number, number, number];
   exposeDuration: [number, number, number];
   attackCooldown: [number, number, number];
+  eyeLaserRange: number;
+  eyeLaserWidth: [number, number, number];
+  eyeLaserDamagePerSecond: [number, number, number];
+  eyeLaserWindup: [number, number, number];
+  eyeLaserDuration: [number, number, number];
+  eyeLaserCooldown: [number, number, number];
   color: number;
 }
 
@@ -104,11 +110,23 @@ export const OCTOBOSS_TIER_1: OctobossConfig = {
   doubleRecover: [0.5, 0.42, 0.34],
   exposeDuration: [1.25, 1.05, 0.9],
   attackCooldown: [0.55, 0.42, 0.32],
+  eyeLaserRange: 36,
+  eyeLaserWidth: [0.44, 0.5, 0.56],
+  eyeLaserDamagePerSecond: [18, 24, 30],
+  eyeLaserWindup: [0.78, 0.66, 0.56],
+  eyeLaserDuration: [1.2, 1.4, 1.65],
+  eyeLaserCooldown: [4.0, 3.4, 2.9],
   color: 0x7b6850,
 };
 
 type OctobossAttackKind = 'idle' | 'jab' | 'sweep' | 'double';
 export type OctobossTentacleMode = 'coiled' | 'extending' | 'chasing' | 'retracting';
+type OctobossEyeLaserPhase = 'idle' | 'windup' | 'firing' | 'cooldown';
+
+export interface OctobossLaserBeamSegment {
+  start: Vec2;
+  end: Vec2;
+}
 
 interface Telegraph {
   mesh: THREE.Mesh;
@@ -205,6 +223,15 @@ export interface OctobossState {
   tentacleModeDuration: number;
   tentacleReachScale: number;
   tentacleThicknessScale: number;
+  eyeLaserPhase: OctobossEyeLaserPhase;
+  eyeLaserTimer: number;
+  eyeLaserAngle: number;
+  eyeLaserVisualStrength: number;
+  eyeLaserDealsDamage: boolean;
+  eyeLaserSegments: OctobossLaserBeamSegment[];
+  eyeLaserGroup: THREE.Group;
+  eyeLaserMeshes: THREE.Mesh[];
+  eyeLaserGlowMeshes: THREE.Mesh[];
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -347,6 +374,107 @@ function disposeTelegraph(telegraph: Telegraph): void {
 function clearTelegraphs(boss: OctobossState): void {
   for (const telegraph of boss.telegraphs) disposeTelegraph(telegraph);
   boss.telegraphs.length = 0;
+}
+
+const EYE_LASER_EPSILON = 0.02;
+
+function cross2(a: Vec2, b: Vec2): number {
+  return a.x * b.z - a.z * b.x;
+}
+
+function normalizeDir(x: number, z: number): Vec2 {
+  const len = Math.hypot(x, z);
+  if (len <= 0.0001) return { x: 0, z: 1 };
+  return { x: x / len, z: z / len };
+}
+
+function buildEyeLaserVisuals(color: number): {
+  group: THREE.Group;
+  beamMeshes: THREE.Mesh[];
+  glowMeshes: THREE.Mesh[];
+} {
+  const group = new THREE.Group();
+  const beamMeshes: THREE.Mesh[] = [];
+  const glowMeshes: THREE.Mesh[] = [];
+
+  for (let i = 0; i < 1; i += 1) {
+    const beam = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    );
+    beam.visible = false;
+    beam.renderOrder = 4;
+    group.add(beam);
+    beamMeshes.push(beam);
+
+    const glow = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({
+        color: 0xfff1d6,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    );
+    glow.visible = false;
+    glow.renderOrder = 5;
+    group.add(glow);
+    glowMeshes.push(glow);
+  }
+
+  scene.add(group);
+  return { group, beamMeshes, glowMeshes };
+}
+
+function setBeamSegmentMesh(mesh: THREE.Mesh, start: Vec2, end: Vec2, width: number): void {
+  const dx = end.x - start.x;
+  const dz = end.z - start.z;
+  const len = Math.max(0.001, Math.hypot(dx, dz));
+  mesh.visible = true;
+  mesh.position.set(start.x + dx * 0.5, 1.95, start.z + dz * 0.5);
+  mesh.rotation.y = Math.atan2(dx, dz);
+  mesh.scale.set(width, 0.18, len);
+}
+
+function raycastSegment(origin: Vec2, dir: Vec2, seg: Segment): { distance: number; point: Vec2 } | null {
+  const segVec = { x: seg.p2.x - seg.p1.x, z: seg.p2.z - seg.p1.z };
+  const denom = cross2(dir, segVec);
+  if (Math.abs(denom) < 0.00001) return null;
+
+  const delta = { x: seg.p1.x - origin.x, z: seg.p1.z - origin.z };
+  const t = cross2(delta, segVec) / denom;
+  const u = cross2(delta, dir) / denom;
+  if (t <= EYE_LASER_EPSILON || u < -0.0001 || u > 1.0001) return null;
+
+  return {
+    distance: t,
+    point: { x: origin.x + dir.x * t, z: origin.z + dir.z * t },
+  };
+}
+
+function distanceSqPointToSegment(point: Vec2, start: Vec2, end: Vec2): number {
+  const dx = end.x - start.x;
+  const dz = end.z - start.z;
+  const lenSq = dx * dx + dz * dz;
+  if (lenSq <= 0.00001) {
+    const px = point.x - start.x;
+    const pz = point.z - start.z;
+    return px * px + pz * pz;
+  }
+
+  const t = clamp(((point.x - start.x) * dx + (point.z - start.z) * dz) / lenSq, 0, 1);
+  const cx = start.x + dx * t;
+  const cz = start.z + dz * t;
+  const px = point.x - cx;
+  const pz = point.z - cz;
+  return px * px + pz * pz;
 }
 
 function addTelegraph(
@@ -701,6 +829,7 @@ export function createOctoboss(pos: Vec2, config: OctobossConfig): OctobossState
   tagCollidable(collidable, 'octoboss_core');
 
   const tentacles = [makeTentacle(-1, config), makeTentacle(1, config)];
+  const eyeLaserVisuals = buildEyeLaserVisuals(0xff6b3d);
   bodyRoot.scale.setScalar(config.bodyScale);
 
   const boss: OctobossState = {
@@ -735,6 +864,15 @@ export function createOctoboss(pos: Vec2, config: OctobossConfig): OctobossState
     tentacleModeDuration: config.coilDuration[0],
     tentacleReachScale: config.coiledReachScale,
     tentacleThicknessScale: config.coiledThicknessScale,
+    eyeLaserPhase: 'cooldown',
+    eyeLaserTimer: config.eyeLaserCooldown[0] * 0.6,
+    eyeLaserAngle: 0,
+    eyeLaserVisualStrength: 0,
+    eyeLaserDealsDamage: false,
+    eyeLaserSegments: [],
+    eyeLaserGroup: eyeLaserVisuals.group,
+    eyeLaserMeshes: eyeLaserVisuals.beamMeshes,
+    eyeLaserGlowMeshes: eyeLaserVisuals.glowMeshes,
   };
   collidable.owner = boss;
   for (const tentacle of tentacles) tentacle.collidable.owner = { boss, tentacle };
@@ -780,6 +918,70 @@ function getSocketWorldPosition(boss: OctobossState, tentacle: OctobossTentacle)
   const x = boss.collidable.pos.x + tentacle.socketLocal.x * cos + tentacle.socketLocal.z * sin;
   const z = boss.collidable.pos.z + tentacle.socketLocal.z * cos - tentacle.socketLocal.x * sin;
   return new THREE.Vector3(x, tentacle.socketLocal.y, z);
+}
+
+function getEyeLaserOrigin(boss: OctobossState): Vec2 {
+  const eyeYaw = boss.facingAngle * 0.45;
+  const sin = Math.sin(eyeYaw);
+  const cos = Math.cos(eyeYaw);
+  return {
+    x: boss.collidable.pos.x + sin * 1.28 + boss.gazeLocalX * 0.18,
+    z: boss.collidable.pos.z + cos * 1.28,
+  };
+}
+
+function updateEyeLaserPhase(
+  boss: OctobossState,
+  playerPos: Vec2,
+  phase: number,
+  delta: number,
+): void {
+  const origin = getEyeLaserOrigin(boss);
+  const dx = playerPos.x - origin.x;
+  const dz = playerPos.z - origin.z;
+  const targetAngle = Math.atan2(dx, dz);
+  const dist = Math.hypot(dx, dz);
+
+  boss.eyeLaserTimer = Math.max(0, boss.eyeLaserTimer - delta);
+  if (boss.eyeLaserPhase === 'cooldown' && boss.eyeLaserTimer <= 0) {
+    boss.eyeLaserPhase = 'idle';
+  }
+
+  if (
+    boss.eyeLaserPhase === 'idle'
+    && boss.tentacleMode === 'coiled'
+    && dist <= boss.config.eyeLaserRange
+    && boss.attack.kind === 'idle'
+  ) {
+    boss.eyeLaserPhase = 'windup';
+    boss.eyeLaserTimer = boss.config.eyeLaserWindup[phase];
+    boss.eyeLaserAngle = targetAngle;
+  }
+
+  if (boss.eyeLaserPhase === 'windup') {
+    const angleDelta = wrapAngle(targetAngle - boss.eyeLaserAngle);
+    boss.eyeLaserAngle += angleDelta * Math.min(8.5 * delta, 1);
+    if (boss.eyeLaserTimer <= 0) {
+      boss.eyeLaserPhase = 'firing';
+      boss.eyeLaserTimer = boss.config.eyeLaserDuration[phase];
+    }
+  } else if (boss.eyeLaserPhase === 'firing') {
+    if (boss.eyeLaserTimer <= 0) {
+      boss.eyeLaserPhase = 'cooldown';
+      boss.eyeLaserTimer = boss.config.eyeLaserCooldown[phase];
+    }
+  }
+
+  if (boss.eyeLaserPhase === 'firing') {
+    boss.eyeLaserDealsDamage = true;
+    boss.eyeLaserVisualStrength = 1.0;
+  } else if (boss.eyeLaserPhase === 'windup') {
+    boss.eyeLaserDealsDamage = false;
+    boss.eyeLaserVisualStrength = 0.42;
+  } else {
+    boss.eyeLaserDealsDamage = false;
+    boss.eyeLaserVisualStrength = 0;
+  }
 }
 
 function steerTentacleTarget(
@@ -1043,6 +1245,7 @@ export function updateOctobossAI(
   boss.coreHitCooldown = Math.max(0, boss.coreHitCooldown - delta);
   updateTentaclePhaseScales(boss);
   boss.exposeTimer = boss.tentacleMode === 'retracting' ? boss.tentacleModeTimer : 0;
+  updateEyeLaserPhase(boss, playerPos, phase, delta);
   setMovementMaxSpeed(
     boss.id,
     boss.config.coreMaxSpeed[phase]
@@ -1058,7 +1261,13 @@ export function updateOctobossAI(
   }
 
   const accel = boss.config.coreAcceleration[phase];
-  if (boss.tentacleMode === 'coiled') {
+  if (boss.eyeLaserPhase === 'firing') {
+    body.vel.x *= 0.72;
+    body.vel.z *= 0.72;
+  } else if (boss.eyeLaserPhase === 'windup') {
+    body.vel.x *= 0.82;
+    body.vel.z *= 0.82;
+  } else if (boss.tentacleMode === 'coiled') {
     body.vel.x *= 0.9;
     body.vel.z *= 0.9;
   } else if (boss.tentacleMode === 'retracting') {
@@ -1114,6 +1323,53 @@ export function updateOctobossAI(
   updateEyeTracking(boss, playerPos, delta);
   updateTentacleTargets(boss, playerPos, playerVel, delta);
   return enteredMode;
+}
+
+export function traceOctobossEyeLaser(
+  boss: OctobossState,
+  playerPos: Vec2,
+  playerRadius: number,
+  wallSegments: readonly Segment[],
+  delta: number,
+  playerInvulnerable: boolean,
+): number {
+  boss.eyeLaserSegments.length = 0;
+  if (!boss.alive) return 0;
+  if (boss.eyeLaserVisualStrength <= 0.001) return 0;
+
+  const phase = getPhaseIndex(boss);
+  const dir = normalizeDir(Math.sin(boss.eyeLaserAngle), Math.cos(boss.eyeLaserAngle));
+  const origin = getEyeLaserOrigin(boss);
+  let closestDistance = boss.config.eyeLaserRange;
+  let hitPoint: Vec2 | null = null;
+
+  for (const seg of wallSegments) {
+    const hit = raycastSegment(origin, dir, seg);
+    if (!hit || hit.distance >= closestDistance) continue;
+    closestDistance = hit.distance;
+    hitPoint = hit.point;
+  }
+
+  const segmentEnd = hitPoint ?? {
+    x: origin.x + dir.x * closestDistance,
+    z: origin.z + dir.z * closestDistance,
+  };
+  boss.eyeLaserSegments.push({
+    start: origin,
+    end: segmentEnd,
+  });
+
+  if (!boss.eyeLaserDealsDamage || playerInvulnerable) return 0;
+
+  const hitRadius = boss.config.eyeLaserWidth[phase] * 0.72 + playerRadius * 0.92;
+  const hitRadiusSq = hitRadius * hitRadius;
+  for (const segment of boss.eyeLaserSegments) {
+    if (distanceSqPointToSegment(playerPos, segment.start, segment.end) <= hitRadiusSq) {
+      return boss.config.eyeLaserDamagePerSecond[phase] * delta;
+    }
+  }
+
+  return 0;
 }
 
 export function syncOctobossTentacles(
@@ -1236,15 +1492,40 @@ export function updateOctobossVisuals(
 
   const eyeWhiteMat = boss.eyeWhiteMesh.material as THREE.MeshStandardMaterial;
   eyeWhiteMat.color.setHex(exposeFrac > 0 ? 0xffefe0 : 0xf6f6f1);
-  eyeWhiteMat.emissiveIntensity = 0.04 + exposeFrac * 0.08;
+  eyeWhiteMat.emissiveIntensity = 0.04 + exposeFrac * 0.08 + (boss.eyeLaserPhase === 'windup' ? 0.14 : boss.eyeLaserPhase === 'firing' ? 0.22 : 0);
 
   const irisMat = boss.irisMesh.material as THREE.MeshStandardMaterial;
-  irisMat.emissiveIntensity = exposeFrac * 0.03;
-  irisMat.color.setHex(exposeFrac > 0 ? 0x080808 : 0x050505);
+  irisMat.color.setHex(boss.eyeLaserPhase === 'firing' ? 0xff7f34 : exposeFrac > 0 ? 0x080808 : 0x050505);
+  irisMat.emissive.setHex(boss.eyeLaserPhase === 'firing' ? 0xff7f34 : boss.eyeLaserPhase === 'windup' ? 0xcc4f1f : 0x000000);
+  irisMat.emissiveIntensity = boss.eyeLaserPhase === 'firing' ? 0.9 : boss.eyeLaserPhase === 'windup' ? 0.38 : exposeFrac * 0.03;
 
   const pupilMat = boss.pupilMesh.material as THREE.MeshStandardMaterial;
-  pupilMat.emissiveIntensity = 0;
-  pupilMat.color.setHex(0x000000);
+  pupilMat.color.setHex(boss.eyeLaserPhase === 'firing' ? 0xffd2a8 : 0x000000);
+  pupilMat.emissive.setHex(boss.eyeLaserPhase === 'firing' ? 0xffb05a : boss.eyeLaserPhase === 'windup' ? 0xff6b3d : 0x000000);
+  pupilMat.emissiveIntensity = boss.eyeLaserPhase === 'firing' ? 1.2 : boss.eyeLaserPhase === 'windup' ? 0.44 : 0;
+
+  for (let i = 0; i < boss.eyeLaserMeshes.length; i += 1) {
+    const beam = boss.eyeLaserMeshes[i];
+    const glow = boss.eyeLaserGlowMeshes[i];
+    const seg = boss.eyeLaserSegments[i];
+    if (!seg || boss.eyeLaserVisualStrength <= 0.001) {
+      beam.visible = false;
+      glow.visible = false;
+      continue;
+    }
+
+    const beamWidth = boss.config.eyeLaserWidth[phase];
+    setBeamSegmentMesh(beam, seg.start, seg.end, beamWidth);
+    setBeamSegmentMesh(glow, seg.start, seg.end, beamWidth * 0.54);
+    glow.position.y = 2.04;
+    glow.scale.y = 0.08;
+
+    const beamMat = beam.material as THREE.MeshBasicMaterial;
+    const glowMat = glow.material as THREE.MeshBasicMaterial;
+    const pulse = 0.82 + 0.18 * Math.sin(time * Math.PI * (boss.eyeLaserPhase === 'firing' ? 24 : 10));
+    beamMat.opacity = boss.eyeLaserVisualStrength * 0.5 * pulse;
+    glowMat.opacity = boss.eyeLaserVisualStrength * 1.0 * pulse;
+  }
 
   updateHpBar(boss.hpBarFill, rpmFrac, 1.4);
 }
@@ -1269,4 +1550,13 @@ export function destroyOctoboss(boss: OctobossState): void {
   clearTelegraphs(boss);
   scene.remove(boss.bodyGroup);
   scene.remove(boss.hpGroup);
+  scene.remove(boss.eyeLaserGroup);
+  for (const beam of boss.eyeLaserMeshes) {
+    beam.geometry.dispose();
+    if (beam.material instanceof THREE.Material) beam.material.dispose();
+  }
+  for (const glow of boss.eyeLaserGlowMeshes) {
+    glow.geometry.dispose();
+    if (glow.material instanceof THREE.Material) glow.material.dispose();
+  }
 }

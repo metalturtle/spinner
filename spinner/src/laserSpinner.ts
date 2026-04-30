@@ -5,6 +5,19 @@ import { scene } from './renderer';
 import { getArenaBounds } from './arena';
 import { collidables, type Collidable, type Segment, type Vec2 } from './physics';
 import {
+  applySpinnerWallAvoidance,
+  beginSpinnerBurst,
+  beginSpinnerWindup,
+  clamp,
+  normalizeDir,
+  resetSpinnerDuelState,
+  resetSpinnerOrbitTimer,
+  steerSpinnerOrbit,
+  tickSpinnerOrbitFlip,
+  updateSpinnerDashState,
+  type SpinnerDuelAiState,
+} from './spinnerDuelAi';
+import {
   nextEntityId,
   registerMovement,
   registerRpm,
@@ -14,7 +27,7 @@ import {
   deregisterEntity,
 } from './systems';
 
-type LaserAIState = 'orbit' | 'windup' | 'dash' | 'recover';
+type LaserAIState = SpinnerDuelAiState;
 type LaserBeamPhase = 'idle' | 'cooldown' | 'windup' | 'firing';
 
 export interface LaserBeamSegment {
@@ -123,34 +136,12 @@ export interface LaserSpinnerState extends SpinnerTiltState {
 
 const BEAM_EPSILON = 0.02;
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
 function cross2(a: Vec2, b: Vec2): number {
   return a.x * b.z - a.z * b.x;
 }
 
-function normalizeDir(x: number, z: number): Vec2 {
-  const len = Math.hypot(x, z);
-  if (len <= 0.0001) return { x: 0, z: 1 };
-  return { x: x / len, z: z / len };
-}
-
-function resetOrbitTimer(enemy: LaserSpinnerState): void {
-  const variance = 0.72 + Math.random() * 0.56;
-  enemy.orbitFlipTimer = enemy.config.orbitFlipInterval * variance;
-}
-
 function resetMovementState(enemy: LaserSpinnerState): void {
-  enemy.aiState = 'orbit';
-  enemy.recoveryTimer = 0;
-  enemy.windupTimer = 0;
-  enemy.cutInTimer = 0;
-  enemy.dashCooldown = 0;
-  enemy.dashDirX = 0;
-  enemy.dashDirZ = 1;
-  resetOrbitTimer(enemy);
+  resetSpinnerDuelState(enemy, enemy.config, setMovementMaxSpeed);
 }
 
 function setBeamSegmentMesh(mesh: THREE.Mesh, start: Vec2, end: Vec2, width: number): void {
@@ -206,42 +197,6 @@ function buildBeamVisuals(maxSegments: number, color: number): {
 
   scene.add(group);
   return { group, beamMeshes, glowMeshes };
-}
-
-function beginEnemyWindup(enemy: LaserSpinnerState, dirX: number, dirZ: number): void {
-  const dir = normalizeDir(dirX, dirZ);
-  enemy.aiState = 'windup';
-  enemy.windupTimer = enemy.config.dashWindupDuration;
-  enemy.cutInTimer = 0;
-  enemy.dashDirX = dir.x;
-  enemy.dashDirZ = dir.z;
-  setMovementMaxSpeed(enemy.id, enemy.config.maxSpeed);
-  enemy.collidable.vel.x *= 0.24;
-  enemy.collidable.vel.z *= 0.24;
-}
-
-function beginEnemyBurst(enemy: LaserSpinnerState): void {
-  const burstSpeed = enemy.config.maxSpeed * enemy.config.dashSpeedMult;
-  enemy.aiState = 'dash';
-  enemy.cutInTimer = enemy.config.cutInDuration;
-  setMovementMaxSpeed(enemy.id, burstSpeed);
-  enemy.collidable.vel.x = enemy.dashDirX * burstSpeed;
-  enemy.collidable.vel.z = enemy.dashDirZ * burstSpeed;
-}
-
-function applyWallAvoidance(enemy: LaserSpinnerState, delta: number): void {
-  const cfg = enemy.config;
-  const body = enemy.collidable;
-  const bounds = getArenaBounds();
-  const minX = bounds.minX + cfg.wallAvoidDist;
-  const maxX = bounds.maxX - cfg.wallAvoidDist;
-  const minZ = bounds.minZ + cfg.wallAvoidDist;
-  const maxZ = bounds.maxZ - cfg.wallAvoidDist;
-  const wallAvoidAccel = cfg.acceleration * (enemy.aiState === 'dash' ? 0.72 : 0.5);
-  if (body.pos.x > maxX) body.vel.x -= wallAvoidAccel * delta;
-  if (body.pos.x < minX) body.vel.x += wallAvoidAccel * delta;
-  if (body.pos.z > maxZ) body.vel.z -= wallAvoidAccel * delta;
-  if (body.pos.z < minZ) body.vel.z += wallAvoidAccel * delta;
 }
 
 function updateBeamPhase(enemy: LaserSpinnerState, delta: number): void {
@@ -392,7 +347,7 @@ export function createLaserSpinner(pos: Vec2, config: LaserSpinnerConfig): Laser
     tiltZ: 0,
   };
   collidable.owner = enemy;
-  resetOrbitTimer(enemy);
+  resetMovementState(enemy);
   return enemy;
 }
 
@@ -446,42 +401,27 @@ export function updateLaserSpinnerAI(
   const dir = dist > 0.001 ? { x: dx / dist, z: dz / dist } : { x: 0, z: 1 };
   const combinedRadius = body.radius + playerRadius;
 
-  if (enemy.orbitFlipTimer <= 0) {
-    enemy.orbitDir = enemy.orbitDir === 1 ? -1 : 1;
-    resetOrbitTimer(enemy);
-  }
+  tickSpinnerOrbitFlip(enemy, enemy.config, delta);
 
   if (enemy.aiState === 'windup') {
     enemy.windupTimer -= delta;
     body.vel.x *= Math.max(0, 1 - delta * 12);
     body.vel.z *= Math.max(0, 1 - delta * 12);
-    if (enemy.windupTimer <= 0) beginEnemyBurst(enemy);
-    applyWallAvoidance(enemy, delta);
+    if (enemy.windupTimer <= 0) beginSpinnerBurst(enemy, body, cfg, setMovementMaxSpeed);
+    applySpinnerWallAvoidance(enemy, body, cfg, delta);
     return;
   }
 
   if (enemy.aiState === 'dash') {
-    enemy.cutInTimer -= delta;
-    const accel = cfg.acceleration * cfg.chargeBoost * 1.22;
-    const burstSpeed = cfg.maxSpeed * cfg.dashSpeedMult;
-    const forwardSpeed = body.vel.x * enemy.dashDirX + body.vel.z * enemy.dashDirZ;
-    const lateralX = body.vel.x - enemy.dashDirX * forwardSpeed;
-    const lateralZ = body.vel.z - enemy.dashDirZ * forwardSpeed;
-    const retainedForward = Math.max(forwardSpeed, burstSpeed * 0.82);
-    const lateralDamp = Math.max(0, 1 - delta * 13);
-
-    body.vel.x = enemy.dashDirX * retainedForward + lateralX * lateralDamp;
-    body.vel.z = enemy.dashDirZ * retainedForward + lateralZ * lateralDamp;
-    body.vel.x += enemy.dashDirX * accel * delta;
-    body.vel.z += enemy.dashDirZ * accel * delta;
-
-    const along = (playerPos.x - body.pos.x) * enemy.dashDirX + (playerPos.z - body.pos.z) * enemy.dashDirZ;
-    if (enemy.cutInTimer <= 0 || along <= combinedRadius + 0.55) {
+    if (updateSpinnerDashState(enemy, body, playerPos, combinedRadius, cfg, delta, {
+      accelMultiplier: 1.22,
+      closeEnoughPadding: 0.55,
+    })) {
       enemy.aiState = 'orbit';
       setMovementMaxSpeed(enemy.id, cfg.maxSpeed);
-      resetOrbitTimer(enemy);
+      resetSpinnerOrbitTimer(enemy, enemy.config);
     }
-    applyWallAvoidance(enemy, delta);
+    applySpinnerWallAvoidance(enemy, body, cfg, delta);
     return;
   }
 
@@ -494,22 +434,16 @@ export function updateLaserSpinnerAI(
 
   if (shouldCutIn) {
     enemy.dashCooldown = cfg.cutInCooldown;
-    beginEnemyWindup(enemy, dir.x, dir.z);
+    beginSpinnerWindup(enemy, body, cfg, setMovementMaxSpeed, dir.x, dir.z, 0.24);
   } else if (dist > 0.1) {
-    const tangentX = -dir.z * enemy.orbitDir;
-    const tangentZ = dir.x * enemy.orbitDir;
-    const desiredRange = playerIdle ? cfg.orbitRange * 0.74 : cfg.orbitRange;
-    const radialError = dist - desiredRange;
-    const radialPull = clamp(radialError / Math.max(desiredRange, 0.001), -0.95, 0.95);
-    const closePush = dist < combinedRadius + 1.0 ? -0.9 : 0;
-    const inwardBias = radialPull + closePush + (playerIdle ? -0.18 : 0);
-    const strafeStrength = playerIdle ? cfg.orbitStrafeStrength * 0.34 : cfg.orbitStrafeStrength;
-
-    body.vel.x += (tangentX * strafeStrength + dir.x * inwardBias) * cfg.acceleration * delta;
-    body.vel.z += (tangentZ * strafeStrength + dir.z * inwardBias) * cfg.acceleration * delta;
+    steerSpinnerOrbit(enemy, body, playerPos, combinedRadius, cfg, delta, playerIdle, {
+      desiredRangeMultiplier: 0.74,
+      playerIdleInwardBias: -0.18,
+      playerIdleStrafeMultiplier: 0.34,
+    });
   }
 
-  applyWallAvoidance(enemy, delta);
+  applySpinnerWallAvoidance(enemy, body, cfg, delta);
 }
 
 export function traceLaserSpinnerBeam(

@@ -1,9 +1,19 @@
 import * as THREE from 'three';
 import { scene } from './renderer';
-import { ARENA_SIZE, RPM_SOFT_CAP_RATIO, SPINNER_SIZE_SCALE } from './constants';
+import { RPM_SOFT_CAP_RATIO, SPINNER_SIZE_SCALE } from './constants';
 import { collidables, type Collidable, type Vec2 } from './physics';
 import { createTop, TOP_BASE_RADIUS, type TopResult } from './top';
 import { updateSpinnerVisuals, type SpinnerTiltState } from './spinnerVisuals';
+import {
+  applySpinnerWallAvoidance,
+  beginSpinnerWindup,
+  normalizeDir,
+  resetSpinnerDuelState,
+  resetSpinnerOrbitTimer,
+  steerSpinnerOrbit,
+  tickSpinnerOrbitFlip,
+  type SpinnerDuelAiState,
+} from './spinnerDuelAi';
 import {
   nextEntityId,
   registerMovement,
@@ -134,7 +144,7 @@ export const ENEMY_SPINNER_TIER_3: EnemySpinnerConfig = {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type AIState = 'orbit' | 'windup' | 'dash' | 'recover';
+type AIState = SpinnerDuelAiState;
 type EnemyAttackState = 'idle' | 'dash_windup' | 'dash_commit' | 'combo_chain' | 'heat_active';
 
 export interface EnemySpinnerState extends SpinnerTiltState {
@@ -161,41 +171,13 @@ export interface EnemySpinnerState extends SpinnerTiltState {
   dashDirZ:      number;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-function resetOrbitTimer(enemy: EnemySpinnerState): void {
-  const variance = 0.72 + Math.random() * 0.56;
-  enemy.orbitFlipTimer = enemy.config.orbitFlipInterval * variance;
-}
-
-function applyWallAvoidance(enemy: EnemySpinnerState, delta: number): void {
-  const cfg = enemy.config;
-  const body = enemy.collidable;
-  const limit = ARENA_SIZE - cfg.wallAvoidDist;
-  const wallAvoidAccel = cfg.acceleration * (enemy.aiState === 'dash' ? 0.72 : 0.5);
-  if (body.pos.x >  limit) body.vel.x -= wallAvoidAccel * delta;
-  if (body.pos.x < -limit) body.vel.x += wallAvoidAccel * delta;
-  if (body.pos.z >  limit) body.vel.z -= wallAvoidAccel * delta;
-  if (body.pos.z < -limit) body.vel.z += wallAvoidAccel * delta;
-}
-
 function resetEnemyCombatState(enemy: EnemySpinnerState): void {
-  enemy.aiState = 'orbit';
   enemy.attackState = 'idle';
-  enemy.recoveryTimer = 0;
-  enemy.windupTimer = 0;
-  enemy.cutInTimer = 0;
-  enemy.dashCooldown = 0;
   enemy.comboCooldown = 0;
   enemy.heatCooldown = 0;
   enemy.comboBurstsRemaining = 0;
   enemy.comboPauseTimer = 0;
-  enemy.dashDirX = 0;
-  enemy.dashDirZ = 1;
-  resetOrbitTimer(enemy);
-  setMovementMaxSpeed(enemy.id, enemy.config.maxSpeed);
+  resetSpinnerDuelState(enemy, enemy.config, setMovementMaxSpeed);
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
@@ -262,12 +244,6 @@ export function setEnemyAwake(enemy: EnemySpinnerState, awakened: boolean): void
   resetEnemyCombatState(enemy);
 }
 
-function normalizeDir(x: number, z: number): { x: number; z: number } {
-  const len = Math.sqrt(x * x + z * z);
-  if (len <= 0.001) return { x: 0, z: 1 };
-  return { x: x / len, z: z / len };
-}
-
 function beginEnemyWindup(
   enemy: EnemySpinnerState,
   dirX: number,
@@ -275,17 +251,9 @@ function beginEnemyWindup(
   attackState: EnemyAttackState,
   comboPause = 0
 ): void {
-  const dir = normalizeDir(dirX, dirZ);
-  enemy.aiState = 'windup';
   enemy.attackState = attackState;
-  enemy.windupTimer = enemy.config.dashWindupDuration;
-  enemy.cutInTimer = 0;
   enemy.comboPauseTimer = comboPause;
-  enemy.dashDirX = dir.x;
-  enemy.dashDirZ = dir.z;
-  setMovementMaxSpeed(enemy.id, enemy.config.maxSpeed);
-  enemy.collidable.vel.x *= 0.22;
-  enemy.collidable.vel.z *= 0.22;
+  beginSpinnerWindup(enemy, enemy.collidable, enemy.config, setMovementMaxSpeed, dirX, dirZ, 0.22);
 }
 
 function beginEnemyBurst(enemy: EnemySpinnerState): void {
@@ -322,7 +290,6 @@ export function updateEnemyAI(
   enemy.dashCooldown = Math.max(0, enemy.dashCooldown - delta);
   enemy.comboCooldown = Math.max(0, enemy.comboCooldown - delta);
   enemy.heatCooldown = Math.max(0, enemy.heatCooldown - delta);
-  enemy.orbitFlipTimer -= delta;
   enemy.comboPauseTimer = Math.max(0, enemy.comboPauseTimer - delta);
   const playerIdle = playerSpeed < 0.6;
 
@@ -337,7 +304,7 @@ export function updateEnemyAI(
       enemy.cutInTimer = 0;
       enemy.comboBurstsRemaining = 0;
       enemy.comboPauseTimer = 0;
-      resetOrbitTimer(enemy);
+      resetSpinnerOrbitTimer(enemy, enemy.config);
     }
     return;
   }
@@ -351,10 +318,7 @@ export function updateEnemyAI(
   const dirZ = dz * invDist;
   const combinedRadius = body.radius + playerRadius;
 
-  if (enemy.orbitFlipTimer <= 0) {
-    enemy.orbitDir = enemy.orbitDir === 1 ? -1 : 1;
-    resetOrbitTimer(enemy);
-  }
+  tickSpinnerOrbitFlip(enemy, enemy.config, delta);
 
   if (enemy.aiState === 'windup') {
     if (enemy.comboPauseTimer > 0) {
@@ -370,7 +334,7 @@ export function updateEnemyAI(
     if (enemy.windupTimer <= 0) {
       beginEnemyBurst(enemy);
     }
-    applyWallAvoidance(enemy, delta);
+    applySpinnerWallAvoidance(enemy, body, cfg, delta);
     return;
   }
 
@@ -409,10 +373,10 @@ export function updateEnemyAI(
         enemy.windupTimer = 0;
         enemy.comboBurstsRemaining = 0;
         setMovementMaxSpeed(enemy.id, cfg.maxSpeed);
-        resetOrbitTimer(enemy);
+        resetSpinnerOrbitTimer(enemy, enemy.config);
       }
     }
-    applyWallAvoidance(enemy, delta);
+    applySpinnerWallAvoidance(enemy, body, cfg, delta);
     return;
   }
 
@@ -439,22 +403,15 @@ export function updateEnemyAI(
     enemy.dashCooldown = cfg.cutInCooldown;
     beginEnemyWindup(enemy, dirX, dirZ, 'dash_windup');
   } else if (dist > 0.1) {
-    const tangentX = -dirZ * enemy.orbitDir;
-    const tangentZ = dirX * enemy.orbitDir;
-    const desiredRange = playerIdle ? cfg.orbitRange * 0.7 : cfg.orbitRange;
-    const radialError = dist - desiredRange;
-    const radialPull = clamp(radialError / Math.max(desiredRange, 0.001), -0.95, 0.95);
-    const closePush = dist < combinedRadius + 1.0 ? -0.9 : 0;
-    const inwardBias = radialPull + closePush + (playerIdle ? -0.28 : 0);
-    const accel = cfg.acceleration;
-    const strafeStrength = playerIdle ? cfg.orbitStrafeStrength * 0.28 : cfg.orbitStrafeStrength;
-
-    body.vel.x += (tangentX * strafeStrength + dirX * inwardBias) * accel * delta;
-    body.vel.z += (tangentZ * strafeStrength + dirZ * inwardBias) * accel * delta;
+    steerSpinnerOrbit(enemy, body, playerPos, combinedRadius, cfg, delta, playerIdle, {
+      desiredRangeMultiplier: 0.7,
+      playerIdleInwardBias: -0.28,
+      playerIdleStrafeMultiplier: 0.28,
+    });
   }
 
   // ── Wall avoidance — gentle repulsion near edges ──
-  applyWallAvoidance(enemy, delta);
+  applySpinnerWallAvoidance(enemy, body, cfg, delta);
 
   // Friction, speed clamp, and position update handled by movementSystem
 }
@@ -519,6 +476,7 @@ export function onEnemyCollision(enemy: EnemySpinnerState): void {
     enemy.comboBurstsRemaining = 0;
     enemy.comboPauseTimer = 0;
     setMovementMaxSpeed(enemy.id, enemy.config.maxSpeed);
+    resetSpinnerOrbitTimer(enemy, enemy.config);
   }
 }
 

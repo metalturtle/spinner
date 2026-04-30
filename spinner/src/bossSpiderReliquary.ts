@@ -5,6 +5,20 @@ import { collidables, type Collidable, type Vec2 } from './physics';
 import { createHpBar, updateHpBar } from './hpBar';
 import { getArenaBounds, isPointInLava } from './arena';
 import { type Projectile } from './projectile';
+import { createTop, TOP_BASE_RADIUS, type TopResult } from './top';
+import { updateSpinnerVisuals } from './spinnerVisuals';
+import { ENEMY_SPINNER_TIER_1 } from './enemySpinner';
+import {
+  applySpinnerWallAvoidance,
+  beginSpinnerBurst,
+  beginSpinnerWindup,
+  resetSpinnerOrbitTimer,
+  steerSpinnerOrbit,
+  tickSpinnerOrbitFlip,
+  updateSpinnerDashState,
+  type SpinnerDuelAiState,
+  type SpinnerDuelConfig,
+} from './spinnerDuelAi';
 import {
   nextEntityId,
   registerMovement,
@@ -122,6 +136,19 @@ export const SPIDER_RELIQUARY_TIER_1: SpiderReliquaryConfig = {
 const ONE_LEG_HOP_WINDUP = 0.16;
 const ONE_LEG_HOP_AIR = 0.36;
 const ONE_LEG_HOP_RECOVER = 0.1;
+const FINAL_CORE_CHARGE_BOOST = 2.5;
+const FINAL_CORE_RECOVERY_TIME = 0.42;
+const FINAL_CORE_WALL_AVOID_DIST = 3.4;
+const FINAL_CORE_ORBIT_RANGE = 5.1;
+const FINAL_CORE_ORBIT_STRAFE = 0.92;
+const FINAL_CORE_CUT_IN_DURATION = 0.74;
+const FINAL_CORE_CUT_IN_COOLDOWN = 1.02;
+const FINAL_CORE_ORBIT_FLIP_INTERVAL = 1.02;
+const FINAL_CORE_DASH_WINDUP = 0.14;
+const FINAL_CORE_DASH_SPEED_MULT = 2.3;
+const FINAL_CORE_TRANSITION_STUN = 0.62;
+const FINAL_CORE_MIN_RPM = ENEMY_SPINNER_TIER_1.rpmCapacity;
+const FINAL_CORE_SPIN_SPEED = 38;
 
 type SpiderAttackKind = 'stomp' | 'pulse' | 'leg_slam' | 'web' | 'acid';
 
@@ -182,9 +209,13 @@ export interface SpiderReliquaryState {
   collidable: Collidable;
   bodyGroup: THREE.Group;
   bodyRoot: THREE.Group;
+  pedestalMesh: THREE.Mesh;
+  shellMesh: THREE.Mesh;
   coreMesh: THREE.Mesh;
   haloMesh: THREE.Mesh;
   shieldMesh: THREE.Mesh;
+  coreTop: TopResult;
+  coreTopBaseColor: THREE.Color;
   hpGroup: THREE.Group;
   hpBarFill: THREE.Mesh;
   legs: SpiderLeg[];
@@ -209,6 +240,18 @@ export interface SpiderReliquaryState {
   oneLegHopRecover: number;
   oneLegHopDirX: number;
   oneLegHopDirZ: number;
+  aiState: SpinnerDuelAiState;
+  recoveryTimer: number;
+  orbitDir: -1 | 1;
+  orbitFlipTimer: number;
+  windupTimer: number;
+  cutInTimer: number;
+  dashCooldown: number;
+  dashDirX: number;
+  dashDirZ: number;
+  tiltX: number;
+  tiltZ: number;
+  finalCoreGraceTimer: number;
   webTetherTimer: number;
   webTetherDuration: number;
   webTetherTarget: THREE.Vector3;
@@ -406,6 +449,10 @@ function getAliveLegCount(boss: SpiderReliquaryState): number {
   return boss.legs.filter((leg) => leg.alive).length;
 }
 
+function isFinalCoreMode(boss: SpiderReliquaryState): boolean {
+  return getAliveLegCount(boss) === 0;
+}
+
 function getPhaseIndex(boss: SpiderReliquaryState): number {
   const alive = getAliveLegCount(boss);
   if (alive >= 4) return 0;
@@ -413,13 +460,41 @@ function getPhaseIndex(boss: SpiderReliquaryState): number {
   return 2;
 }
 
+function getFinalCoreDuelConfig(boss: SpiderReliquaryState): SpinnerDuelConfig {
+  const phase = 2;
+  return {
+    maxSpeed: boss.config.coreMaxSpeed[phase] * 1.14,
+    acceleration: boss.config.coreAcceleration[phase] * 0.94,
+    chargeBoost: FINAL_CORE_CHARGE_BOOST,
+    recoveryTime: FINAL_CORE_RECOVERY_TIME,
+    wallAvoidDist: FINAL_CORE_WALL_AVOID_DIST,
+    orbitRange: FINAL_CORE_ORBIT_RANGE,
+    orbitStrafeStrength: FINAL_CORE_ORBIT_STRAFE,
+    cutInDuration: FINAL_CORE_CUT_IN_DURATION,
+    cutInCooldown: FINAL_CORE_CUT_IN_COOLDOWN,
+    orbitFlipInterval: FINAL_CORE_ORBIT_FLIP_INTERVAL,
+    dashWindupDuration: FINAL_CORE_DASH_WINDUP,
+    dashSpeedMult: FINAL_CORE_DASH_SPEED_MULT,
+  };
+}
+
+function resetFinalCoreDuelState(boss: SpiderReliquaryState): void {
+  boss.aiState = 'orbit';
+  boss.recoveryTimer = 0;
+  boss.windupTimer = 0;
+  boss.cutInTimer = 0;
+  boss.dashCooldown = 0;
+  boss.dashDirX = 0;
+  boss.dashDirZ = 1;
+  resetSpinnerOrbitTimer(boss, getFinalCoreDuelConfig(boss));
+}
+
 export function canDamageSpiderCore(boss: SpiderReliquaryState): boolean {
-  return getAliveLegCount(boss) <= boss.config.shieldLegThreshold || boss.collapseTimer > 0;
+  return isFinalCoreMode(boss) && boss.finalCoreGraceTimer <= 0;
 }
 
 export function getSpiderCoreDamageMultiplier(boss: SpiderReliquaryState): number {
-  if (boss.collapseTimer > 0) return 1.5;
-  return getPhaseIndex(boss) === 2 ? 1.2 : 1.0;
+  return canDamageSpiderCore(boss) ? 1.0 : 0;
 }
 
 function createAttackMesh(kind: SpiderAttackKind): THREE.Mesh {
@@ -466,11 +541,13 @@ function resetSpiderTransientState(boss: SpiderReliquaryState): void {
   boss.oneLegHopAir = 0;
   boss.oneLegHopRecover = 0;
   boss.corePassThroughCooldown = 0;
+  boss.finalCoreGraceTimer = 0;
   boss.webTetherTimer = 0;
   boss.webTetherDuration = 0;
   setWebTetherVisible(boss, false);
   for (const attack of boss.attacks) removeAttack(attack);
   boss.attacks.length = 0;
+  resetFinalCoreDuelState(boss);
 }
 
 function scheduleStomp(
@@ -741,6 +818,13 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
   haloMesh.castShadow = true;
   bodyRoot.add(haloMesh);
 
+  const coreTop = createTop(0xff8f32);
+  const topScale = 0.86;
+  coreTop.tiltGroup.scale.setScalar(topScale);
+  coreTop.tiltGroup.position.set(0, 0.18, 0);
+  coreTop.tiltGroup.visible = false;
+  bodyGroup.add(coreTop.tiltGroup);
+
   const shieldMesh = new THREE.Mesh(
     new THREE.IcosahedronGeometry(1.18, 1),
     new THREE.MeshStandardMaterial({
@@ -792,9 +876,13 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
     collidable,
     bodyGroup,
     bodyRoot,
+    pedestalMesh: pedestal,
+    shellMesh: reliquaryBody,
     coreMesh,
     haloMesh,
     shieldMesh,
+    coreTop,
+    coreTopBaseColor: new THREE.Color(0xff8f32),
     hpGroup,
     hpBarFill: fill,
     legs,
@@ -819,6 +907,18 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
     oneLegHopRecover: 0,
     oneLegHopDirX: 0,
     oneLegHopDirZ: 0,
+    aiState: 'orbit',
+    recoveryTimer: 0,
+    orbitDir: Math.random() < 0.5 ? -1 : 1,
+    orbitFlipTimer: 1.0,
+    windupTimer: 0,
+    cutInTimer: 0,
+    dashCooldown: 0,
+    dashDirX: 0,
+    dashDirZ: 1,
+    tiltX: 0,
+    tiltZ: 0,
+    finalCoreGraceTimer: 0,
     webTetherTimer: 0,
     webTetherDuration: 0,
     webTetherTarget: new THREE.Vector3(pos.x, 0.75, pos.z),
@@ -835,6 +935,7 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
   setWebTetherVisible(boss, false);
   collidable.owner = boss;
   for (const leg of legs) leg.collidable.owner = { boss, leg };
+  resetFinalCoreDuelState(boss);
   syncSpiderReliquaryLegs(boss, 0);
   return boss;
 }
@@ -1064,6 +1165,18 @@ function destroySpiderLeg(leg: SpiderLeg): void {
   scene.remove(leg.group);
 }
 
+function activateFinalCoreMode(boss: SpiderReliquaryState): void {
+  resetSpiderTransientState(boss);
+  boss.collidable.rpm = Math.max(boss.collidable.rpm, FINAL_CORE_MIN_RPM);
+  boss.finalCoreGraceTimer = FINAL_CORE_TRANSITION_STUN;
+  boss.aiState = 'recover';
+  boss.recoveryTimer = FINAL_CORE_TRANSITION_STUN;
+  boss.webCooldown = 0.7;
+  boss.legSlamCooldown = 999;
+  boss.stompCooldown = 999;
+  boss.pulseCooldown = 999;
+}
+
 export function applyDamageToSpiderLeg(
   boss: SpiderReliquaryState,
   leg: SpiderLeg,
@@ -1082,7 +1195,97 @@ export function applyDamageToSpiderLeg(
   );
   boss.stompCooldown = Math.min(boss.stompCooldown, 0.6);
   boss.pulseCooldown = Math.min(boss.pulseCooldown, 1.1);
+  if (aliveAfter === 0) activateFinalCoreMode(boss);
   return true;
+}
+
+export function onSpiderCoreCollision(boss: SpiderReliquaryState): void {
+  if (!isFinalCoreMode(boss)) return;
+  if (boss.aiState === 'recover') return;
+  boss.aiState = 'recover';
+  boss.recoveryTimer = getFinalCoreDuelConfig(boss).recoveryTime;
+  boss.windupTimer = 0;
+  boss.cutInTimer = 0;
+}
+
+function updateFinalCoreMovement(
+  boss: SpiderReliquaryState,
+  playerPos: Vec2,
+  playerRadius: number,
+  playerWebbed: boolean,
+  delta: number,
+): void {
+  const cfg = getFinalCoreDuelConfig(boss);
+  const body = boss.collidable;
+  const dx = playerPos.x - body.pos.x;
+  const dz = playerPos.z - body.pos.z;
+  const dist = Math.hypot(dx, dz);
+  const dirX = dist > 0.001 ? dx / dist : 0;
+  const dirZ = dist > 0.001 ? dz / dist : 1;
+  const combinedRadius = body.radius + playerRadius;
+
+  setMovementMaxSpeed(boss.id, boss.aiState === 'dash' ? cfg.maxSpeed * cfg.dashSpeedMult : cfg.maxSpeed);
+  boss.dashCooldown = Math.max(0, boss.dashCooldown - delta);
+  tickSpinnerOrbitFlip(boss, cfg, delta);
+
+  if (boss.aiState === 'recover') {
+    boss.recoveryTimer = Math.max(0, boss.recoveryTimer - delta);
+    body.vel.x *= 0.9;
+    body.vel.z *= 0.9;
+    if (boss.recoveryTimer <= 0) {
+      boss.aiState = 'orbit';
+      boss.windupTimer = 0;
+      boss.cutInTimer = 0;
+      setMovementMaxSpeed(boss.id, cfg.maxSpeed);
+      resetSpinnerOrbitTimer(boss, cfg);
+    }
+    applySpinnerWallAvoidance(boss, body, cfg, delta);
+    return;
+  }
+
+  if (boss.aiState === 'windup') {
+    boss.windupTimer -= delta;
+    body.vel.x *= Math.max(0, 1 - delta * 12);
+    body.vel.z *= Math.max(0, 1 - delta * 12);
+    if (boss.windupTimer <= 0) beginSpinnerBurst(boss, body, cfg, setMovementMaxSpeed);
+    applySpinnerWallAvoidance(boss, body, cfg, delta);
+    return;
+  }
+
+  if (boss.aiState === 'dash') {
+    if (updateSpinnerDashState(boss, body, playerPos, combinedRadius, cfg, delta, {
+      accelMultiplier: 1.24,
+      closeEnoughPadding: 0.45,
+    })) {
+      boss.aiState = 'orbit';
+      setMovementMaxSpeed(boss.id, cfg.maxSpeed);
+      resetSpinnerOrbitTimer(boss, cfg);
+    }
+    applySpinnerWallAvoidance(boss, body, cfg, delta);
+    return;
+  }
+
+  boss.aiState = 'orbit';
+  const desiredRange = playerWebbed ? cfg.orbitRange * 0.82 : cfg.orbitRange;
+  const shouldCutIn = dist <= desiredRange * 1.7
+    && dist >= combinedRadius + 0.72
+    && boss.dashCooldown <= 0
+    && boss.webTetherTimer <= 0;
+  if (shouldCutIn) {
+    boss.dashCooldown = cfg.cutInCooldown;
+    beginSpinnerWindup(boss, body, cfg, setMovementMaxSpeed, dirX, dirZ, 0.24);
+  } else {
+    steerSpinnerOrbit(boss, body, playerPos, combinedRadius, {
+      orbitRange: desiredRange,
+      orbitStrafeStrength: cfg.orbitStrafeStrength,
+      acceleration: cfg.acceleration,
+    }, delta, false, {
+      closePushDistance: 0.85,
+      closePushStrength: -1.0,
+    });
+  }
+
+  applySpinnerWallAvoidance(boss, body, cfg, delta);
 }
 
 export function updateSpiderReliquaryAI(
@@ -1096,12 +1299,15 @@ export function updateSpiderReliquaryAI(
   if (!boss.awakened) return [];
 
   const phase = getPhaseIndex(boss);
+  const finalCoreMode = isFinalCoreMode(boss);
   const aliveLegs = boss.legs.filter((leg) => leg.alive);
   const oneLegMode = aliveLegs.length === 1;
   const stability = clamp(aliveLegs.length / boss.config.legCount, 0.35, 1.0);
-  const maxSpeed = oneLegMode
-    ? boss.config.coreMaxSpeed[phase] * 1.5
-    : boss.config.coreMaxSpeed[phase] * (0.6 + stability * 0.4);
+  const maxSpeed = finalCoreMode
+    ? getFinalCoreDuelConfig(boss).maxSpeed
+    : oneLegMode
+      ? boss.config.coreMaxSpeed[phase] * 1.5
+      : boss.config.coreMaxSpeed[phase] * (0.6 + stability * 0.4);
   setMovementMaxSpeed(boss.id, maxSpeed);
 
   boss.gaitTime += delta;
@@ -1111,6 +1317,7 @@ export function updateSpiderReliquaryAI(
   boss.legSlamCooldown = Math.max(0, boss.legSlamCooldown - delta);
   boss.webCooldown = Math.max(0, boss.webCooldown - delta);
   boss.acidCooldown = Math.max(0, boss.acidCooldown - delta);
+  boss.finalCoreGraceTimer = Math.max(0, boss.finalCoreGraceTimer - delta);
   boss.webTetherTimer = Math.max(0, boss.webTetherTimer - delta);
   boss.corePassThroughCooldown = Math.max(0, boss.corePassThroughCooldown - delta);
   boss.oneLegHopWindup = Math.max(0, boss.oneLegHopWindup - delta);
@@ -1129,7 +1336,9 @@ export function updateSpiderReliquaryAI(
   const activeRam = boss.attacks.find((attack) => attack.kind === 'leg_slam');
   const isRamming = activeRam !== undefined;
 
-  if (activeRam) {
+  if (finalCoreMode) {
+    updateFinalCoreMovement(boss, playerPos, playerRadius, playerWebbed, delta);
+  } else if (activeRam) {
     const ramAngleDelta = wrapAngle(activeRam.facingAngle - boss.facingAngle);
     boss.facingAngle += ramAngleDelta * Math.min(10 * delta, 1.0);
     const forwardX = Math.sin(activeRam.facingAngle);
@@ -1245,7 +1454,7 @@ export function updateSpiderReliquaryAI(
     if (body.pos.z < minZ) body.vel.z += accel * delta * 0.7;
   }
 
-  if (!isRamming && dist <= boss.config.legSlamTriggerRange + playerRadius && boss.legSlamCooldown <= 0) {
+  if (!finalCoreMode && !isRamming && dist <= boss.config.legSlamTriggerRange + playerRadius && boss.legSlamCooldown <= 0) {
     scheduleLegSlam(boss, targetAngle, phase);
     boss.legSlamCooldown = boss.config.legSlamCooldown[phase];
     boss.webCooldown = Math.max(boss.webCooldown, 0.9);
@@ -1267,7 +1476,7 @@ export function updateSpiderReliquaryAI(
     boss.stompCooldown = boss.config.stompCooldown[phase];
   }
 
-  if (boss.pulseCooldown <= 0 && boss.collapseTimer <= 0.15) {
+  if (!finalCoreMode && boss.pulseCooldown <= 0 && boss.collapseTimer <= 0.15) {
     schedulePulse(boss, phase);
     boss.pulseCooldown = boss.config.pulseCooldown[phase];
   }
@@ -1278,15 +1487,19 @@ export function updateSpiderReliquaryAI(
     boss.webCooldown <= 0
     && boss.webTetherTimer <= 0
     && !playerWebbed
-    && !isRamming
-    && boss.collapseTimer <= 0.15
-    && dist >= 4.6
+    && (!isRamming || finalCoreMode)
+    && (finalCoreMode || boss.collapseTimer <= 0.15)
+    && dist >= (finalCoreMode ? 3.4 : 4.6)
     && dist <= boss.config.webRange[phase]
   ) {
     scheduleWebShot(boss, playerPos, playerRadius, phase);
     boss.webCooldown = boss.config.webCooldown[phase];
-    boss.legSlamCooldown = Math.max(boss.legSlamCooldown, 0.35);
-    boss.pulseCooldown = Math.max(boss.pulseCooldown, 0.55);
+    if (finalCoreMode) {
+      boss.dashCooldown = Math.max(boss.dashCooldown, 0.28);
+    } else {
+      boss.legSlamCooldown = Math.max(boss.legSlamCooldown, 0.35);
+      boss.pulseCooldown = Math.max(boss.pulseCooldown, 0.55);
+    }
   }
   for (let i = boss.attacks.length - 1; i >= 0; i--) {
     const attack = boss.attacks[i];
@@ -1389,6 +1602,7 @@ export function updateSpiderReliquaryVisuals(
   const body = boss.collidable;
   const rpmFrac = body.rpm / boss.config.coreRpmCapacity;
   const aliveLegs = getAliveLegCount(boss);
+  const finalCoreMode = aliveLegs === 0;
   const oneLegMode = aliveLegs === 1;
   const collapseFrac = clamp(boss.collapseTimer / boss.config.collapseDuration, 0, 1);
 
@@ -1444,39 +1658,62 @@ export function updateSpiderReliquaryVisuals(
 
   const wobble = Math.sin(time * (phase === 2 ? 9 : 5)) * 0.04;
   const gaitBob = Math.sin(boss.gaitTime * 2.1) * (0.065 + supportInstability * 0.04);
-  boss.bodyRoot.position.y = 0.9
-    - collapseFrac * 0.32
-    - supportInstability * 0.08
-    + strideLift * 0.24
-    - hopCrouch * 0.22
-    + hopArc * 0.82
-    - hopRecover * 0.04
-    - ramWindup * 0.1
-    + ramLunge * 0.08
-    + gaitBob
-    + wobble;
-  boss.bodyRoot.position.z = -ramWindup * 0.6 + ramLunge * 1.15;
-  const hopLean = hopArc * 0.34 - hopCrouch * 0.1;
-  const desiredRoll = deadBiasX * 0.16
-    - supportBiasX * 0.11
-    + collapseFrac * 0.24 * Math.sin(time * 8)
-    + boss.oneLegHopDirX * hopLean;
-  const desiredPitch = -deadBiasZ * 0.16
-    + supportBiasZ * 0.11
-    + collapseFrac * 0.18 * Math.cos(time * 7)
-    - boss.oneLegHopDirZ * hopLean
-    - ramWindup * 0.12
-    + ramLunge * 0.28;
-  boss.bodyRoot.rotation.z += (desiredRoll - boss.bodyRoot.rotation.z) * Math.min(4.8 * delta, 1);
-  boss.bodyRoot.rotation.x += (desiredPitch - boss.bodyRoot.rotation.x) * Math.min(4.8 * delta, 1);
-
+  const bodySpeed = Math.hypot(body.vel.x, body.vel.z);
+  if (finalCoreMode) {
+    const moveX = bodySpeed > 0.01 ? body.vel.x / bodySpeed : 0;
+    const moveZ = bodySpeed > 0.01 ? body.vel.z / bodySpeed : 0;
+    const dashLean = boss.aiState === 'dash' ? 0.18 : boss.aiState === 'windup' ? -0.08 : 0;
+    boss.bodyRoot.position.y = 0.62 + gaitBob * 0.35 + wobble * 0.7;
+    boss.bodyRoot.position.z = dashLean;
+    const desiredRoll = -moveX * 0.18 + wobble * 0.4;
+    const desiredPitch = moveZ * 0.16 + dashLean * 0.35;
+    boss.bodyRoot.rotation.z += (desiredRoll - boss.bodyRoot.rotation.z) * Math.min(6.8 * delta, 1);
+    boss.bodyRoot.rotation.x += (desiredPitch - boss.bodyRoot.rotation.x) * Math.min(6.8 * delta, 1);
+    boss.bodyRoot.scale.setScalar(boss.config.bodyScale * 0.92);
+  } else {
+    boss.bodyRoot.position.y = 0.9
+      - collapseFrac * 0.32
+      - supportInstability * 0.08
+      + strideLift * 0.24
+      - hopCrouch * 0.22
+      + hopArc * 0.82
+      - hopRecover * 0.04
+      - ramWindup * 0.1
+      + ramLunge * 0.08
+      + gaitBob
+      + wobble;
+    boss.bodyRoot.position.z = -ramWindup * 0.6 + ramLunge * 1.15;
+    const hopLean = hopArc * 0.34 - hopCrouch * 0.1;
+    const desiredRoll = deadBiasX * 0.16
+      - supportBiasX * 0.11
+      + collapseFrac * 0.24 * Math.sin(time * 8)
+      + boss.oneLegHopDirX * hopLean;
+    const desiredPitch = -deadBiasZ * 0.16
+      + supportBiasZ * 0.11
+      + collapseFrac * 0.18 * Math.cos(time * 7)
+      - boss.oneLegHopDirZ * hopLean
+      - ramWindup * 0.12
+      + ramLunge * 0.28;
+    boss.bodyRoot.rotation.z += (desiredRoll - boss.bodyRoot.rotation.z) * Math.min(4.8 * delta, 1);
+    boss.bodyRoot.rotation.x += (desiredPitch - boss.bodyRoot.rotation.x) * Math.min(4.8 * delta, 1);
+    boss.bodyRoot.scale.setScalar(boss.config.bodyScale);
+  }
+  boss.pedestalMesh.visible = !finalCoreMode;
+  boss.shellMesh.visible = !finalCoreMode;
+  boss.coreMesh.visible = !finalCoreMode;
+  boss.haloMesh.visible = !finalCoreMode;
+  boss.coreMesh.position.y = 1.86;
+  boss.haloMesh.position.y = 2.0;
   boss.haloMesh.rotation.z += delta * (phase === 2 ? 1.8 : 0.8);
   boss.haloMesh.rotation.x = Math.PI / 2 + wobble * 0.6;
   boss.coreMesh.rotation.y += delta * (phase === 2 ? 2.4 : 1.2);
   boss.coreMesh.rotation.x += delta * 0.7;
+  boss.coreMesh.scale.setScalar(1);
+  boss.haloMesh.scale.setScalar(1);
+  boss.coreTop.tiltGroup.visible = finalCoreMode;
 
   const shielded = canDamageSpiderCore(boss) === false;
-  boss.shieldMesh.visible = shielded;
+  boss.shieldMesh.visible = shielded && !finalCoreMode;
   if (shielded) {
     const pulse = 0.16 + 0.06 * Math.sin(time * 5.2);
     const mat = boss.shieldMesh.material as THREE.MeshStandardMaterial;
@@ -1486,14 +1723,45 @@ export function updateSpiderReliquaryVisuals(
   }
 
   const coreMat = boss.coreMesh.material as THREE.MeshStandardMaterial;
-  const glow = (1 - rpmFrac) * 0.9 + collapseFrac * 1.3 + (phase === 2 ? 0.45 : 0.1);
-  coreMat.emissive.setRGB(1.0, 0.4 + phase * 0.08, 0.08);
+  const glow = (1 - rpmFrac) * 0.9 + collapseFrac * 1.3 + (phase === 2 ? 0.45 : 0.1) + (finalCoreMode ? 0.7 : 0);
+  coreMat.emissive.setRGB(1.0, finalCoreMode ? 0.62 : 0.4 + phase * 0.08, 0.08);
   coreMat.emissiveIntensity = glow;
-  coreMat.color.setRGB(1.0, 0.6 + phase * 0.08, 0.25);
+  coreMat.color.setRGB(1.0, finalCoreMode ? 0.78 : 0.6 + phase * 0.08, finalCoreMode ? 0.18 : 0.25);
 
   const haloMat = boss.haloMesh.material as THREE.MeshStandardMaterial;
-  haloMat.emissiveIntensity = shielded ? 0.35 : 0.65 + collapseFrac * 0.6;
-  haloMat.color.set(aliveLegs <= boss.config.shieldLegThreshold ? 0xe89c42 : 0xd7ae5c);
+  haloMat.emissiveIntensity = finalCoreMode ? 1.0 + (boss.aiState === 'dash' ? 0.35 : 0) : shielded ? 0.35 : 0.65 + collapseFrac * 0.6;
+  haloMat.color.set(finalCoreMode ? 0xff8f32 : aliveLegs <= boss.config.shieldLegThreshold ? 0xe89c42 : 0xd7ae5c);
+
+  if (finalCoreMode) {
+    const finalCfg = getFinalCoreDuelConfig(boss);
+    const spinFrac = clamp(0.82 + bodySpeed / Math.max(finalCfg.maxSpeed, 0.001) * 0.38 + (boss.aiState === 'dash' ? 0.18 : 0), 0.7, 1.3);
+    updateSpinnerVisuals(boss, {
+      vel: body.vel,
+      maxSpeed: finalCfg.maxSpeed,
+      spinSpeed: FINAL_CORE_SPIN_SPEED,
+      rpmFrac,
+      spinFrac,
+      baseColor: boss.coreTopBaseColor,
+      tiltGroup: boss.coreTop.tiltGroup,
+      spinGroup: boss.coreTop.spinGroup,
+      bodyMat: boss.coreTop.bodyMat,
+      motionVisuals: boss.coreTop.motionVisuals,
+    }, time, delta);
+    if (boss.aiState === 'windup') {
+      const pulse = 0.55 + 0.45 * Math.sin(time * 8 * Math.PI * 2);
+      boss.coreTop.bodyMat.emissive.setRGB(1.0, 0.46, 0.14);
+      boss.coreTop.bodyMat.emissiveIntensity = 0.38 + pulse * 0.22;
+    } else if (boss.aiState === 'dash') {
+      const pulse = 0.62 + 0.38 * Math.sin(time * 11 * Math.PI * 2);
+      boss.coreTop.bodyMat.emissive.setRGB(1.0, 0.54, 0.16);
+      boss.coreTop.bodyMat.emissiveIntensity = 0.5 + pulse * 0.3;
+    } else {
+      boss.coreTop.bodyMat.emissive.setRGB(0.32, 0.1, 0.02);
+      boss.coreTop.bodyMat.emissiveIntensity = 0.22 + (1 - rpmFrac) * 0.12;
+    }
+  } else {
+    boss.coreTop.bodyMat.emissiveIntensity = 0;
+  }
 
   const webStrength = boss.webTetherDuration > 0
     ? clamp(boss.webTetherTimer / boss.webTetherDuration, 0, 1)
