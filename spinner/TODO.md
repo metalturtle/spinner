@@ -128,11 +128,30 @@ refinement ideas:
     arena waves
     mirror room with laser spinner
     rain effect with spinners throwing out rain drops
+        ripples
+    cobwebs
+    spider boss shooting webs
+    lightning effect when combo
+    laser pickup
+    enemy spinner also effects ember
+    octoboss more mechanical arms
+    sound effects
+    download maps, upload maps and play, possible store in storage
+    launch effects improvement
+    zombie model improvement, crawling and walking zombie
+    menu improvement
+    combat improvement
+    glare effects over lava
+    
 
 bugs:
     sometimes entities slip through walls
+
 
 done:
     entities idle
     checkpoints
     open closing doors
+
+refine:
+    more bounciness when spinner hits the walls or enemy spinners

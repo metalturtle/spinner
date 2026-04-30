@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { scene } from './renderer';
 
-const GRAVITY = 18;
+const GRAVITY = 15.5;
 
 interface Gib {
   mesh: THREE.Mesh;
@@ -24,44 +24,86 @@ function makeGibMaterial(): THREE.MeshStandardMaterial {
   });
 }
 
+function spawnGibPiece(
+  mesh: THREE.Mesh,
+  pos: { x: number; z: number },
+  speedMin: number,
+  speedRange: number,
+  upMin: number,
+  upRange: number,
+  lifetimeMin: number,
+  lifetimeRange: number,
+): void {
+  mesh.position.set(
+    pos.x + (Math.random() - 0.5) * 0.35,
+    0.45 + Math.random() * 0.55,
+    pos.z + (Math.random() - 0.5) * 0.35,
+  );
+  mesh.rotation.set(
+    Math.random() * Math.PI * 2,
+    Math.random() * Math.PI * 2,
+    Math.random() * Math.PI * 2,
+  );
+  mesh.castShadow = true;
+  scene.add(mesh);
+
+  const angle = Math.random() * Math.PI * 2;
+  const speed = speedMin + Math.random() * speedRange;
+  gibs.push({
+    mesh,
+    velocity: new THREE.Vector3(
+      Math.cos(angle) * speed,
+      upMin + Math.random() * upRange,
+      Math.sin(angle) * speed,
+    ),
+    angularVelocity: new THREE.Vector3(
+      (Math.random() - 0.5) * 10,
+      (Math.random() - 0.5) * 10,
+      (Math.random() - 0.5) * 10,
+    ),
+    elapsed: 0,
+    lifetime: lifetimeMin + Math.random() * lifetimeRange,
+    grounded: false,
+    alive: true,
+  });
+}
+
+function spawnZombieBodyParts(pos: { x: number; z: number }): void {
+  const skinMat = new THREE.MeshStandardMaterial({
+    color: 0xb79c86,
+    roughness: 0.9,
+    metalness: 0.0,
+  });
+  const clothMat = new THREE.MeshStandardMaterial({
+    color: 0x4e4237,
+    roughness: 0.86,
+    metalness: 0.03,
+  });
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 12), skinMat);
+  spawnGibPiece(head, pos, 4.6, 4.4, 9.8, 5.1, 4.6, 1.8);
+
+  // Arms (limbs)
+  for (let i = 0; i < 2; i++) {
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.74, 6, 12), clothMat.clone());
+    spawnGibPiece(arm, pos, 4.1, 3.9, 9.2, 4.6, 4.2, 1.7);
+  }
+
+  // Legs
+  for (let i = 0; i < 2; i++) {
+    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 1.08, 8, 14), clothMat.clone());
+    spawnGibPiece(leg, pos, 3.6, 3.5, 8.7, 4.3, 4.8, 1.9);
+  }
+}
+
 export function spawnZombieGibs(pos: { x: number; z: number }, count: number): void {
+  spawnZombieBodyParts(pos);
   for (let i = 0; i < count; i++) {
     const size = 0.08 + Math.random() * 0.16;
     const geometry = new THREE.IcosahedronGeometry(size, 0);
     const material = makeGibMaterial();
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(
-      pos.x + (Math.random() - 0.5) * 0.35,
-      0.45 + Math.random() * 0.55,
-      pos.z + (Math.random() - 0.5) * 0.35,
-    );
-    mesh.rotation.set(
-      Math.random() * Math.PI * 2,
-      Math.random() * Math.PI * 2,
-      Math.random() * Math.PI * 2,
-    );
-    mesh.castShadow = true;
-    scene.add(mesh);
-
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 2.5 + Math.random() * 5.5;
-    gibs.push({
-      mesh,
-      velocity: new THREE.Vector3(
-        Math.cos(angle) * speed,
-        3.5 + Math.random() * 4.0,
-        Math.sin(angle) * speed,
-      ),
-      angularVelocity: new THREE.Vector3(
-        (Math.random() - 0.5) * 10,
-        (Math.random() - 0.5) * 10,
-        (Math.random() - 0.5) * 10,
-      ),
-      elapsed: 0,
-      lifetime: 1.6 + Math.random() * 0.8,
-      grounded: false,
-      alive: true,
-    });
+    spawnGibPiece(mesh, pos, 2.5, 5.5, 3.5, 4.0, 1.6, 0.8);
   }
 }
 

@@ -3293,13 +3293,13 @@ function killZombie(zombie: ZombieState, gib: boolean): void {
 
   if (gib) {
     emitBlood({ x: deathPos.x, y: 0.95, z: deathPos.z }, 72, 1.0);
-    spawnBloodSplat(deathPos, 10, time);
+    spawnBloodSplat(deathPos, 22, time);
     // spawnBloodSplat({ x: deathPos.x + 0.7, z: deathPos.z + 0.25 }, 120, time + 0.08);
     // spawnBloodSplat({ x: deathPos.x - 0.6, z: deathPos.z - 0.3 }, 60, time + 0.16);
     spawnZombieGibs(deathPos, 16);
   } else {
     emitBlood({ x: deathPos.x, y: 0.75, z: deathPos.z }, 26, 0.82);
-    spawnBloodSplat(deathPos, 12, time);
+    spawnBloodSplat(deathPos, 18, time);
   }
 
   spawnPickupAt(pickups, deathPos);
@@ -3748,7 +3748,11 @@ function animate(): void {
   profiler?.nextPhase('effects');
   updateClashFlashes(delta);
   updateSparks(time);
-  updateGooDecals(time);
+  updateGooDecals(time, {
+    pos: playerBody.pos,
+    vel: playerBody.vel,
+    radius: playerBody.radius,
+  });
   updateGibs(delta);
   updateRicochetBubbles(delta);
   updateTrails(playerBody.pos, playerBody.vel);
