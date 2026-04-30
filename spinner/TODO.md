@@ -121,29 +121,30 @@ refinement
 sound effects
 
 refinement ideas:
+    sound effects
     level load
-
-    more entities types in temple
-    turret shooting fire arrows
-    arena waves
-    mirror room with laser spinner
-    rain effect with spinners throwing out rain drops
-        ripples
-    cobwebs
     spider boss shooting webs
-    lightning effect when combo
     laser pickup
     enemy spinner also effects ember
     octoboss more mechanical arms
-    sound effects
-    download maps, upload maps and play, possible store in storage
     launch effects improvement
     zombie model improvement, crawling and walking zombie
     menu improvement
     combat improvement
-    glare effects over lava
     ambient zones
-    
+
+
+backburner:
+    rain effect with spinners throwing out rain drops
+        ripples
+    lightning effect when combo
+    tall grass biome room
+    glare effects over lava
+    download maps, upload maps and play, possible store in storage
+    cobwebs
+    arena waves
+    more entities types in temple
+    turret shooting fire arrows
 
 bugs:
     sometimes entities slip through walls
@@ -153,6 +154,7 @@ done:
     entities idle
     checkpoints
     open closing doors
+    mirror room with laser spinner
 
 refine:
     more bounciness when spinner hits the walls or enemy spinners
