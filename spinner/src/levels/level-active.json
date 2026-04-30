@@ -3090,20 +3090,6 @@
       "properties": {}
     },
     {
-      "id": "ent_molegykfczxlhe",
-      "name": "Sliding Door 24",
-      "type": "sliding_door",
-      "position": {
-        "x": 100,
-        "y": 142
-      },
-      "rotation": 0,
-      "properties": {
-        "spawnTrigger": "",
-        "closeTriggerId": "arena_wave_1"
-      }
-    },
-    {
       "id": "ent_molen8qnexx0qj",
       "name": "Fire Torch 25",
       "type": "fire_torch",

@@ -212,15 +212,6 @@ function addLavaLight(scene: THREE.Scene, poly: LevelPolygon): void {
   light.castShadow = false;
   root.add(light);
 
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-    color: 0xff7f22,
-    transparent: true,
-    opacity: 0.18,
-    depthWrite: false,
-  }));
-  glow.scale.set(Math.max(2.8, radius * 1.3), Math.max(2.8, radius * 1.3), 1);
-  root.add(glow);
-
   lavaLightRoots.push(root);
   scene.add(root);
 }

@@ -3,7 +3,7 @@ import type { Collidable } from './physics';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const MAX_SPARKS      = 1000;
+const MAX_SPARKS      = 600;
 const DEAD_TIME       = -9999;
 const VERTS_PER_SPARK = 2;   // tail vertex + tip vertex
 
