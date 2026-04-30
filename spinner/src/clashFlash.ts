@@ -1,44 +1,15 @@
 import * as THREE from 'three';
-import { camera } from './renderer';
 
 const MAX_FLASHES = 36;
-const BASE_DURATION = 0.08;
-const DURATION_RANGE = 0.08;
-const BASE_START_SCALE = 0.45;
-const BASE_END_SCALE = 1.5;
-const SCALE_RANGE = 1.7;
-
-const VERTEX_SHADER = /* glsl */ `
-varying vec2 vUv;
-
-void main() {
-  vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}
-`;
-
-const FRAGMENT_SHADER = /* glsl */ `
-uniform vec3 uColor;
-uniform float uOpacity;
-
-varying vec2 vUv;
-
-void main() {
-  vec2 p = vUv * 2.0 - 1.0;
-  float radius = length(p);
-
-  float core = 1.0 - smoothstep(0.0, 0.38, radius);
-  float halo = 1.0 - smoothstep(0.18, 1.0, radius);
-  float alpha = (core * 0.7 + halo * 0.5) * uOpacity;
-
-  vec3 color = mix(uColor * 0.42, vec3(1.0, 0.98, 0.92), core * 0.72);
-  gl_FragColor = vec4(color, alpha);
-}
-`;
+const BASE_DURATION = 0.1;
+const DURATION_RANGE = 0.12;
+const BASE_START_SCALE = 1.5;
+const BASE_END_SCALE = 4.0;
+const SCALE_RANGE = 3.0;
 
 interface ClashFlash {
-  mesh: THREE.Mesh;
-  material: THREE.ShaderMaterial;
+  mesh: THREE.Sprite;
+  material: THREE.SpriteMaterial;
   alive: boolean;
   elapsed: number;
   duration: number;
@@ -48,6 +19,27 @@ interface ClashFlash {
 
 const flashes: ClashFlash[] = [];
 let nextFlashIndex = 0;
+
+function createFlashTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+
+  const ctx = canvas.getContext('2d')!;
+  const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0.0, 'rgba(255,255,245,1)');
+  grad.addColorStop(0.18, 'rgba(255,244,210,0.98)');
+  grad.addColorStop(0.45, 'rgba(255,210,120,0.78)');
+  grad.addColorStop(0.78, 'rgba(255,150,35,0.22)');
+  grad.addColorStop(1.0, 'rgba(255,120,0,0)');
+
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
 
 function getReusableFlash(): ClashFlash {
   for (const flash of flashes) {
@@ -62,25 +54,24 @@ function getReusableFlash(): ClashFlash {
 export function initClashFlashes(scene: THREE.Scene): void {
   if (flashes.length > 0) return;
 
-  const geometry = new THREE.PlaneGeometry(1, 1);
+  const texture = createFlashTexture();
 
   for (let i = 0; i < MAX_FLASHES; i++) {
-    const material = new THREE.ShaderMaterial({
-      uniforms: {
-        uColor: { value: new THREE.Color(0xffc874) },
-        uOpacity: { value: 0 },
-      },
-      vertexShader: VERTEX_SHADER,
-      fragmentShader: FRAGMENT_SHADER,
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      color: 0xffcc72,
+      opacity: 0,
       transparent: true,
+      depthTest: false,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
+      toneMapped: false,
     });
 
-    const mesh = new THREE.Mesh(geometry, material);
+    const mesh = new THREE.Sprite(material);
     mesh.visible = false;
     mesh.frustumCulled = false;
+    mesh.renderOrder = 40;
     scene.add(mesh);
 
     flashes.push({
@@ -106,12 +97,11 @@ export function emitClashFlash(
   flash.alive = true;
   flash.elapsed = 0;
   flash.duration = BASE_DURATION + DURATION_RANGE * clamped;
-  flash.startScale = BASE_START_SCALE + clamped * 0.2;
+  flash.startScale = BASE_START_SCALE + clamped * 0.75;
   flash.endScale = BASE_END_SCALE + clamped * SCALE_RANGE;
-  flash.mesh.position.set(point.x, point.y + 0.06, point.z);
-  flash.mesh.scale.setScalar(flash.startScale);
-  flash.mesh.quaternion.copy(camera.quaternion);
-  flash.material.uniforms.uOpacity.value = 0.95;
+  flash.mesh.position.set(point.x, point.y + 0.8, point.z);
+  flash.mesh.scale.set(flash.startScale, flash.startScale, 1);
+  flash.material.opacity = 1.75;
   flash.mesh.visible = true;
 }
 
@@ -124,7 +114,7 @@ export function updateClashFlashes(delta: number): void {
     if (t >= 1) {
       flash.alive = false;
       flash.mesh.visible = false;
-      flash.material.uniforms.uOpacity.value = 0;
+      flash.material.opacity = 0;
       continue;
     }
 
@@ -132,9 +122,8 @@ export function updateClashFlashes(delta: number): void {
     const opacity = Math.pow(1 - t, 1.85);
     const scale = THREE.MathUtils.lerp(flash.startScale, flash.endScale, eased);
 
-    flash.mesh.quaternion.copy(camera.quaternion);
-    flash.mesh.scale.setScalar(scale);
-    flash.material.uniforms.uOpacity.value = opacity;
+    flash.mesh.scale.set(scale, scale, 1);
+    flash.material.opacity = opacity * 1.75;
   }
 }
 
@@ -144,6 +133,7 @@ export function resetClashFlashes(): void {
     flash.alive = false;
     flash.elapsed = 0;
     flash.mesh.visible = false;
-    flash.material.uniforms.uOpacity.value = 0;
+    flash.material.opacity = 0;
   }
 }
+

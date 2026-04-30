@@ -122,14 +122,17 @@ sound effects
 
 refinement ideas:
     level load
-    entities idle
+
     more entities types in temple
-    checkpoints
     turret shooting fire arrows
-    open closing doors
     arena waves
     mirror room with laser spinner
     rain effect with spinners throwing out rain drops
 
 bugs:
     sometimes entities slip through walls
+
+done:
+    entities idle
+    checkpoints
+    open closing doors
