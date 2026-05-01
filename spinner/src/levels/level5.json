@@ -27,7 +27,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moe8bnajeiu0cc",
@@ -53,7 +53,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moe8bnajua8vrb",
@@ -79,7 +79,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moe8bnaj45yatq",
@@ -105,7 +105,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moe8bnajkzm4u2",
@@ -131,7 +131,7 @@
       ],
       "properties": {},
       "color": "#f7f7f7",
-      "textureId": "rock_wall_16_diff_1k",
+      "textureId": "rock_wall_16",
       "textureScale": 4
     }
   ],

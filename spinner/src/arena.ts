@@ -358,6 +358,9 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
       if (!isLava) {
         const mat = mesh.material as THREE.MeshStandardMaterial;
         applyLaserLightToMaterial(mat);
+        if(poly.useReliefMap) {
+          console.log("using reliev map:", poly.textureId)
+        }
         const normalMap = TextureManager.getNormal(poly.textureId, poly.useReliefMap);
         mat.normalMap = DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap;
         mat.bumpMap = TextureManager.getBump(poly.textureId, poly.useReliefMap);

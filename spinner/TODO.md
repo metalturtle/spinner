@@ -125,8 +125,7 @@ refinement ideas:
     hosting the game
     menu improvement
     combat improvement
-    zombie model improvement, crawling and walking zombie
-    holes in the octoboss chamber and several drones
+    the octoboss chamber and several drones
 
 backburner:
     rain effect with spinners throwing out rain drops
@@ -144,7 +143,24 @@ backburner:
     drag selection in level editor
     saving custom level to cache and custom level option in main menu
     eventual health recovery
+    zombie model improvement, crawling and walking zombie
 
+
+what should be given to AI:
+    collision bug
+    optimisations if big fps drop
+    building and running issues
+    background stars, then sunset
+    Check why laser spinner and spider spinner using RPM
+
+current plan:
+    make the game easier and play the whole setup:
+        make pickups generous
+        decrease run drain
+    powerups are cube, shows a message "You got combo power! Press X to use it"
+    optimise at the end
+    octoboss eye improvement
+    
 
 bugs:
     sometimes entities slip through walls

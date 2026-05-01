@@ -179,7 +179,8 @@ export interface OctobossTentacle {
   group: THREE.Group;
   segmentMeshes: THREE.Mesh[];
   jointMeshes: THREE.Mesh[];
-  tipMesh: THREE.Mesh;
+  tipGroup: THREE.Group;
+  bladePivot: THREE.Group;
   side: -1 | 1;
   socketLocal: THREE.Vector3;
   restLengths: number[];
@@ -598,6 +599,142 @@ function addTentacleStyle(
   }
 }
 
+function createSawbladeGeometry(
+  outerRadius: number,
+  innerRadius: number,
+  toothCount: number,
+  thickness: number,
+): THREE.ExtrudeGeometry {
+  const bladeShape = new THREE.Shape();
+  const toothStep = (Math.PI * 2) / toothCount;
+  const toothRootRadius = outerRadius * 0.82;
+
+  for (let i = 0; i < toothCount; i += 1) {
+    const start = i * toothStep;
+    const leading = start + toothStep * 0.12;
+    const tip = start + toothStep * 0.5;
+    const trailing = start + toothStep * 0.88;
+    const points = [
+      new THREE.Vector2(Math.cos(leading) * toothRootRadius, Math.sin(leading) * toothRootRadius),
+      new THREE.Vector2(Math.cos(tip) * outerRadius, Math.sin(tip) * outerRadius),
+      new THREE.Vector2(Math.cos(trailing) * toothRootRadius, Math.sin(trailing) * toothRootRadius),
+    ];
+
+    if (i === 0) bladeShape.moveTo(points[0].x, points[0].y);
+    else bladeShape.lineTo(points[0].x, points[0].y);
+    bladeShape.lineTo(points[1].x, points[1].y);
+    bladeShape.lineTo(points[2].x, points[2].y);
+  }
+  bladeShape.closePath();
+
+  const bore = new THREE.Path();
+  bore.absarc(0, 0, innerRadius, 0, Math.PI * 2, true);
+  bladeShape.holes.push(bore);
+
+  const geometry = new THREE.ExtrudeGeometry(bladeShape, {
+    depth: thickness,
+    bevelEnabled: true,
+    bevelSegments: 2,
+    steps: 1,
+    bevelSize: thickness * 0.14,
+    bevelThickness: thickness * 0.16,
+  });
+  geometry.center();
+  return geometry;
+}
+
+function createTentacleSawTip(config: OctobossConfig): {
+  tipGroup: THREE.Group;
+  bladePivot: THREE.Group;
+} {
+  const tipGroup = new THREE.Group();
+  const bladePivot = new THREE.Group();
+  const mountLength = Math.max(0.65, config.tentacleThickness * 2.25);
+  const mountRadius = Math.max(0.16, config.tentacleThickness * 0.5);
+  const bladeRadius = Math.max(config.tipRadius * 0.88, config.tentacleThickness * 2.3);
+  const bladeThickness = Math.max(0.14, config.tentacleThickness * 0.34);
+  const hubRadius = bladeRadius * 0.25;
+  const toothCount = 16;
+
+  const mount = new THREE.Mesh(
+    new THREE.CylinderGeometry(mountRadius * 0.92, mountRadius, mountLength, 12),
+    new THREE.MeshStandardMaterial({
+      color: 0x55483c,
+      roughness: 0.58,
+      metalness: 0.68,
+    }),
+  );
+  mount.position.y = mountLength * 0.5;
+  mount.castShadow = true;
+  tipGroup.add(mount);
+
+  const mountCollar = new THREE.Mesh(
+    new THREE.CylinderGeometry(mountRadius * 1.32, mountRadius * 1.32, mountLength * 0.22, 16),
+    new THREE.MeshStandardMaterial({
+      color: 0x8d6a45,
+      roughness: 0.32,
+      metalness: 0.88,
+      emissive: 0x2c1708,
+      emissiveIntensity: 0.12,
+    }),
+  );
+  mountCollar.position.y = mountLength * 0.82;
+  mountCollar.castShadow = true;
+  tipGroup.add(mountCollar);
+
+  bladePivot.position.y = mountLength * 0.96;
+  tipGroup.add(bladePivot);
+
+  const blade = new THREE.Mesh(
+    createSawbladeGeometry(bladeRadius, hubRadius * 0.72, toothCount, bladeThickness),
+    new THREE.MeshStandardMaterial({
+      color: 0xc7c1b5,
+      roughness: 0.24,
+      metalness: 0.95,
+      emissive: 0x342618,
+      emissiveIntensity: 0.08,
+    }),
+  );
+  blade.rotation.y = Math.PI * 0.5;
+  blade.castShadow = true;
+  bladePivot.add(blade);
+
+  const hub = new THREE.Mesh(
+    new THREE.CylinderGeometry(hubRadius, hubRadius, bladeThickness * 1.8, 18),
+    new THREE.MeshStandardMaterial({
+      color: 0x4b4138,
+      roughness: 0.42,
+      metalness: 0.84,
+    }),
+  );
+  hub.rotation.z = Math.PI * 0.5;
+  hub.castShadow = true;
+  bladePivot.add(hub);
+
+  for (let i = 0; i < 5; i += 1) {
+    const bolt = new THREE.Mesh(
+      new THREE.CylinderGeometry(bladeThickness * 0.22, bladeThickness * 0.22, bladeThickness * 1.2, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0x95836c,
+        roughness: 0.3,
+        metalness: 0.9,
+      }),
+    );
+    const angle = (i / 5) * Math.PI * 2;
+    const boltRadius = hubRadius * 0.62;
+    bolt.position.set(
+      0,
+      Math.cos(angle) * boltRadius,
+      Math.sin(angle) * boltRadius,
+    );
+    bolt.rotation.z = Math.PI * 0.5;
+    bolt.castShadow = true;
+    bladePivot.add(bolt);
+  }
+
+  return { tipGroup, bladePivot };
+}
+
 function makeTentacle(
   side: -1 | 1,
   config: OctobossConfig,
@@ -608,9 +745,6 @@ function makeTentacle(
   const segmentMeshes: THREE.Mesh[] = [];
   const jointMeshes: THREE.Mesh[] = [];
   const jointRadius = Math.max(0.13, config.tentacleThickness * 0.82);
-  const drillRadius = Math.max(0.24, config.tentacleThickness * 1.35);
-  const drillTipRadius = Math.max(0.12, config.tentacleThickness * 0.62);
-  const drillLength = Math.max(1.0, config.tentacleThickness * 6.2);
   const segmentGeo = new THREE.CylinderGeometry(1, 1, 1, 8);
   const segmentMat = new THREE.MeshStandardMaterial({
     color: 0x685b4b,
@@ -636,18 +770,8 @@ function makeTentacle(
     jointMeshes.push(joint);
   }
 
-  const tipMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(drillRadius, drillTipRadius, drillLength, 8),
-    new THREE.MeshStandardMaterial({
-      color: 0xd9b36a,
-      roughness: 0.28,
-      metalness: 0.84,
-      emissive: 0x563418,
-      emissiveIntensity: 0.25,
-    }),
-  );
-  tipMesh.castShadow = true;
-  group.add(tipMesh);
+  const { tipGroup, bladePivot } = createTentacleSawTip(config);
+  group.add(tipGroup);
 
   const collidable: Collidable = {
     pos: { x: 0, z: 0 },
@@ -669,7 +793,8 @@ function makeTentacle(
     group,
     segmentMeshes,
     jointMeshes,
-    tipMesh,
+    tipGroup,
+    bladePivot,
     side,
     socketLocal: new THREE.Vector3(
       config.tentacleSocketSpread * side,
@@ -1404,12 +1529,12 @@ export function syncOctobossTentacles(
 
     const tip = tentacle.joints[tentacle.joints.length - 1];
     const prev = tentacle.joints[tentacle.joints.length - 2];
-    tentacle.tipMesh.position.copy(tip);
-    tentacle.tipMesh.quaternion.setFromUnitVectors(
+    tentacle.tipGroup.position.copy(tip);
+    tentacle.tipGroup.quaternion.setFromUnitVectors(
       new THREE.Vector3(0, 1, 0),
       new THREE.Vector3().subVectors(tip, prev).normalize(),
     );
-    tentacle.tipMesh.scale.set(
+    tentacle.tipGroup.scale.set(
       boss.tentacleThicknessScale,
       boss.tentacleThicknessScale,
       boss.tentacleThicknessScale,
@@ -1449,6 +1574,17 @@ export function updateOctobossVisuals(
   boss.bodyRoot.rotation.x += (tilt - boss.bodyRoot.rotation.x) * Math.min(5.2 * delta, 1);
   boss.bodyRoot.rotation.z += ((-tilt * 0.65) - boss.bodyRoot.rotation.z) * Math.min(5.2 * delta, 1);
   boss.baseSpinGroup.rotation.y += delta * (phase === 2 ? 4.8 : phase === 1 ? 4.0 : 3.4);
+
+  const bladeSpinSpeed = boss.tentacleMode === 'chasing'
+    ? 48
+    : boss.tentacleMode === 'extending'
+      ? 48
+      : boss.tentacleMode === 'retracting'
+        ? 14
+        : 9;
+  for (const tentacle of boss.tentacles) {
+    tentacle.bladePivot.rotation.x += delta * bladeSpinSpeed * tentacle.side;
+  }
 
   const eyeCenterY = 2.02 + hover * 0.08;
   boss.eyeWhiteMesh.position.y = eyeCenterY;

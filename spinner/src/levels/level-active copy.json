@@ -27,7 +27,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moe9wddcp1it7k",
@@ -53,7 +53,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moe9wddchm70vv",
@@ -79,7 +79,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moe9wddc32d4bd",
@@ -105,7 +105,7 @@
       ],
       "properties": {},
       "color": "#2a3a4a",
-      "textureId": "rock_wall_16_diff_1k",
+      "textureId": "rock_wall_16",
       "textureScale": 4,
       "useReliefMap": true
     },
@@ -133,7 +133,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moean2afwlwe7f",
@@ -159,7 +159,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moean2afrsh4uo",
@@ -185,7 +185,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moean2afsn1f5k",
@@ -211,7 +211,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moean2afeu2bns",
@@ -237,7 +237,7 @@
       ],
       "properties": {},
       "color": "#2a3a4a",
-      "textureId": "rock_wall_16_diff_1k",
+      "textureId": "rock_wall_16",
       "textureScale": 4
     },
     {
@@ -268,7 +268,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moeaojqpbbk25n",
@@ -298,7 +298,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moeaqhq0ozu419",
@@ -324,7 +324,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moeaqhq0t5eny5",
@@ -350,7 +350,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moeaqhq0d0ysxm",
@@ -376,7 +376,7 @@
       ],
       "properties": {},
       "color": "#2a3a4a",
-      "textureId": "rock_wall_16_diff_1k",
+      "textureId": "rock_wall_16",
       "textureScale": 4
     },
     {
@@ -579,7 +579,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moebfrkgw8ksz2",
@@ -977,7 +977,7 @@
       ],
       "properties": {},
       "color": "#5577aa",
-      "textureId": "rock_wall_16_diff_1k"
+      "textureId": "rock_wall_16"
     },
     {
       "id": "poly_moebnynp8p2q1q",
@@ -1020,7 +1020,7 @@
       "radius": 9,
       "properties": {},
       "color": "#2a3a4a",
-      "textureId": "rock_wall_16_diff_1k",
+      "textureId": "rock_wall_16",
       "textureScale": 4
     },
     {
@@ -1034,7 +1034,7 @@
       "radius": 37.01315561749642,
       "properties": {},
       "color": "#2a3a4a",
-      "textureId": "rock_wall_16_diff_1k",
+      "textureId": "rock_wall_16",
       "textureScale": 4
     }
   ],

@@ -99,7 +99,7 @@ const DEFAULT_SPINNER_CONFIG: SpinnerConfig = {
 
   sprintSpeedMult: 1.7,
   sprintAccelMult: 1.5,
-  sprintRpmDrain:  6.0,
+  sprintRpmDrain:  2.0,
 
   growthPickupCapacityGain: 12,
   growthPickupRpmGain: 14,

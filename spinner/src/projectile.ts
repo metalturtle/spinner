@@ -45,6 +45,91 @@ function projectileWallHit(pos: Vec2, seg: Segment): { point: Vec2; normal: Vec2
   };
 }
 
+function sweepProjectileWallHit(start: Vec2, end: Vec2, seg: Segment): { point: Vec2; normal: Vec2 } | null {
+  const initialHit = projectileWallHit(start, seg);
+  if (initialHit) return initialHit;
+
+  const moveX = end.x - start.x;
+  const moveZ = end.z - start.z;
+  const moveDist = Math.hypot(moveX, moveZ);
+  if (moveDist <= 0.0001) return null;
+
+  const steps = Math.max(1, Math.ceil(moveDist / Math.max(0.04, PROJECTILE_RADIUS * 0.4)));
+  let lastSafeT = 0;
+
+  for (let step = 1; step <= steps; step += 1) {
+    const t = step / steps;
+    const sample = {
+      x: start.x + moveX * t,
+      z: start.z + moveZ * t,
+    };
+    const hit = projectileWallHit(sample, seg);
+    if (!hit) {
+      lastSafeT = t;
+      continue;
+    }
+
+    let low = lastSafeT;
+    let high = t;
+    let best = hit;
+    for (let i = 0; i < 5; i += 1) {
+      const mid = (low + high) * 0.5;
+      const midSample = {
+        x: start.x + moveX * mid,
+        z: start.z + moveZ * mid,
+      };
+      const midHit = projectileWallHit(midSample, seg);
+      if (midHit) {
+        best = midHit;
+        high = mid;
+      } else {
+        low = mid;
+      }
+    }
+
+    return best;
+  }
+
+  return null;
+}
+
+function sweepProjectileCircleHit(
+  start: Vec2,
+  end: Vec2,
+  center: Vec2,
+  radius: number,
+): { point: Vec2 } | null {
+  const vx = end.x - start.x;
+  const vz = end.z - start.z;
+  const sx = start.x - center.x;
+  const sz = start.z - center.z;
+  const a = vx * vx + vz * vz;
+  const c = sx * sx + sz * sz - radius * radius;
+
+  if (c <= 0) {
+    return { point: { x: start.x, z: start.z } };
+  }
+  if (a <= 0.0000001) return null;
+
+  const b = 2 * (sx * vx + sz * vz);
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return null;
+
+  const sqrtDisc = Math.sqrt(disc);
+  const invDenom = 1 / (2 * a);
+  const t1 = (-b - sqrtDisc) * invDenom;
+  const t2 = (-b + sqrtDisc) * invDenom;
+  const t = t1 >= 0 && t1 <= 1 ? t1 : (t2 >= 0 && t2 <= 1 ? t2 : null);
+  if (t === null) return null;
+
+  return {
+    point: {
+      x: start.x + vx * t,
+      z: start.z + vz * t,
+    },
+  };
+}
+
 // ─── Velocity-aligned billboard vertex shader ───────────────────────────────
 // Stretches a PlaneGeometry(2,2) in view space, oriented along the projectile's
 // velocity direction.  uPerp swaps the axes: 0 = long axis along velocity (bolt),
@@ -394,6 +479,7 @@ export function updateProjectiles(
     if (!p.alive) continue;
 
     p.lifetime -= delta;
+    const prevPos = { x: p.pos.x, z: p.pos.z };
     p.pos.x    += p.vel.x * delta;
     p.pos.z    += p.vel.z * delta;
     p.mesh.position.set(p.pos.x, 0.5, p.pos.z);
@@ -401,7 +487,7 @@ export function updateProjectiles(
     // Despawn on actual wall collision or lifetime expiry
     let wallHit: { point: Vec2; normal: Vec2 } | null = null;
     for (const wall of walls) {
-      wallHit = projectileWallHit(p.pos, wall);
+      wallHit = sweepProjectileWallHit(prevPos, p.pos, wall);
       if (wallHit) break;
     }
 
@@ -426,10 +512,13 @@ export function updateProjectiles(
     }
 
     // Spinner hit
-    const ddx  = spinnerPos.x - p.pos.x;
-    const ddz  = spinnerPos.z - p.pos.z;
-    const dist = Math.sqrt(ddx * ddx + ddz * ddz);
-    if (!ignorePlayerHits && dist < spinnerRadius + PROJECTILE_RADIUS) {
+    const spinnerHit = !ignorePlayerHits
+      ? sweepProjectileCircleHit(prevPos, p.pos, spinnerPos, spinnerRadius + PROJECTILE_RADIUS)
+      : null;
+    if (spinnerHit) {
+      p.pos.x = spinnerHit.point.x;
+      p.pos.z = spinnerHit.point.z;
+      p.mesh.position.set(p.pos.x, 0.5, p.pos.z);
       rpmDamage += p.damage;
       hitFlash   = true;
       p.alive    = false;

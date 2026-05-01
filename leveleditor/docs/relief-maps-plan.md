@@ -10,9 +10,9 @@ Add optional normal/bump map support for textured polygons and circles so author
 - Textures are discovered from the shared folder at `spinner-game/textures`
 - `spinner` already applies base color textures to floor and wall materials
 - The current shared texture set includes:
-  - `rock_wall_16_diff_1k.jpg`
+  - `rock_wall_16.jpg`
   - `rock_wall_16_disp_1k.png`
-  - `rock_wall_16_nor_gl_1k.exr`
+  - `rock_wall_16_normal.exr`
   - `rock_wall_16_rough_1k.exr`
 
 This means we already have a real companion-map set to build against.
@@ -52,7 +52,7 @@ Filename patterns to support in v1:
 
 For the current texture set:
 
-- normal map should come from `rock_wall_16_nor_gl_1k.exr`
+- normal map should come from `rock_wall_16_normal.exr`
 - bump fallback can come from `rock_wall_16_disp_1k.png`
 
 ## Phase 1: Shared Texture Metadata

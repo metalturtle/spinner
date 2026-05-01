@@ -44,9 +44,19 @@ export function movementSystem(delta: number): void {
   for (const m of movables) {
     const c = m.collidable;
     if (c.enabled === false) {
+      if (!c.prevPos) c.prevPos = { x: c.pos.x, z: c.pos.z };
+      else {
+        c.prevPos.x = c.pos.x;
+        c.prevPos.z = c.pos.z;
+      }
       c.vel.x = 0;
       c.vel.z = 0;
       continue;
+    }
+    if (!c.prevPos) c.prevPos = { x: c.pos.x, z: c.pos.z };
+    else {
+      c.prevPos.x = c.pos.x;
+      c.prevPos.z = c.pos.z;
     }
     c.vel.x *= m.friction;
     c.vel.z *= m.friction;

@@ -110,6 +110,7 @@ export class TextureManager {
       this.pending.delete(cacheKey);
       return configured;
     }).catch((error) => {
+      console.log("pre load error", error, src)
       this.pending.delete(cacheKey);
       throw error;
     });
@@ -127,7 +128,6 @@ export class TextureManager {
     if (!enabled) return null;
     const definition = getTextureDefinition(textureId);
     if (!definition?.normalSrc) return null;
-    if (definition.normalSrc.toLowerCase().endsWith('.exr')) return null;
     return this.load(definition.normalSrc, false);
   }
 
@@ -139,6 +139,7 @@ export class TextureManager {
   }
 
   static async preloadTextureSet(textureId?: string, useReliefMap = false): Promise<void> {
+    console.log("textureId: ", textureId);
     const definition = getTextureDefinition(textureId);
     if (!definition) return;
 
@@ -146,7 +147,7 @@ export class TextureManager {
     if (!useReliefMap) return;
 
     const extraLoads: Promise<THREE.Texture>[] = [];
-    if (definition.normalSrc && !definition.normalSrc.toLowerCase().endsWith('.exr')) {
+    if (definition.normalSrc) {
       extraLoads.push(this.preload(definition.normalSrc, false));
     }
     if (definition.bumpSrc) {

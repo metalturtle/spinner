@@ -10,41 +10,42 @@ export interface TextureDefinition {
   hasRelief: boolean;
 }
 
-type TextureKind = 'base' | 'normal' | 'bump' | 'roughness' | 'other';
+type TextureKind = 'base' | 'normal' | 'ignored';
 
 interface SharedTextureEntry {
   id: string;
   src: string;
 }
 
-function toTextureDefinition(textureId: string, src: string, normalSrc?: string, bumpSrc?: string): TextureDefinition {
+function toTextureDefinition(textureId: string, src: string, normalSrc?: string): TextureDefinition {
   return {
     id: textureId,
     name: humanizeTextureName(textureId),
     src,
     worldScale: 4,
     normalSrc,
-    bumpSrc,
-    hasRelief: Boolean(normalSrc || bumpSrc),
+    hasRelief: Boolean(normalSrc),
   };
 }
 
 function parseTextureName(name: string): { family: string; kind: TextureKind } {
-  const patterns: Array<{ regex: RegExp; kind: TextureKind }> = [
-    { regex: /(?:^|_)(diff|albedo|basecolor)(?:_|$)/i, kind: 'base' },
-    { regex: /(?:^|_)(nor_gl|normalgl|normal|nor)(?:_|$)/i, kind: 'normal' },
-    { regex: /(?:^|_)(disp|height|bump)(?:_|$)/i, kind: 'bump' },
-    { regex: /(?:^|_)(rough)(?:_|$)/i, kind: 'roughness' },
-  ];
+  const lowerName = name.toLowerCase();
+  const normalSuffix = '_normal';
+  const ignoredPattern = /(?:^|[_-])(ao|bump|diff|disp|displacement|height|metallic|nor|nor_gl|normalgl|rough|roughness|spec)(?:[_-]|$)/i;
 
-  for (const { regex, kind } of patterns) {
-    const match = name.match(regex);
-    if (!match) continue;
-    const family = name.replace(match[0], '_').replace(/__+/g, '_').replace(/^_+|_+$/g, '');
-    return { family, kind };
+  console.log("checking lower name", lowerName);
+  if (lowerName.endsWith(normalSuffix)) {
+    return {
+      family: name.slice(0, -normalSuffix.length),
+      kind: 'normal',
+    };
   }
 
-  return { family: name, kind: 'other' };
+  if (ignoredPattern.test(name)) {
+    return { family: name, kind: 'ignored' };
+  }
+
+  return { family: name, kind: 'base' };
 }
 
 function humanizeTextureName(name: string): string {
@@ -56,20 +57,21 @@ function humanizeTextureName(name: string): string {
 }
 
 export const TEXTURE_LIBRARY: TextureDefinition[] = (() => {
-  const families = new Map<string, { base?: SharedTextureEntry; normal?: SharedTextureEntry; bump?: SharedTextureEntry }>();
+  const families = new Map<string, { base?: SharedTextureEntry; normal?: SharedTextureEntry }>();
 
   for (const texture of sharedTextures as SharedTextureEntry[]) {
+    console.log("shared texture: ", texture);
     const parsed = parseTextureName(texture.id);
+    if (parsed.kind === 'ignored') continue;
     const entry = families.get(parsed.family) ?? {};
-    if (parsed.kind === 'base' || parsed.kind === 'other') entry.base = texture;
+    if (parsed.kind === 'base') entry.base = texture;
     else if (parsed.kind === 'normal') entry.normal = texture;
-    else if (parsed.kind === 'bump') entry.bump = texture;
     families.set(parsed.family, entry);
   }
 
   return Array.from(families.values())
-    .filter((entry): entry is { base: SharedTextureEntry; normal?: SharedTextureEntry; bump?: SharedTextureEntry } => Boolean(entry.base))
-    .map((entry) => toTextureDefinition(entry.base.id, entry.base.src, entry.normal?.src, entry.bump?.src))
+    .filter((entry): entry is { base: SharedTextureEntry; normal?: SharedTextureEntry } => Boolean(entry.base))
+    .map((entry) => toTextureDefinition(entry.base.id, entry.base.src, entry.normal?.src))
     .sort((a, b) => a.name.localeCompare(b.name));
 })();
 

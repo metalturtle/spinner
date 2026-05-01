@@ -10,6 +10,7 @@ export interface Vec2 {
 export interface Collidable {
   pos: Vec2;
   vel: Vec2;
+  prevPos?: Vec2;
   radius: number;
   mass: number;
   isStatic: boolean;
@@ -61,45 +62,114 @@ export function isCollidableEnabled(collidable: Collidable): boolean {
 
 // ─── Circle ↔ Segment ────────────────────────────────────────────────────────
 
-/** Resolve a circle-segment collision. Returns wall hit data, or null if no collision. */
-export function resolveCircleSegment(c: Collidable, seg: Segment, index: number): WallHit | null {
+interface CircleSegmentContact {
+  closestX: number;
+  closestZ: number;
+  normalX: number;
+  normalZ: number;
+  dist: number;
+}
+
+function getCircleSegmentContact(pos: Vec2, radius: number, seg: Segment): CircleSegmentContact | null {
   const dx = seg.p2.x - seg.p1.x;
   const dz = seg.p2.z - seg.p1.z;
   const segLenSq = dx * dx + dz * dz;
   if (segLenSq === 0) return null;
 
   const t = Math.max(0, Math.min(1,
-    ((c.pos.x - seg.p1.x) * dx + (c.pos.z - seg.p1.z) * dz) / segLenSq
+    ((pos.x - seg.p1.x) * dx + (pos.z - seg.p1.z) * dz) / segLenSq
   ));
 
   const closestX = seg.p1.x + t * dx;
   const closestZ = seg.p1.z + t * dz;
-
-  const nx = c.pos.x - closestX;
-  const nz = c.pos.z - closestZ;
+  const nx = pos.x - closestX;
+  const nz = pos.z - closestZ;
   const dist = Math.sqrt(nx * nx + nz * nz);
 
-  if (dist >= c.radius || dist === 0) return null;
+  if (dist >= radius || dist === 0) return null;
 
   const invDist = 1 / dist;
-  const normalX = nx * invDist;
-  const normalZ = nz * invDist;
+  return {
+    closestX,
+    closestZ,
+    normalX: nx * invDist,
+    normalZ: nz * invDist,
+    dist,
+  };
+}
 
+function findSweptCircleSegmentContact(c: Collidable, seg: Segment): CircleSegmentContact | null {
+  const prev = c.prevPos;
+  if (!prev) return null;
+
+  const moveX = c.pos.x - prev.x;
+  const moveZ = c.pos.z - prev.z;
+  const moveDist = Math.hypot(moveX, moveZ);
+  if (moveDist <= 0.0001) return null;
+
+  const stepSize = Math.max(0.08, c.radius * 0.3);
+  const steps = Math.max(1, Math.ceil(moveDist / stepSize));
+  let lastSafeT = 0;
+
+  for (let step = 1; step <= steps; step += 1) {
+    const t = step / steps;
+    const sample = {
+      x: prev.x + moveX * t,
+      z: prev.z + moveZ * t,
+    };
+    const hit = getCircleSegmentContact(sample, c.radius, seg);
+    if (!hit) {
+      lastSafeT = t;
+      continue;
+    }
+
+    let low = lastSafeT;
+    let high = t;
+    let best = hit;
+    for (let i = 0; i < 5; i += 1) {
+      const mid = (low + high) * 0.5;
+      const midSample = {
+        x: prev.x + moveX * mid,
+        z: prev.z + moveZ * mid,
+      };
+      const midHit = getCircleSegmentContact(midSample, c.radius, seg);
+      if (midHit) {
+        best = midHit;
+        high = mid;
+      } else {
+        low = mid;
+      }
+    }
+
+    c.pos.x = prev.x + moveX * high;
+    c.pos.z = prev.z + moveZ * high;
+    return best;
+  }
+
+  return null;
+}
+
+/** Resolve a circle-segment collision. Returns wall hit data, or null if no collision. */
+export function resolveCircleSegment(c: Collidable, seg: Segment, index: number): WallHit | null {
+  const contact = getCircleSegmentContact(c.pos, c.radius, seg) ?? findSweptCircleSegmentContact(c, seg);
+  if (!contact) return null;
+
+  const { closestX, closestZ, normalX, normalZ, dist } = contact;
   const penetration = c.radius - dist;
   c.pos.x += normalX * penetration;
   c.pos.z += normalZ * penetration;
 
-  const contact = { x: closestX, z: closestZ };
+  const contactPoint = { x: closestX, z: closestZ };
   const wallNormal = { x: normalX, z: normalZ };
 
   const velDotN = c.vel.x * normalX + c.vel.z * normalZ;
   if (velDotN >= 0) {
-    return { collidableIndex: index, contactPoint: contact, normal: wallNormal, impactSpeed: 0 };
+    return { collidableIndex: index, contactPoint, normal: wallNormal, impactSpeed: 0 };
   }
 
   c.vel.x -= (1 + RESTITUTION) * velDotN * normalX;
   c.vel.z -= (1 + RESTITUTION) * velDotN * normalZ;
-  return { collidableIndex: index, contactPoint: contact, normal: wallNormal, impactSpeed: Math.abs(velDotN) };
+  return { collidableIndex: index, contactPoint, normal: wallNormal, impactSpeed: Math.abs(velDotN) };
 }
 
 // ─── Circle ↔ Circle ─────────────────────────────────────────────────────────
