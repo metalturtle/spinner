@@ -71,7 +71,7 @@ export interface LaserSpinnerConfig {
 }
 
 export const LASER_SPINNER_TIER_1: LaserSpinnerConfig = {
-  rpmCapacity: 220,
+  rpmCapacity: 400,
   rpmDecayRate: 0.0,
   rpmSpeedDrain: 0.0,
   radius: 1.72,
@@ -97,7 +97,7 @@ export const LASER_SPINNER_TIER_1: LaserSpinnerConfig = {
   beamReflectCount: 20,
   idleBeamDamagePerSecond: 9,
   combatBeamDamagePerSecond: 21,
-  idleBeamSpinRate: 0.95,
+  idleBeamSpinRate: 0.1,
   combatBeamSpinRate: 0.95,
   beamWindupDuration: 0.7,
   beamFireDuration: 2.4,

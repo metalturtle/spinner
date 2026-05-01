@@ -17,6 +17,7 @@ export class Editor {
   readonly levelData: LevelData;
   readonly commandHistory: CommandHistory;
   readonly scene: THREE.Scene;
+  private frameListeners = new Set<(delta: number) => void>();
 
   private tools = new Map<string, Tool>();
   private activeToolName = '';
@@ -50,6 +51,10 @@ export class Editor {
     return this.activeToolName;
   }
 
+  onFrame(listener: (delta: number) => void): void {
+    this.frameListeners.add(listener);
+  }
+
   private onGlobalKeyDown(e: KeyboardEvent): void {
     const el = document.activeElement;
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return;
@@ -67,10 +72,15 @@ export class Editor {
   }
 
   start(): void {
+    let lastTime = performance.now();
     const loop = () => {
       requestAnimationFrame(loop);
+      const now = performance.now();
+      const delta = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
       this.camera.update();
       this.grid.rebuild();
+      for (const listener of this.frameListeners) listener(delta);
       this.renderer.render(this.scene, this.camera.camera);
     };
     loop();

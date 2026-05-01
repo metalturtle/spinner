@@ -1,5 +1,12 @@
 import * as THREE from 'three';
-import { renderer, scene, camera } from './renderer';
+import {
+  renderer, scene, camera,
+  getDefaultGlobalLightingState,
+  resetGlobalLightingTarget,
+  setGlobalLightingTarget,
+  updateGlobalLighting,
+  type GlobalLightingState,
+} from './renderer';
 import { createArena, getArenaBounds, isPointInLava } from './arena';
 import {
   RPM_HALF_POINT_RATIO, COLLISION_DAMAGE_RATIO,
@@ -725,6 +732,12 @@ interface AmbientTriggerZone extends AreaZone {
   entered: boolean;
 }
 
+interface LightingTriggerZone extends AreaZone {
+  target: GlobalLightingState;
+  transitionSeconds: number;
+  priority: number;
+}
+
 interface AwakenableEncounterEntity {
   awakenId: string;
   encounterId: string;
@@ -782,6 +795,7 @@ interface CheckpointState {
 
 const spawnTriggerZones: SpawnTriggerZone[] = [];
 const ambientTriggerZones: AmbientTriggerZone[] = [];
+const lightingTriggerZones: LightingTriggerZone[] = [];
 const killFallZones: AreaZone[] = [];
 const encounters = new Map<string, EncounterState>();
 const levelEntityEncounterIds = new Map<string, string>();
@@ -833,6 +847,47 @@ function readAmbientTrackProperty(props: Record<string, unknown> | undefined): s
     ?? readStringProperty(props, 'ambientSound')
     ?? readStringProperty(props, 'musicTrack')
     ?? readStringProperty(props, 'musicSound');
+}
+
+function readLightingBooleanProperty(props: Record<string, unknown> | undefined, key: string): boolean {
+  const raw = props?.[key];
+  return raw === true || raw === 'true' || raw === '1';
+}
+
+function hasLightingZoneProperties(props: Record<string, unknown> | undefined): boolean {
+  if (props?.lightEnabled !== undefined) return readLightingBooleanProperty(props, 'lightEnabled');
+  return typeof props?.lightAmbientIntensity === 'number'
+    || typeof props?.lightDirectionalIntensity === 'number'
+    || typeof props?.lightAmbientIntensity === 'string'
+    || typeof props?.lightDirectionalIntensity === 'string';
+}
+
+function createLightingZoneTarget(props: Record<string, unknown> | undefined): LightingTriggerZone['target'] {
+  const defaults = getDefaultGlobalLightingState();
+  return {
+    ambientColor: readStringProperty(props, 'lightAmbientColor') ?? '#ffffff',
+    ambientIntensity: readNumberProperty(props, 'lightAmbientIntensity', defaults.ambientIntensity, 0),
+    directionalColor: readStringProperty(props, 'lightDirectionalColor') ?? '#cccccc',
+    directionalIntensity: readNumberProperty(props, 'lightDirectionalIntensity', defaults.directionalIntensity, 0),
+  };
+}
+
+function syncLightingZones(immediate = false): void {
+  let activeZone: LightingTriggerZone | null = null;
+
+  for (const zone of lightingTriggerZones) {
+    if (!zone.contains(playerBody.pos)) continue;
+    if (!activeZone || zone.priority > activeZone.priority) {
+      activeZone = zone;
+    }
+  }
+
+  if (activeZone) {
+    setGlobalLightingTarget(activeZone.target, activeZone.transitionSeconds, immediate);
+    return;
+  }
+
+  resetGlobalLightingTarget(0.7, immediate);
 }
 
 function disposeObject3D(root: THREE.Object3D): void {
@@ -1265,6 +1320,7 @@ function resetAwakenableEncounterEntitiesForRespawn(): void {
 function rebuildTriggerZones(level: LevelData): void {
   spawnTriggerZones.length = 0;
   ambientTriggerZones.length = 0;
+  lightingTriggerZones.length = 0;
   killFallZones.length = 0;
   encounters.clear();
   levelEntityEncounterIds.clear();
@@ -1293,6 +1349,15 @@ function rebuildTriggerZones(level: LevelData): void {
       });
     }
 
+    if (hasLightingZoneProperties(poly.properties)) {
+      lightingTriggerZones.push({
+        target: createLightingZoneTarget(poly.properties),
+        transitionSeconds: readNumberProperty(poly.properties, 'lightTransition', 0.75, 0.01),
+        priority: readNumberProperty(poly.properties, 'lightPriority', 0),
+        contains: zone.contains,
+      });
+    }
+
     const triggerId = readStringProperty(poly.properties, 'triggerId');
     const triggerKind = readTriggerKind(poly.properties);
     if (triggerId && triggerKind !== 'kill_fall') {
@@ -1316,6 +1381,15 @@ function rebuildTriggerZones(level: LevelData): void {
         volume: readNumberProperty(circle.properties, 'ambientVolume', 0.18, 0),
         playbackRate: readNumberProperty(circle.properties, 'ambientPlaybackRate', 1, 0.1),
         entered: false,
+        contains: zone.contains,
+      });
+    }
+
+    if (hasLightingZoneProperties(circle.properties)) {
+      lightingTriggerZones.push({
+        target: createLightingZoneTarget(circle.properties),
+        transitionSeconds: readNumberProperty(circle.properties, 'lightTransition', 0.75, 0.01),
+        priority: readNumberProperty(circle.properties, 'lightPriority', 0),
         contains: zone.contains,
       });
     }
@@ -2295,6 +2369,7 @@ function resetGame(): void {
   setupLevelLights(scene, currentLevel);
   spawnAll(currentLevel);
   resetAmbientTriggerZones();
+  syncLightingZones(true);
   updateCheckpointVisuals(time);
 }
 
@@ -3648,6 +3723,7 @@ function finishPlayerRespawn(): void {
   playerKillFallTimer = 0;
   syncPlayerControlLock();
   syncPlayerInvulnerability();
+  syncLightingZones(true);
 }
 
 // ─── Turret System (AI + projectiles) ────────────────────────────────────────
@@ -4440,6 +4516,10 @@ function animate(): void {
     syncPlayerInvulnerability();
   }
 
+  if (!menuVisible) {
+    syncLightingZones();
+  }
+
   if (menuVisible) {
     syncWallScrapeLoop(0, 1);
     syncSpinnerMotorLoops([]);
@@ -4453,6 +4533,7 @@ function animate(): void {
     updateCamera(playerBody.pos, playerBody.vel, delta, false);
     updateClashFlashes(delta);
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
+    updateGlobalLighting(delta);
     profiler?.nextPhase('render');
     renderer.render(scene, camera);
     finishProfilerFrame();
@@ -4475,6 +4556,7 @@ function animate(): void {
     updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
     updateClashFlashes(delta);
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
+    updateGlobalLighting(delta);
     profiler?.nextPhase('render');
     renderer.render(scene, camera);
     finishProfilerFrame();
@@ -4497,6 +4579,7 @@ function animate(): void {
     updateCamera(playerBody.pos, playerBody.vel, delta, false);
     updateClashFlashes(delta);
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
+    updateGlobalLighting(delta);
     profiler?.nextPhase('render');
     renderer.render(scene, camera);
     finishProfilerFrame();
@@ -4569,6 +4652,7 @@ function animate(): void {
     updateCamera(playerBody.pos, playerBody.vel, delta, respawnPending ? false : shouldSnapComboCamera());
     updateClashFlashes(delta);
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
+    updateGlobalLighting(delta);
     profiler?.nextPhase('render');
     renderer.render(scene, camera);
     finishProfilerFrame();
@@ -4670,6 +4754,7 @@ function animate(): void {
     updateCamera(playerBody.pos, playerBody.vel, delta, shouldSnapComboCamera());
     updateClashFlashes(delta);
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
+    updateGlobalLighting(delta);
     profiler?.nextPhase('render');
     renderer.render(scene, camera);
     finishProfilerFrame();
@@ -4722,6 +4807,7 @@ function animate(): void {
   });
   syncSpinnerMotorLoops(buildSpinnerMotorLoops());
   updateTopDownCulling(camera, SCENE_CULL_PADDING);
+  updateGlobalLighting(delta);
   profiler?.nextPhase('render');
   renderer.render(scene, camera);
   finishProfilerFrame();

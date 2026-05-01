@@ -33,6 +33,12 @@ const gizmoRenderer = new GizmoRenderer(editor.scene, editor.levelData, editor.s
 const lightingPreview = new LightingPreviewManager(editor.scene, editor.levelData);
 const snapCursor = new SnapCursor(editor.scene);
 editor.input.setSnapCursor(snapCursor);
+editor.onFrame((delta) => {
+  lightingPreview.update({
+    x: editor.camera.camera.position.x,
+    y: editor.camera.camera.position.y,
+  }, delta);
+});
 
 // Tools
 const selectTool = new SelectTool(editor, polygonRenderer, entityRenderer, circleRenderer, gizmoRenderer);

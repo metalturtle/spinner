@@ -272,6 +272,7 @@ export class PropertiesPanel {
 
   private triggerSection(properties: Record<string, string>): string {
     const triggerKind = properties.triggerKind ?? (properties.triggerAction === 'kill_fall' ? 'kill_fall' : 'awaken');
+    const lightEnabled = properties.lightEnabled === 'true';
     return `
       <div class="prop-section">
         <h4>Trigger</h4>
@@ -286,6 +287,34 @@ export class PropertiesPanel {
             <option value="visibility"${triggerKind === 'visibility' ? ' selected' : ''}>Visibility Zone</option>
             <option value="kill_fall"${triggerKind === 'kill_fall' ? ' selected' : ''}>Kill Fall</option>
           </select>
+        </div>
+        <div class="prop-row">
+          <label>Light Zone</label>
+          <input type="checkbox" data-field="lightEnabled"${lightEnabled ? ' checked' : ''} />
+        </div>
+        <div class="prop-row">
+          <label>Ambient Color</label>
+          <input type="color" data-field="lightAmbientColor" value="${this.esc(properties.lightAmbientColor ?? '#ffffff')}" />
+        </div>
+        <div class="prop-row">
+          <label>Ambient Intensity</label>
+          <input type="number" data-field="lightAmbientIntensity" value="${this.esc(properties.lightAmbientIntensity ?? '0.10')}" step="0.01" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Dir Color</label>
+          <input type="color" data-field="lightDirectionalColor" value="${this.esc(properties.lightDirectionalColor ?? '#cccccc')}" />
+        </div>
+        <div class="prop-row">
+          <label>Dir Intensity</label>
+          <input type="number" data-field="lightDirectionalIntensity" value="${this.esc(properties.lightDirectionalIntensity ?? '0.45')}" step="0.01" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Transition</label>
+          <input type="number" data-field="lightTransition" value="${this.esc(properties.lightTransition ?? '0.75')}" step="0.05" min="0.01" />
+        </div>
+        <div class="prop-row">
+          <label>Priority</label>
+          <input type="number" data-field="lightPriority" value="${this.esc(properties.lightPriority ?? '0')}" step="1" />
         </div>
       </div>
     `;

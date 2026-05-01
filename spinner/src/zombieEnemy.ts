@@ -13,6 +13,9 @@ import { playZombieRoarSound } from './sound';
 const ZOMBIE_MODEL_URL = new URL('../models/zombie/Zombie.fbx', import.meta.url).href;
 const ZOMBIE_IDLE_URL = new URL('../models/zombie/sword and shield idle.fbx', import.meta.url).href;
 const ZOMBIE_ATTACK_URL = new URL('../models/zombie/sword and shield attack.fbx', import.meta.url).href;
+const ZOMBIE_TEXTURE_URL = new URL('../models/zombie/ZombieTexture.png', import.meta.url).href;
+const zombieTexture = new THREE.TextureLoader().load(ZOMBIE_TEXTURE_URL);
+zombieTexture.colorSpace = THREE.SRGBColorSpace;
 
 type ZombieAnim = 'idle' | 'walk' | 'attack';
 
@@ -253,9 +256,17 @@ function attachZombieModel(zombie: ZombieState, bundle: ZombieAssetBundle): void
     if (!mesh.isMesh) return;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    if (Array.isArray(mesh.material)) return;
-    if (!(mesh.material instanceof THREE.MeshStandardMaterial)) return;
-    tintMaterials.push(mesh.material);
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      if (material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshPhongMaterial) {
+        material.map = zombieTexture;
+        material.color.setHex(0xffffff);
+        material.needsUpdate = true;
+      }
+      if (material instanceof THREE.MeshStandardMaterial) {
+        tintMaterials.push(material);
+      }
+    }
   });
 
   const fallbackChildren = [...zombie.modelRoot.children];

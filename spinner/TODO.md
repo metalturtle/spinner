@@ -121,10 +121,6 @@ refinement
 sound effects
 
 refinement ideas:
-    spider boss after last leg destroyed, is a spinner
-    octoboss shoots laser from eyes
-    enemies dont walk off the floor area
-    ambient zones
     laser room
     hosting the game
     menu improvement
@@ -164,7 +160,10 @@ done:
     Heat attack
     platforming to space station
     spider boss shooting webs
-
+    spider boss after last leg destroyed, is a spinner
+    octoboss shoots laser from eyes
+    ambient zones
+    
 refine:
     more bounciness when spinner hits the walls or enemy spinners
     laser sound

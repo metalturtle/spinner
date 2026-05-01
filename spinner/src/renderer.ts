@@ -47,6 +47,109 @@ dirLight.shadow.camera.top = 25;
 dirLight.shadow.camera.bottom = -25;
 scene.add(dirLight);
 
+export interface GlobalLightingState {
+  ambientColor: THREE.ColorRepresentation;
+  ambientIntensity: number;
+  directionalColor: THREE.ColorRepresentation;
+  directionalIntensity: number;
+}
+
+const DEFAULT_GLOBAL_LIGHTING: Readonly<GlobalLightingState> = {
+  ambientColor: 0xffffff,
+  ambientIntensity: 0,
+  directionalColor: 0xcccccc,
+  directionalIntensity: 1.2,
+};
+
+const currentGlobalLighting = {
+  ambientColor: new THREE.Color(DEFAULT_GLOBAL_LIGHTING.ambientColor),
+  ambientIntensity: DEFAULT_GLOBAL_LIGHTING.ambientIntensity,
+  directionalColor: new THREE.Color(DEFAULT_GLOBAL_LIGHTING.directionalColor),
+  directionalIntensity: DEFAULT_GLOBAL_LIGHTING.directionalIntensity,
+};
+
+const targetGlobalLighting = {
+  ambientColor: new THREE.Color(DEFAULT_GLOBAL_LIGHTING.ambientColor),
+  ambientIntensity: DEFAULT_GLOBAL_LIGHTING.ambientIntensity,
+  directionalColor: new THREE.Color(DEFAULT_GLOBAL_LIGHTING.directionalColor),
+  directionalIntensity: DEFAULT_GLOBAL_LIGHTING.directionalIntensity,
+};
+
+let globalLightingTransitionSeconds = 0.7;
+
+function clampNonNegative(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function applyGlobalLightingState(
+  state: {
+    ambientColor: THREE.Color;
+    ambientIntensity: number;
+    directionalColor: THREE.Color;
+    directionalIntensity: number;
+  },
+): void {
+  ambientLight.color.copy(state.ambientColor);
+  ambientLight.intensity = clampNonNegative(state.ambientIntensity);
+  dirLight.color.copy(state.directionalColor);
+  dirLight.intensity = clampNonNegative(state.directionalIntensity);
+}
+
+function copyLightingTarget(
+  target: GlobalLightingState,
+  destination: {
+    ambientColor: THREE.Color;
+    ambientIntensity: number;
+    directionalColor: THREE.Color;
+    directionalIntensity: number;
+  },
+): void {
+  destination.ambientColor.set(target.ambientColor);
+  destination.ambientIntensity = clampNonNegative(target.ambientIntensity);
+  destination.directionalColor.set(target.directionalColor);
+  destination.directionalIntensity = clampNonNegative(target.directionalIntensity);
+}
+
+export function getDefaultGlobalLightingState(): GlobalLightingState {
+  return {
+    ambientColor: DEFAULT_GLOBAL_LIGHTING.ambientColor,
+    ambientIntensity: DEFAULT_GLOBAL_LIGHTING.ambientIntensity,
+    directionalColor: DEFAULT_GLOBAL_LIGHTING.directionalColor,
+    directionalIntensity: DEFAULT_GLOBAL_LIGHTING.directionalIntensity,
+  };
+}
+
+export function setGlobalLightingTarget(
+  target: GlobalLightingState,
+  transitionSeconds = 0.7,
+  immediate = false,
+): void {
+  globalLightingTransitionSeconds = Math.max(0.001, transitionSeconds);
+  copyLightingTarget(target, targetGlobalLighting);
+  if (immediate) {
+    copyLightingTarget(target, currentGlobalLighting);
+    applyGlobalLightingState(currentGlobalLighting);
+  }
+}
+
+export function resetGlobalLightingTarget(transitionSeconds = 0.7, immediate = false): void {
+  setGlobalLightingTarget(getDefaultGlobalLightingState(), transitionSeconds, immediate);
+}
+
+export function updateGlobalLighting(delta: number): void {
+  const duration = Math.max(0.001, globalLightingTransitionSeconds);
+  const t = duration <= 0.001 ? 1 : 1 - Math.exp(-delta / duration);
+
+  currentGlobalLighting.ambientColor.lerp(targetGlobalLighting.ambientColor, t);
+  currentGlobalLighting.directionalColor.lerp(targetGlobalLighting.directionalColor, t);
+  currentGlobalLighting.ambientIntensity += (targetGlobalLighting.ambientIntensity - currentGlobalLighting.ambientIntensity) * t;
+  currentGlobalLighting.directionalIntensity += (targetGlobalLighting.directionalIntensity - currentGlobalLighting.directionalIntensity) * t;
+
+  applyGlobalLightingState(currentGlobalLighting);
+}
+
+applyGlobalLightingState(currentGlobalLighting);
+
 // ─── Resize ──────────────────────────────────────────────────────────────────
 
 window.addEventListener('resize', () => {

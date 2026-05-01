@@ -22,7 +22,18 @@ export class Selection {
 
   // Replace entire selection with one item
   select(type: string, id: string): void {
-    this.items = [{ type, id }];
+    this.setSelection([{ type, id }]);
+  }
+
+  // Replace entire selection with many items (deduplicated, order-preserving)
+  setSelection(items: ReadonlyArray<SelectionItem>): void {
+    const deduped: SelectionItem[] = [];
+    for (const item of items) {
+      if (!deduped.some((s) => s.type === item.type && s.id === item.id)) {
+        deduped.push({ type: item.type, id: item.id });
+      }
+    }
+    this.items = deduped;
     this.notify();
   }
 
