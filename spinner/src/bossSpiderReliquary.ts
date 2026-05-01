@@ -88,7 +88,7 @@ export const SPIDER_RELIQUARY_TIER_1: SpiderReliquaryConfig = {
   coreMaxSpeed: [11.2, 15.2, 19.2],
   coreAcceleration: [26.0, 32.0, 39.0],
   legCount: 4,
-  legHp: 12,
+  legHp: 100,
   legRadius: 0.95,
   hipOrbitRadius: 1.35,
   footOrbitRadius: 5.4,
@@ -136,18 +136,22 @@ export const SPIDER_RELIQUARY_TIER_1: SpiderReliquaryConfig = {
 const ONE_LEG_HOP_WINDUP = 0.16;
 const ONE_LEG_HOP_AIR = 0.36;
 const ONE_LEG_HOP_RECOVER = 0.1;
-const FINAL_CORE_CHARGE_BOOST = 2.5;
-const FINAL_CORE_RECOVERY_TIME = 0.42;
+const FINAL_CORE_CHARGE_BOOST = 3.2;
+const FINAL_CORE_RECOVERY_TIME = 0.18;
 const FINAL_CORE_WALL_AVOID_DIST = 3.4;
-const FINAL_CORE_ORBIT_RANGE = 5.1;
-const FINAL_CORE_ORBIT_STRAFE = 0.92;
-const FINAL_CORE_CUT_IN_DURATION = 0.74;
-const FINAL_CORE_CUT_IN_COOLDOWN = 1.02;
-const FINAL_CORE_ORBIT_FLIP_INTERVAL = 1.02;
-const FINAL_CORE_DASH_WINDUP = 0.14;
-const FINAL_CORE_DASH_SPEED_MULT = 2.3;
-const FINAL_CORE_TRANSITION_STUN = 0.62;
-const FINAL_CORE_MIN_RPM = ENEMY_SPINNER_TIER_1.rpmCapacity;
+const FINAL_CORE_ORBIT_RANGE = 4.35;
+const FINAL_CORE_ORBIT_STRAFE = 1.06;
+const FINAL_CORE_CUT_IN_DURATION = 0.9;
+const FINAL_CORE_CUT_IN_COOLDOWN = 0.52;
+const FINAL_CORE_ORBIT_FLIP_INTERVAL = 0.84;
+const FINAL_CORE_DASH_WINDUP = 0.11;
+const FINAL_CORE_DASH_SPEED_MULT = 2.85;
+const FINAL_CORE_TRANSITION_STUN = 0.46;
+const FINAL_CORE_MIN_RPM = ENEMY_SPINNER_TIER_1.rpmCapacity / 4;
+const FINAL_CORE_DAMAGE_TAKEN_MULT = 0.68;
+const FINAL_CORE_WEB_COOLDOWN = 5.2;
+const FINAL_CORE_COMBO_LOCK = 0.1;
+const FINAL_CORE_DASH_COMBO_LOCK = 0.16;
 const FINAL_CORE_SPIN_SPEED = 38;
 
 type SpiderAttackKind = 'stomp' | 'pulse' | 'leg_slam' | 'web' | 'acid';
@@ -494,7 +498,14 @@ export function canDamageSpiderCore(boss: SpiderReliquaryState): boolean {
 }
 
 export function getSpiderCoreDamageMultiplier(boss: SpiderReliquaryState): number {
-  return canDamageSpiderCore(boss) ? 1.0 : 0;
+  return canDamageSpiderCore(boss) ? FINAL_CORE_DAMAGE_TAKEN_MULT : 0;
+}
+
+export function getSpiderCoreComboLockDuration(boss: SpiderReliquaryState): number {
+  if (!canDamageSpiderCore(boss)) return 0;
+  if (boss.aiState === 'dash') return FINAL_CORE_DASH_COMBO_LOCK;
+  if (boss.aiState === 'windup') return FINAL_CORE_COMBO_LOCK;
+  return 0;
 }
 
 function createAttackMesh(kind: SpiderAttackKind): THREE.Mesh {
@@ -1171,7 +1182,7 @@ function activateFinalCoreMode(boss: SpiderReliquaryState): void {
   boss.finalCoreGraceTimer = FINAL_CORE_TRANSITION_STUN;
   boss.aiState = 'recover';
   boss.recoveryTimer = FINAL_CORE_TRANSITION_STUN;
-  boss.webCooldown = 0.7;
+  boss.webCooldown = 1.8;
   boss.legSlamCooldown = 999;
   boss.stompCooldown = 999;
   boss.pulseCooldown = 999;
@@ -1206,6 +1217,7 @@ export function onSpiderCoreCollision(boss: SpiderReliquaryState): void {
   boss.recoveryTimer = getFinalCoreDuelConfig(boss).recoveryTime;
   boss.windupTimer = 0;
   boss.cutInTimer = 0;
+  boss.dashCooldown = Math.min(boss.dashCooldown, 0.16);
 }
 
 function updateFinalCoreMovement(
@@ -1230,8 +1242,8 @@ function updateFinalCoreMovement(
 
   if (boss.aiState === 'recover') {
     boss.recoveryTimer = Math.max(0, boss.recoveryTimer - delta);
-    body.vel.x *= 0.9;
-    body.vel.z *= 0.9;
+    body.vel.x *= 0.95;
+    body.vel.z *= 0.95;
     if (boss.recoveryTimer <= 0) {
       boss.aiState = 'orbit';
       boss.windupTimer = 0;
@@ -1254,8 +1266,9 @@ function updateFinalCoreMovement(
 
   if (boss.aiState === 'dash') {
     if (updateSpinnerDashState(boss, body, playerPos, combinedRadius, cfg, delta, {
-      accelMultiplier: 1.24,
-      closeEnoughPadding: 0.45,
+      accelMultiplier: 1.46,
+      retainedForwardRatio: 0.9,
+      closeEnoughPadding: 0.32,
     })) {
       boss.aiState = 'orbit';
       setMovementMaxSpeed(boss.id, cfg.maxSpeed);
@@ -1266,11 +1279,10 @@ function updateFinalCoreMovement(
   }
 
   boss.aiState = 'orbit';
-  const desiredRange = playerWebbed ? cfg.orbitRange * 0.82 : cfg.orbitRange;
+  const desiredRange = playerWebbed ? cfg.orbitRange * 0.72 : cfg.orbitRange;
   const shouldCutIn = dist <= desiredRange * 1.7
-    && dist >= combinedRadius + 0.72
-    && boss.dashCooldown <= 0
-    && boss.webTetherTimer <= 0;
+    && dist >= combinedRadius + 0.36
+    && boss.dashCooldown <= 0;
   if (shouldCutIn) {
     boss.dashCooldown = cfg.cutInCooldown;
     beginSpinnerWindup(boss, body, cfg, setMovementMaxSpeed, dirX, dirZ, 0.24);
@@ -1280,8 +1292,8 @@ function updateFinalCoreMovement(
       orbitStrafeStrength: cfg.orbitStrafeStrength,
       acceleration: cfg.acceleration,
     }, delta, false, {
-      closePushDistance: 0.85,
-      closePushStrength: -1.0,
+      closePushDistance: 0.55,
+      closePushStrength: -0.45,
     });
   }
 
@@ -1489,13 +1501,16 @@ export function updateSpiderReliquaryAI(
     && !playerWebbed
     && (!isRamming || finalCoreMode)
     && (finalCoreMode || boss.collapseTimer <= 0.15)
-    && dist >= (finalCoreMode ? 3.4 : 4.6)
+    && (!finalCoreMode || boss.aiState === 'orbit')
+    && dist >= (finalCoreMode ? 5.2 : 4.6)
     && dist <= boss.config.webRange[phase]
   ) {
     scheduleWebShot(boss, playerPos, playerRadius, phase);
-    boss.webCooldown = boss.config.webCooldown[phase];
+    boss.webCooldown = finalCoreMode
+      ? FINAL_CORE_WEB_COOLDOWN
+      : boss.config.webCooldown[phase];
     if (finalCoreMode) {
-      boss.dashCooldown = Math.max(boss.dashCooldown, 0.28);
+      boss.dashCooldown = Math.max(boss.dashCooldown, 0.12);
     } else {
       boss.legSlamCooldown = Math.max(boss.legSlamCooldown, 0.35);
       boss.pulseCooldown = Math.max(boss.pulseCooldown, 0.55);

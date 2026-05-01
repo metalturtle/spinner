@@ -7,8 +7,10 @@ const EXPLOSION_SOUND_URL = '/sounds/explode.ogg';
 const EXPLOSION_SOUND_URL_2 = '/sounds/explode2.wav';
 const EXPLOSION_SOUND_KEY = 'explode';
 const EXPLOSION_SOUND_KEY_2 = 'explode-2';
-const LASER_SOUND_URL = '/sounds/laser.wav';
+const LASER_SOUND_URL = '/sounds/laserbeam.wav';
 const LASER_SOUND_KEY = 'laser';
+const LASER_PROJECTILE_SOUND_URL = '/sounds/laser.wav';
+const LASER_PROJECTILE_SOUND_KEY = 'laser-projectile';
 const DEFAULT_AMBIENT_SOUND_URL = '/sounds/saturnambient.mp3';
 const SCRAPE_SOUND_URL = '/sounds/scrape.wav';
 const SCRAPE_SOUND_KEY = 'wall-scrape';
@@ -29,6 +31,7 @@ const ONE_SHOT_SOUND_DEFINITIONS = [
   { key: EXPLOSION_SOUND_KEY, url: EXPLOSION_SOUND_URL },
   { key: EXPLOSION_SOUND_KEY_2, url: EXPLOSION_SOUND_URL_2 },
   { key: LASER_SOUND_KEY, url: LASER_SOUND_URL },
+  { key: LASER_PROJECTILE_SOUND_KEY, url: LASER_PROJECTILE_SOUND_URL },
   { key: PICKUP_SOUND_KEY, url: PICKUP_SOUND_URL },
   { key: ZOMBIE_SLASH_SOUND_KEY, url: ZOMBIE_SLASH_SOUND_URL },
   { key: ZOMBIE_ROAR_SOUND_KEY, url: ZOMBIE_ROAR_SOUND_URL },
@@ -143,6 +146,7 @@ function getPreloadedAudio(key: string, url: string): HTMLAudioElement {
 function getOneShotPoolSize(key: string): number {
   switch (key) {
     case LASER_SOUND_KEY:
+    case LASER_PROJECTILE_SOUND_KEY:
       return 14;
     case CLASH_SOUND_KEY:
     case CLASH_SOUND_KEY_2:
@@ -163,6 +167,7 @@ function getOneShotPoolSize(key: string): number {
 function getOneShotPoolMaxSize(key: string): number {
   switch (key) {
     case LASER_SOUND_KEY:
+    case LASER_PROJECTILE_SOUND_KEY:
       return 20;
     case ZOMBIE_ROAR_SOUND_KEY:
       return 18;
@@ -343,6 +348,27 @@ export function playExplosionSound(size = 1): void {
   );
 }
 
+export function playLaserHitSound(
+  sourcePos?: { x: number; z: number },
+  intensity = 1,
+): void {
+  const normalized = Math.max(0, Math.min(1, intensity));
+  const proximity = distanceFalloff(sourcePos);
+  if (proximity <= 0.01) return;
+
+  const now = getNowMs();
+  const cooldownMs = 70 + (1 - normalized) * 55;
+  const key = `${EXPLOSION_SOUND_KEY_2}:laser-hit`;
+  const lastPlayedAt = lastPlayTimes.get(key) ?? -Infinity;
+  if (now - lastPlayedAt < cooldownMs) return;
+  lastPlayTimes.set(key, now);
+
+  const volume = proximity * Math.min(0.85, 0.22 + normalized * 0.34);
+  const baseRate = 1.0 - normalized * 0.08;
+  const playbackRate = Math.max(0.8, Math.min(1.08, baseRate + (Math.random() - 0.5) * 0.06));
+  playOneShot(EXPLOSION_SOUND_KEY_2, EXPLOSION_SOUND_URL_2, volume, playbackRate);
+}
+
 export function playLaserSound(
   sourcePos?: { x: number; z: number },
   intensity = 1,
@@ -361,6 +387,26 @@ export function playLaserSound(
   const baseRate = 0.96 + normalized * 0.16;
   const playbackRate = Math.max(0.82, Math.min(1.24, baseRate + (Math.random() - 0.5) * 0.08));
   playOneShot(LASER_SOUND_KEY, LASER_SOUND_URL, volume, playbackRate);
+}
+
+export function playProjectileLaserSound(
+  sourcePos?: { x: number; z: number },
+  intensity = 1,
+): void {
+  const normalized = Math.max(0, Math.min(1, intensity));
+  const proximity = distanceFalloff(sourcePos);
+  if (proximity <= 0.01) return;
+
+  const now = getNowMs();
+  const cooldownMs = 30 + (1 - normalized) * 24;
+  const lastPlayedAt = lastPlayTimes.get(LASER_PROJECTILE_SOUND_KEY) ?? -Infinity;
+  if (now - lastPlayedAt < cooldownMs) return;
+  lastPlayTimes.set(LASER_PROJECTILE_SOUND_KEY, now);
+
+  const volume = proximity * Math.min(0.42, 0.1 + normalized * 0.16);
+  const baseRate = 0.96 + normalized * 0.16;
+  const playbackRate = Math.max(0.82, Math.min(1.24, baseRate + (Math.random() - 0.5) * 0.08));
+  playOneShot(LASER_PROJECTILE_SOUND_KEY, LASER_PROJECTILE_SOUND_URL, volume, playbackRate);
 }
 
 export function playPickupSound(kind: 'normal' | 'hyper' | 'growth'): void {

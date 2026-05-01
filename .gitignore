@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+site/
 
 # Logs
 *.log
@@ -26,11 +27,7 @@ pnpm-debug.log*
 .idea/
 .vscode/
 
-textures
-models
-
 video/
 galaxy.mov
 perf-logs
 
-public

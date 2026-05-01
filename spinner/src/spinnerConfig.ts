@@ -14,7 +14,6 @@
 export interface SpinnerConfig {
   // RPM economy — master stat
   rpmCapacity:   number;   // THE upgradeable power level; all RPM thresholds derive from this
-  startingRpmRatio: number; // fresh-run starting fill as a fraction of capacity
   maxRpmCapacity: number;   // hard cap for current-run growth
 
   // RPM economy — independently upgradeable drain rates
@@ -57,6 +56,7 @@ export interface SpinnerConfig {
   comboHitCount:        number;               // number of chained strikes
   comboDamageMultiplier:number;               // bonus applied to combo damage
   comboRepeatFalloff:   [number, number, number]; // repeated hits on same target get weaker
+  comboTargetRange:     number;               // max distance for target acquisition
   comboStrikeDuration:  number;               // seconds per strike dash
   comboReturnDuration:  number;               // seconds to snap back to origin
   comboSpeedScale:      number;               // movement speed multiplier during combo travel
@@ -81,8 +81,7 @@ export interface SpinnerConfig {
 }
 
 const DEFAULT_SPINNER_CONFIG: SpinnerConfig = {
-  rpmCapacity:   1000,
-  startingRpmRatio: 0.55,
+  rpmCapacity:   100,
   maxRpmCapacity: 2000,
 
   rpmDecayRate:  1.0,
@@ -117,6 +116,7 @@ const DEFAULT_SPINNER_CONFIG: SpinnerConfig = {
   comboHitCount:         3,
   comboDamageMultiplier: 1.75,
   comboRepeatFalloff:    [1.0, 0.8, 0.65],
+  comboTargetRange:      30,
   comboStrikeDuration:   0.075,
   comboReturnDuration:   0.08,
   comboSpeedScale:       0.3,

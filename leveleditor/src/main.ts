@@ -82,10 +82,10 @@ const playButton = document.getElementById('btn-play') as HTMLButtonElement;
 
 function guessGameUrl(): string {
   const url = new URL(window.location.href);
-  if (url.port) {
-    url.port = '5173';
-  }
-  url.pathname = '/';
+  const parts = url.pathname.split('/').filter(Boolean);
+  const currentAppIndex = parts.findIndex((part) => part === 'game' || part === 'editor');
+  const rootParts = currentAppIndex >= 0 ? parts.slice(0, currentAppIndex) : parts;
+  url.pathname = `/${[...rootParts, 'game', 'index.html'].join('/')}`.replace(/\/+/g, '/');
   url.search = '?level=active&autostart=1';
   url.hash = '';
   return url.toString();
@@ -107,8 +107,8 @@ async function playActiveLevel(): Promise<void> {
 
   try {
     const mode = await saveLevel(editor.levelData);
-    if (mode !== 'server') {
-      alert('The editor could not sync /api/active-level, so the level was downloaded instead. Start the game from a dev server to use Play Active.');
+    if (mode === 'download') {
+      alert('The editor could not save to browser storage or sync the dev API, so the level was downloaded instead.');
       return;
     }
 

@@ -92,6 +92,24 @@ canvas {
   backdrop-filter: blur(12px);
 }
 
+.menu-card {
+  width: min(760px, 100%);
+  min-height: min(720px, calc(100vh - 48px));
+  padding: clamp(32px, 5vw, 52px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  text-align: center;
+  background:
+    radial-gradient(circle at top, rgba(127, 249, 255, 0.16), transparent 42%),
+    linear-gradient(180deg, rgba(13, 24, 37, 0.94), rgba(5, 10, 17, 0.96)),
+    var(--ui-panel);
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
 .overlay-card-compact {
   width: min(420px, 100%);
 }
@@ -120,6 +138,27 @@ canvas {
 .overlay-card h2 {
   font-size: clamp(2rem, 5vw, 2.8rem);
   color: var(--ui-danger);
+}
+
+.menu-hero {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.menu-logo {
+  margin: 0;
+  color: #f5fbff;
+  font-size: clamp(4.4rem, 15vw, 8.5rem);
+  line-height: 0.9;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  text-indent: 0.3em;
+  text-shadow:
+    0 0 24px rgba(127, 249, 255, 0.28),
+    0 0 48px rgba(39, 214, 255, 0.18);
 }
 
 .overlay-copy,
@@ -172,6 +211,14 @@ canvas {
   flex-wrap: wrap;
 }
 
+.menu-actions {
+  width: min(340px, 100%);
+  margin-top: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+}
+
 .overlay-btn {
   min-width: 160px;
   padding: 13px 18px;
@@ -179,6 +226,16 @@ canvas {
   background: rgba(11, 22, 32, 0.88);
   cursor: pointer;
   transition: transform 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+
+.menu-actions .overlay-btn {
+  width: 100%;
+  min-width: 0;
+  padding: 16px 20px;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
 }
 
 .overlay-btn:hover:not(:disabled) {
@@ -197,6 +254,28 @@ canvas {
   border-color: rgba(127, 249, 255, 0.6);
   background: linear-gradient(135deg, var(--ui-accent), var(--ui-accent-strong));
   box-shadow: 0 10px 24px rgba(39, 214, 255, 0.2);
+}
+
+.menu-instructions {
+  width: min(560px, 100%);
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(151, 220, 255, 0.12);
+}
+
+.menu-instructions-title {
+  margin: 0;
+  color: rgba(224, 242, 250, 0.86);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.menu-status {
+  margin-top: 12px;
+  font-size: 0.95rem;
+  line-height: 1.7;
 }
 
 .loading-meter {
@@ -237,11 +316,27 @@ canvas {
     border-radius: 18px;
   }
 
+  .menu-card {
+    min-height: calc(100vh - 28px);
+    padding: 28px 18px 22px;
+  }
+
+  .menu-logo {
+    font-size: clamp(3.2rem, 18vw, 5.2rem);
+    letter-spacing: 0.2em;
+    text-indent: 0.2em;
+  }
+
   .overlay-actions {
     flex-direction: column;
   }
 
   .overlay-btn {
     width: 100%;
+  }
+
+  .menu-instructions {
+    margin-top: 24px;
+    padding-top: 18px;
   }
 }

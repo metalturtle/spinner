@@ -13,11 +13,11 @@
           "y": -10
         },
         {
-          "x": 10,
+          "x": 21,
           "y": -10
         },
         {
-          "x": 10,
+          "x": 21,
           "y": -9
         },
         {
@@ -61,19 +61,19 @@
       "layer": "wall",
       "vertices": [
         {
-          "x": 9,
+          "x": 20,
           "y": -9
         },
         {
-          "x": 10,
+          "x": 21,
           "y": -9
         },
         {
-          "x": 10,
+          "x": 21,
           "y": 9
         },
         {
-          "x": 9,
+          "x": 20,
           "y": 9
         }
       ],
@@ -91,11 +91,11 @@
           "y": -9
         },
         {
-          "x": 9,
+          "x": 20,
           "y": -9
         },
         {
-          "x": 9,
+          "x": 20,
           "y": 10
         },
         {
@@ -280,11 +280,11 @@
           "y": 9
         },
         {
-          "x": 10,
+          "x": 21,
           "y": 9
         },
         {
-          "x": 10,
+          "x": 21,
           "y": 10
         },
         {
@@ -828,33 +828,6 @@
         "surfaceType": "lava"
       },
       "color": "#3388ff"
-    },
-    {
-      "id": "poly_mokfvtd5jkp4dj",
-      "name": "Rect 19",
-      "layer": "trigger",
-      "vertices": [
-        {
-          "x": 50,
-          "y": 65
-        },
-        {
-          "x": 52,
-          "y": 65
-        },
-        {
-          "x": 52,
-          "y": 72
-        },
-        {
-          "x": 50,
-          "y": 72
-        }
-      ],
-      "properties": {
-        "triggerId": "arena_wave_1"
-      },
-      "color": "#ff5533"
     },
     {
       "id": "poly_mokfyolj1212iz",
@@ -4570,6 +4543,33 @@
         "lightDirectionalColor": "#383838"
       },
       "color": "#3388ff"
+    },
+    {
+      "id": "poly_momtbafenltpj4",
+      "name": "Rect 109",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 49,
+          "y": 65
+        },
+        {
+          "x": 52,
+          "y": 65
+        },
+        {
+          "x": 52,
+          "y": 72
+        },
+        {
+          "x": 49,
+          "y": 72
+        }
+      ],
+      "properties": {
+        "triggerId": "arena_wave_1"
+      },
+      "color": "#3388ff"
     }
   ],
   "circles": [
@@ -4863,22 +4863,6 @@
       }
     },
     {
-      "id": "ent_mokivwbysb2tpn",
-      "name": "Sliding Door 19",
-      "type": "sliding_door",
-      "position": {
-        "x": 22,
-        "y": 69
-      },
-      "rotation": 90,
-      "properties": {
-        "height": "2",
-        "width": "8",
-        "startOpen": "false",
-        "encounterId": "drone_1"
-      }
-    },
-    {
       "id": "ent_mol1azk7w7kuw0",
       "name": "Fire Torch 20",
       "type": "fire_torch",
@@ -4915,17 +4899,6 @@
         "poleHeight": "1.55",
         "flameSize": "0.22"
       }
-    },
-    {
-      "id": "ent_mol278tuqywqkr",
-      "name": "Zombie 22",
-      "type": "zombie",
-      "position": {
-        "x": 1,
-        "y": 25
-      },
-      "rotation": 0,
-      "properties": {}
     },
     {
       "id": "ent_molecq7ddu7fb0",
@@ -5020,7 +4993,7 @@
       "type": "light_point",
       "position": {
         "x": 0,
-        "y": 17
+        "y": 20
       },
       "rotation": 0,
       "properties": {
@@ -5087,8 +5060,8 @@
       "name": "Focus Laser Unlock 32",
       "type": "pickup_laser_focus",
       "position": {
-        "x": -6,
-        "y": 0
+        "x": 100,
+        "y": 147
       },
       "rotation": 0,
       "properties": {}
@@ -5098,8 +5071,8 @@
       "name": "Combo Unlock 33",
       "type": "pickup_combo",
       "position": {
-        "x": -6,
-        "y": 2
+        "x": 25,
+        "y": 68
       },
       "rotation": 0,
       "properties": {}
@@ -5109,8 +5082,8 @@
       "name": "Spin Laser Unlock 34",
       "type": "pickup_laser_spin",
       "position": {
-        "x": -4,
-        "y": 2
+        "x": 198,
+        "y": 237
       },
       "rotation": 0,
       "properties": {}
@@ -5295,6 +5268,851 @@
         "decay": "0.5",
         "height": "2"
       }
+    },
+    {
+      "id": "ent_momsg8w2zr18vq",
+      "name": "Pickup 46",
+      "type": "pickup",
+      "position": {
+        "x": 70,
+        "y": 64
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsg9g9d3yy77",
+      "name": "Pickup 47",
+      "type": "pickup",
+      "position": {
+        "x": 99,
+        "y": 49
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsg9u366ehye",
+      "name": "Pickup 48",
+      "type": "pickup",
+      "position": {
+        "x": 79,
+        "y": 50
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsga8hero9b0",
+      "name": "Pickup 49",
+      "type": "pickup",
+      "position": {
+        "x": 99,
+        "y": 66
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgao5ncshkw",
+      "name": "Pickup 50",
+      "type": "pickup",
+      "position": {
+        "x": 112,
+        "y": 87
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgb561xtl3m",
+      "name": "Pickup 51",
+      "type": "pickup",
+      "position": {
+        "x": 145,
+        "y": 72
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgbi1pusfqt",
+      "name": "Pickup 52",
+      "type": "pickup",
+      "position": {
+        "x": 146,
+        "y": 103
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgbyykfmaxa",
+      "name": "Pickup 53",
+      "type": "pickup",
+      "position": {
+        "x": 136,
+        "y": 89
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgcdbf0mksd",
+      "name": "Pickup 54",
+      "type": "pickup",
+      "position": {
+        "x": 132,
+        "y": 120
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgcr66t285z",
+      "name": "Pickup 55",
+      "type": "pickup",
+      "position": {
+        "x": 113,
+        "y": 110
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgd5ywrllzk",
+      "name": "Pickup 56",
+      "type": "pickup",
+      "position": {
+        "x": 98,
+        "y": 115
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgdozpdrcyu",
+      "name": "Pickup 57",
+      "type": "pickup",
+      "position": {
+        "x": 104,
+        "y": 118
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsge2mrcdkik",
+      "name": "Pickup 58",
+      "type": "pickup",
+      "position": {
+        "x": 114,
+        "y": 140
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgf3wm6e6rp",
+      "name": "Pickup 59",
+      "type": "pickup",
+      "position": {
+        "x": 79,
+        "y": 124
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgflx2hveph",
+      "name": "Pickup 60",
+      "type": "pickup",
+      "position": {
+        "x": 57,
+        "y": 106
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgg1v8sqdg5",
+      "name": "Pickup 61",
+      "type": "pickup",
+      "position": {
+        "x": 58,
+        "y": 74
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgglcu71765",
+      "name": "Pickup 62",
+      "type": "pickup",
+      "position": {
+        "x": 90,
+        "y": 86
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgh7xgsjm8k",
+      "name": "Pickup 63",
+      "type": "pickup",
+      "position": {
+        "x": 78,
+        "y": 84
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgkpj01a9eb",
+      "name": "Hyper Pickup 64",
+      "type": "pickup_hyper",
+      "position": {
+        "x": 121,
+        "y": 56
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgl72f2w9ez",
+      "name": "Hyper Pickup 65",
+      "type": "pickup_hyper",
+      "position": {
+        "x": 143,
+        "y": 90
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgltk1ohg29",
+      "name": "Hyper Pickup 66",
+      "type": "pickup_hyper",
+      "position": {
+        "x": 122,
+        "y": 94
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgmdkij7gni",
+      "name": "Hyper Pickup 67",
+      "type": "pickup_hyper",
+      "position": {
+        "x": 82,
+        "y": 108
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momsgmsq2l1x2f",
+      "name": "Hyper Pickup 68",
+      "type": "pickup_hyper",
+      "position": {
+        "x": 65,
+        "y": 115
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momskewhb1149b",
+      "name": "Pickup 69",
+      "type": "pickup",
+      "position": {
+        "x": -16,
+        "y": 67
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momskfb4remyia",
+      "name": "Pickup 70",
+      "type": "pickup",
+      "position": {
+        "x": -8,
+        "y": 58
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momskfwd3jzf2g",
+      "name": "Pickup 71",
+      "type": "pickup",
+      "position": {
+        "x": 12,
+        "y": 60
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momskg9dv2yisd",
+      "name": "Pickup 72",
+      "type": "pickup",
+      "position": {
+        "x": 16,
+        "y": 70
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momskgsrxfd8q9",
+      "name": "Pickup 73",
+      "type": "pickup",
+      "position": {
+        "x": 4,
+        "y": 83
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momskh97kb09e2",
+      "name": "Pickup 74",
+      "type": "pickup",
+      "position": {
+        "x": -9,
+        "y": 83
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momskhtd3xx9ng",
+      "name": "Pickup 75",
+      "type": "pickup",
+      "position": {
+        "x": -8,
+        "y": 72
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momski7o3x6xti",
+      "name": "Pickup 76",
+      "type": "pickup",
+      "position": {
+        "x": -3,
+        "y": 65
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momskiu4wyox5q",
+      "name": "Pickup 77",
+      "type": "pickup",
+      "position": {
+        "x": 15,
+        "y": 78
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momskjt7sjcqaa",
+      "name": "Pickup 78",
+      "type": "pickup",
+      "position": {
+        "x": 10,
+        "y": 84
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7tlfyc1g9w",
+      "name": "Pickup 78",
+      "type": "pickup",
+      "position": {
+        "x": 95,
+        "y": 372
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7tzvml10cl",
+      "name": "Pickup 79",
+      "type": "pickup",
+      "position": {
+        "x": 158,
+        "y": 353
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7ubaahzz3c",
+      "name": "Pickup 80",
+      "type": "pickup",
+      "position": {
+        "x": 176,
+        "y": 382
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7umgpqj0r5",
+      "name": "Pickup 81",
+      "type": "pickup",
+      "position": {
+        "x": 188,
+        "y": 352
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7uzvuljca1",
+      "name": "Pickup 82",
+      "type": "pickup",
+      "position": {
+        "x": 168,
+        "y": 333
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7vd1fqyq0a",
+      "name": "Pickup 83",
+      "type": "pickup",
+      "position": {
+        "x": 123,
+        "y": 378
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7vrp7j58dd",
+      "name": "Pickup 84",
+      "type": "pickup",
+      "position": {
+        "x": 97,
+        "y": 348
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7w38zp5ei2",
+      "name": "Pickup 85",
+      "type": "pickup",
+      "position": {
+        "x": 124,
+        "y": 321
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7wjp997h83",
+      "name": "Pickup 86",
+      "type": "pickup",
+      "position": {
+        "x": 150,
+        "y": 312
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7wwmd8mwv1",
+      "name": "Pickup 87",
+      "type": "pickup",
+      "position": {
+        "x": 200,
+        "y": 360
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7xa5ateiu9",
+      "name": "Pickup 88",
+      "type": "pickup",
+      "position": {
+        "x": 200,
+        "y": 377
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7xlkhv34ff",
+      "name": "Pickup 89",
+      "type": "pickup",
+      "position": {
+        "x": 186,
+        "y": 374
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7xz1ww50da",
+      "name": "Pickup 90",
+      "type": "pickup",
+      "position": {
+        "x": 155,
+        "y": 365
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7yc9tr50kj",
+      "name": "Pickup 91",
+      "type": "pickup",
+      "position": {
+        "x": 113,
+        "y": 365
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7yo58rtxa5",
+      "name": "Pickup 92",
+      "type": "pickup",
+      "position": {
+        "x": 120,
+        "y": 407
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7z12s5y61f",
+      "name": "Pickup 93",
+      "type": "pickup",
+      "position": {
+        "x": 155,
+        "y": 417
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7zc6xhtc3g",
+      "name": "Pickup 94",
+      "type": "pickup",
+      "position": {
+        "x": 186,
+        "y": 404
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7znr4785f9",
+      "name": "Pickup 95",
+      "type": "pickup",
+      "position": {
+        "x": 136,
+        "y": 396
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt7zzb1cc01g",
+      "name": "Pickup 96",
+      "type": "pickup",
+      "position": {
+        "x": 157,
+        "y": 396
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt80anqmlm74",
+      "name": "Pickup 97",
+      "type": "pickup",
+      "position": {
+        "x": 151,
+        "y": 406
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt80nu4aroy1",
+      "name": "Pickup 98",
+      "type": "pickup",
+      "position": {
+        "x": 124,
+        "y": 416
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt812oae2jum",
+      "name": "Pickup 99",
+      "type": "pickup",
+      "position": {
+        "x": 94,
+        "y": 391
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt81nsen93h6",
+      "name": "Pickup 100",
+      "type": "pickup",
+      "position": {
+        "x": 106,
+        "y": 400
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt82090pvrjk",
+      "name": "Pickup 101",
+      "type": "pickup",
+      "position": {
+        "x": 122,
+        "y": 384
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt82fcyk1dxz",
+      "name": "Pickup 102",
+      "type": "pickup",
+      "position": {
+        "x": 150,
+        "y": 373
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt82tlohgqyq",
+      "name": "Pickup 103",
+      "type": "pickup",
+      "position": {
+        "x": 120,
+        "y": 356
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt83bh62xmis",
+      "name": "Pickup 104",
+      "type": "pickup",
+      "position": {
+        "x": 106,
+        "y": 330
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt848jw8crlp",
+      "name": "Pickup 105",
+      "type": "pickup",
+      "position": {
+        "x": 124,
+        "y": 312
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt84wyes3rkb",
+      "name": "Pickup 106",
+      "type": "pickup",
+      "position": {
+        "x": 135,
+        "y": 347
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momt91zaprnhb7",
+      "name": "Zombie 106",
+      "type": "zombie",
+      "position": {
+        "x": 0,
+        "y": 20
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momtnxw5wwsvc5",
+      "name": "Robot 107",
+      "type": "robot",
+      "position": {
+        "x": 107,
+        "y": 378
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "octoboss_1"
+      }
+    },
+    {
+      "id": "ent_momtnyh5tf8n63",
+      "name": "Robot 108",
+      "type": "robot",
+      "position": {
+        "x": 147,
+        "y": 386
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_momtnz2opvxaaf",
+      "name": "Robot 109",
+      "type": "robot",
+      "position": {
+        "x": 182,
+        "y": 364
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "octoboss_1"
+      }
+    },
+    {
+      "id": "ent_momtnzhp1o2s9s",
+      "name": "Robot 110",
+      "type": "robot",
+      "position": {
+        "x": 153,
+        "y": 348
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "octoboss_1"
+      }
+    },
+    {
+      "id": "ent_momto05b5bue7z",
+      "name": "Robot 111",
+      "type": "robot",
+      "position": {
+        "x": 177,
+        "y": 393
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "octoboss_1"
+      }
+    },
+    {
+      "id": "ent_momto0p1nwzu9t",
+      "name": "Robot 112",
+      "type": "robot",
+      "position": {
+        "x": 122,
+        "y": 386
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "octoboss_1"
+      }
+    },
+    {
+      "id": "ent_momto15anrbort",
+      "name": "Robot 113",
+      "type": "robot",
+      "position": {
+        "x": 110,
+        "y": 391
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "octoboss_1"
+      }
+    },
+    {
+      "id": "ent_momto1k9w6rrqq",
+      "name": "Robot 114",
+      "type": "robot",
+      "position": {
+        "x": 107,
+        "y": 345
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "octoboss_1"
+      }
+    },
+    {
+      "id": "ent_momto2d6uxt2uc",
+      "name": "Robot 115",
+      "type": "robot",
+      "position": {
+        "x": 182,
+        "y": 341
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "octoboss_1"
+      }
+    },
+    {
+      "id": "ent_momto2uuwkjug6",
+      "name": "Robot 116",
+      "type": "robot",
+      "position": {
+        "x": 142,
+        "y": 368
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "octoboss_1"
+      }
+    },
+    {
+      "id": "ent_momto38nbcpdyp",
+      "name": "Robot 117",
+      "type": "robot",
+      "position": {
+        "x": 163,
+        "y": 374
+      },
+      "rotation": 0,
+      "properties": {
+        "spawnTrigger": "octoboss_1"
+      }
+    },
+    {
+      "id": "ent_momuwz94gnc6zc",
+      "name": "Checkpoint 118",
+      "type": "checkpoint",
+      "position": {
+        "x": 140,
+        "y": 298
+      },
+      "rotation": 0,
+      "properties": {}
     }
   ]
 }

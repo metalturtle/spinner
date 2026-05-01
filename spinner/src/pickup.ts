@@ -57,7 +57,7 @@ export interface Pickup {
   settleTimer:    number;       // > 0 while flying outward; not collectible until 0
   orbMat:         THREE.MeshStandardMaterial;
   trailMat:       THREE.ShaderMaterial;
-  light:          THREE.PointLight;
+  // light:          THREE.PointLight;
   orbitRadius:    number;
   orbitSpeed:     number;
   orbitPhase:     number;
@@ -69,7 +69,7 @@ interface PickupVisual {
   mesh:        THREE.Group;
   orbMat:      THREE.MeshStandardMaterial;
   trailMat:    THREE.ShaderMaterial;
-  light:       THREE.PointLight;
+  // light:       THREE.PointLight;
   orbitRadius: number;
   orbitSpeed:  number;
 }
@@ -151,15 +151,15 @@ function makePickupVisual(type: Pickup['type']): PickupVisual {
   orb.position.set(orbitRadius, 0.03, 0);
   mesh.add(orb);
 
-  const light = new THREE.PointLight(
-    color,
-    isHyper ? 3.8 : isGrowth ? 2.8 : isAbilityUnlock ? 3.3 : 2.4,
-    isHyper ? 8.5 : isGrowth ? 7.0 : isAbilityUnlock ? 7.6 : 6.2,
-    1.5,
-  );
-  mesh.add(light);
+  // const light = new THREE.PointLight(
+  //   color,
+  //   isHyper ? 3.8 : isGrowth ? 2.8 : isAbilityUnlock ? 3.3 : 2.4,
+  //   isHyper ? 8.5 : isGrowth ? 7.0 : isAbilityUnlock ? 7.6 : 6.2,
+  //   1.5,
+  // );
+  // mesh.add(light);
 
-  return { mesh, orbMat, trailMat, light, orbitRadius, orbitSpeed };
+  return { mesh, orbMat, trailMat, orbitRadius, orbitSpeed };
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ export function createNormalPickup(pos: Vec2): Pickup {
     settleTimer: 0,
     orbMat: visual.orbMat,
     trailMat: visual.trailMat,
-    light: visual.light,
+    // light: visual.light,
     orbitRadius: visual.orbitRadius,
     orbitSpeed: visual.orbitSpeed,
     orbitPhase: Math.random() * Math.PI * 2,
@@ -228,7 +228,7 @@ export function createHyperPickup(pos: Vec2): Pickup {
     settleTimer: 0,
     orbMat: visual.orbMat,
     trailMat: visual.trailMat,
-    light: visual.light,
+    // light: visual.light,
     orbitRadius: visual.orbitRadius,
     orbitSpeed: visual.orbitSpeed,
     orbitPhase: Math.random() * Math.PI * 2,
@@ -266,7 +266,7 @@ export function createGrowthPickup(pos: Vec2): Pickup {
     settleTimer: 0,
     orbMat: visual.orbMat,
     trailMat: visual.trailMat,
-    light: visual.light,
+    // light: visual.light,
     orbitRadius: visual.orbitRadius,
     orbitSpeed: visual.orbitSpeed,
     orbitPhase: Math.random() * Math.PI * 2,
@@ -307,7 +307,7 @@ function createAbilityPickup(
     settleTimer: 0,
     orbMat: visual.orbMat,
     trailMat: visual.trailMat,
-    light: visual.light,
+    // light: visual.light,
     orbitRadius: visual.orbitRadius,
     orbitSpeed: visual.orbitSpeed,
     orbitPhase: Math.random() * Math.PI * 2,
@@ -392,25 +392,25 @@ export function updatePickups(
       p.mesh.position.y  = p.floatY + Math.sin(time * 2.5 + 1) * 0.2;
       p.orbMat.emissiveIntensity = pulse * 1.9;
       p.trailMat.uniforms.uAlpha.value = 0.92 + pulse * 0.28;
-      p.light.intensity = 2.4 + pulse * 1.2;
+      // p.light.intensity = 2.4 + pulse * 1.2;
     } else if (p.type === 'growth') {
       const pulse = 0.78 + 0.22 * Math.sin(time * 3.8 + p.orbitPhase * 0.7);
       p.mesh.position.y  = p.floatY + Math.sin(time * 2.2 + p.pos.x * 0.6) * 0.18;
       p.orbMat.emissiveIntensity = pulse * 1.35;
       p.trailMat.uniforms.uAlpha.value = 0.76 + pulse * 0.16;
-      p.light.intensity = 1.5 + pulse * 0.8;
+      // p.light.intensity = 1.5 + pulse * 0.8;
     } else if (p.type === 'combo_unlock' || p.type === 'heat_unlock' || p.type === 'spinning_laser_unlock') {
       const pulse = 0.78 + 0.22 * Math.sin(time * 4.1 + p.orbitPhase);
       p.mesh.position.y = p.floatY + Math.sin(time * 2.5 + p.pos.x * 0.4) * 0.16;
       p.orbMat.emissiveIntensity = pulse * 1.7;
       p.trailMat.uniforms.uAlpha.value = 0.84 + pulse * 0.18;
-      p.light.intensity = 1.8 + pulse * 1.0;
+      // p.light.intensity = 1.8 + pulse * 1.0;
     } else {
       p.mesh.position.y  = p.floatY + Math.sin(time * 2 + p.pos.x) * 0.15;
       const pulse = 0.82 + 0.18 * Math.sin(time * 3.4 + p.orbitPhase);
       p.orbMat.emissiveIntensity = pulse * 1.05;
       p.trailMat.uniforms.uAlpha.value = 0.68 + pulse * 0.12;
-      p.light.intensity = 1.2 + pulse * 0.6;
+      // p.light.intensity = 1.2 + pulse * 0.6;
     }
   }
 }

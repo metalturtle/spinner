@@ -28,7 +28,7 @@ function isSpinnerDuelType(type: string | undefined): boolean {
   return type === 'enemy' || type === 'hive_flock';
 }
 
-function computeSpinnerDuelLoss(enemy: Collidable, impactForce: number): { playerLoss: number; enemyLoss: number } {
+export function computeSpinnerDuelLoss(enemy: Collidable, impactForce: number): { playerLoss: number; enemyLoss: number } {
   const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
   const enemySpeed = Math.hypot(enemy.vel.x, enemy.vel.z);
   const playerFrac = clamp(playerBody.rpm / Math.max(playerBody.rpmCapacity, 1), 0.05, 1.5);
@@ -63,7 +63,7 @@ export const playerBody: Collidable = {
   radius:      spinnerConfig.radius,
   mass:        spinnerConfig.mass,
   isStatic:    false,
-  rpm:         spinnerConfig.rpmCapacity * spinnerConfig.startingRpmRatio,
+  rpm:         spinnerConfig.rpmCapacity,
   rpmCapacity: spinnerConfig.rpmCapacity,
   heatFactor:  1.0,
 };
@@ -134,7 +134,7 @@ export function setupPlayer(): void {
 export function resetPlayer(spawnPos: { x: number; z: number } = { x: 0, z: 0 }): void {
   playerBody.pos.x = spawnPos.x;  playerBody.pos.z = spawnPos.z;
   playerBody.vel.x = 0;  playerBody.vel.z = 0;
-  playerBody.rpm         = spinnerConfig.rpmCapacity * spinnerConfig.startingRpmRatio;
+  playerBody.rpm         = spinnerConfig.rpmCapacity;
   playerBody.rpmCapacity = spinnerConfig.rpmCapacity;
   playerBody.radius      = spinnerConfig.radius;
   playerProximity.radius = playerBody.radius;
@@ -187,6 +187,16 @@ export function playerRpmHooks(delta: number, playerWallHit: boolean, circleHits
 
     const enemy = collidables[playerIsA ? hit.j : hit.i];
     const enemyType = getCollidableType(enemy);
+    if (
+      enemyType === 'zombie'
+      || enemyType === 'laser_spinner'
+      || enemyType === 'spider_leg'
+      || enemyType === 'spider_core'
+      || enemyType === 'octoboss_core'
+    ) {
+      // These are handled in game.ts with bespoke collision rules; avoid double-dipping here.
+      continue;
+    }
     if (isSpinnerDuelType(enemyType)) {
       const { playerLoss, enemyLoss } = computeSpinnerDuelLoss(enemy, hit.impactForce);
       playerBody.rpm = Math.max(0, playerBody.rpm - playerLoss);

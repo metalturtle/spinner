@@ -68,9 +68,9 @@ export interface OctobossConfig {
 }
 
 export const OCTOBOSS_TIER_1: OctobossConfig = {
-  coreRpmCapacity: 680,
+  coreRpmCapacity: 30,
   coreRadius: 2.0,
-  coreMass: 9.6,
+  coreMass: 0.1,
   coreMaxSpeed: [6.4, 7.3, 8.6],
   coreAcceleration: [14.5, 17.0, 20.0],
   desiredRange: [10.8, 9.6, 8.2],
@@ -328,8 +328,13 @@ export function canDamageOctobossCore(boss: OctobossState): boolean {
   return boss.tentacleMode === 'retracting' && boss.exposeTimer > 0;
 }
 
+export function canComboTargetOctobossCore(boss: OctobossState): boolean {
+  return canDamageOctobossCore(boss)
+    || (boss.tentacleMode === 'chasing' && boss.tentacleModeTimer <= 0.18);
+}
+
 export function getOctobossCoreDamageMultiplier(boss: OctobossState): number {
-  return canDamageOctobossCore(boss) ? 1.75 : 0;
+  return canDamageOctobossCore(boss) ? 1.0 : 0;
 }
 
 export function getOctobossTipDamage(boss: OctobossState): number {
@@ -1386,8 +1391,19 @@ export function updateOctobossAI(
     body.vel.x *= 0.9;
     body.vel.z *= 0.9;
   } else if (boss.tentacleMode === 'retracting') {
-    body.vel.x *= 0.84;
-    body.vel.z *= 0.84;
+    const nx = dx / dist;
+    const nz = dz / dist;
+    const desiredRange = phase === 0 ? 4.8 : phase === 1 ? 4.2 : 3.7;
+    const orbitDir = Math.sin(boss.hoverTime * 0.95) >= 0 ? 1 : -1;
+    if (dist > desiredRange) {
+      body.vel.x += nx * accel * 0.78 * delta;
+      body.vel.z += nz * accel * 0.78 * delta;
+    } else {
+      body.vel.x += (-nz * orbitDir) * accel * 0.28 * delta;
+      body.vel.z += (nx * orbitDir) * accel * 0.28 * delta;
+      body.vel.x -= nx * accel * 0.18 * delta;
+      body.vel.z -= nz * accel * 0.18 * delta;
+    }
   } else {
     const nx = dx / dist;
     const nz = dz / dist;

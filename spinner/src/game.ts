@@ -28,13 +28,14 @@ import {
   playerRpmHooks, updatePlayerVisuals, updateTopple, notifyHit as notifyPlayerHit,
   startPlayerPitFallDeath, startPlayerToppleDeath,
   setPlayerControlLocked, setPlayerInvulnerable, isPlayerInvulnerable,
-  addPlayerCapacity, getPlayerImpactDamageMultiplier, setPlayerImpactDamageMultiplier,
+  addPlayerCapacity, computeSpinnerDuelLoss, getPlayerImpactDamageMultiplier, setPlayerImpactDamageMultiplier,
 } from './player';
 import {
   createNormalPickup, createHyperPickup, createComboUnlockPickup, createHeatUnlockPickup, createSpinningLaserUnlockPickup,
   updatePickups, spawnPickupAt, spawnGrowthPickupAt, ejectPickupAt,
   collectPickup, pickupRpmGain, type Pickup,
 } from './pickup';
+import { loadActiveLevelFromBrowser } from './activeLevelStorage';
 import { type LevelData, lvPos, lvZ } from './levelLoader';
 import level1 from './levels/level1.json';
 import level2 from './levels/level2.json';
@@ -81,13 +82,13 @@ import {
 import {
   createSpiderReliquary, updateSpiderReliquaryAI, syncSpiderReliquaryLegs,
   setSpiderAwake,
-  updateSpiderReliquaryVisuals, canDamageSpiderCore, getSpiderCoreDamageMultiplier,
+  updateSpiderReliquaryVisuals, canDamageSpiderCore, getSpiderCoreDamageMultiplier, getSpiderCoreComboLockDuration,
   applyDamageToSpiderLeg, onSpiderCoreCollision, isSpiderReliquaryDead, destroySpiderReliquary,
   SPIDER_RELIQUARY_TIER_1, type SpiderReliquaryState,
 } from './bossSpiderReliquary';
 import {
   createOctoboss, updateOctobossAI, syncOctobossTentacles, updateOctobossVisuals,
-  canDamageOctobossCore, getOctobossCoreDamageMultiplier, getOctobossTipDamage, traceOctobossEyeLaser,
+  canDamageOctobossCore, canComboTargetOctobossCore, getOctobossCoreDamageMultiplier, getOctobossTipDamage, traceOctobossEyeLaser,
   isOctobossDead, destroyOctoboss, OCTOBOSS_TIER_1, type OctobossState,
 } from './bossOctoboss';
 import {
@@ -142,6 +143,7 @@ import {
   initSound,
   preloadSoundAssets,
   playClashSound,
+  playLaserHitSound,
   playLaserSound,
   playPickupSound,
   playZombieSlashSound,
@@ -162,7 +164,7 @@ import { runLoadTasks, type LoadTask } from './assetLoader';
 // ─── Level-driven state ──────────────────────────────────────────────────────
 
 type LevelChoiceId = 'active' | 'level1' | 'level2' | 'level3' | 'level4' | 'level5';
-const DEBUG_SKIP_MAIN_MENU = true;
+const DEBUG_SKIP_MAIN_MENU = false;
 
 const bundledLevels: Record<Exclude<LevelChoiceId, 'active'>, LevelData> = {
   level1: level1 as LevelData,
@@ -194,9 +196,14 @@ async function loadRuntimeActiveLevel(): Promise<LevelData> {
     if (!response.ok) throw new Error(await response.text());
     return await response.json() as LevelData;
   } catch (error) {
-    console.warn('Falling back to bundled active level:', error);
-    return bundledActiveLevel;
+    console.warn('Failed to fetch runtime active level from the dev API:', error);
   }
+
+  const browserLevel = loadActiveLevelFromBrowser();
+  if (browserLevel) return browserLevel;
+
+  console.warn('Falling back to bundled active level.');
+  return bundledActiveLevel;
 }
 
 async function resolveLevel(choice: LevelChoiceId): Promise<LevelData> {
@@ -345,6 +352,8 @@ registerCollisionPair('player', 'enemy', (_playerCol, enemyCol, hit) => {
 
 registerCollisionPair('player', 'laser_spinner', (_playerCol, enemyCol, hit) => {
   const enemy = LaserSpinnerEntities.getAll().find((e) => e.collidable === enemyCol);
+  if (!enemy?.alive) return;
+
   if (enemy?.alive && !isPlayerInvulnerable()) {
     const comboLock = getLaserSpinnerComboLockDuration(enemy);
     if (comboLock > 0) {
@@ -352,7 +361,14 @@ registerCollisionPair('player', 'laser_spinner', (_playerCol, enemyCol, hit) => 
       setPlayerControlLocked(true);
     }
   }
-  if (enemy?.alive) onLaserSpinnerCollision(enemy);
+
+  const { playerLoss, enemyLoss } = computeSpinnerDuelLoss(enemyCol, hit.impactForce);
+  if (!isPlayerInvulnerable()) {
+    playerBody.rpm = Math.max(0, playerBody.rpm - playerLoss);
+    if (playerLoss > 2.5) notifyPlayerHit();
+  }
+  enemy.collidable.rpm = Math.max(0, enemy.collidable.rpm - enemyLoss);
+  onLaserSpinnerCollision(enemy);
   const { point, normal } = computeContactInfo(_playerCol, enemyCol);
   emitSparks(point, normal, Math.floor(14 + hit.impactForce * 10), Math.min(1, hit.impactForce / 8));
 });
@@ -361,7 +377,10 @@ registerCollisionPair('player', 'zombie', (_playerCol, zombieCol, hit) => {
   const zombie = ZombieEntities.getAll().find((z) => z.collidable === zombieCol);
   if (!zombie?.alive) return;
 
+  playerZombieImpactGraceTimer = Math.max(playerZombieImpactGraceTimer, PLAYER_ZOMBIE_IMPACT_GRACE);
   const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
+  // A hard ram should stagger the zombie's follow-up bite timing.
+  zombie.attackCooldown = Math.max(zombie.attackCooldown, zombie.config.attackCooldown * 0.8);
   if (hit.impactForce >= zombie.config.gibImpactThreshold || playerSpeed >= zombie.config.gibImpactThreshold + 1.5) {
     killZombie(zombie, true);
     return;
@@ -430,20 +449,31 @@ registerCollisionPair('player', 'spider_core', (_playerCol, coreCol, hit) => {
   const spider = SpiderEntities.getAll().find((boss) => boss.collidable === coreCol);
   if (!spider?.alive) return;
 
+  if (!isPlayerInvulnerable()) {
+    const comboLock = getSpiderCoreComboLockDuration(spider);
+    if (comboLock > 0) {
+      enemyComboLockTimer = Math.max(enemyComboLockTimer, comboLock);
+      setPlayerControlLocked(true);
+    }
+  }
+
   const { point, normal } = computeContactInfo(_playerCol, coreCol);
   if (!canDamageSpiderCore(spider)) {
     emitSparks(point, normal, Math.floor(16 + hit.impactForce * 10), Math.min(1, hit.impactForce / 7));
     return;
   }
 
-  const safePlayerRpm = Math.max(0.01, playerBody.rpm);
-  const safeEnemyRpm = Math.max(0.01, coreCol.rpm);
-  const rpmDamage = scalePlayerImpactDamage(COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
-    * hit.impactForce * (playerBody.mass / coreCol.mass)
-    * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor
-    * getSpiderCoreDamageMultiplier(spider));
-  spider.collidable.rpm = Math.max(0, spider.collidable.rpm - rpmDamage);
+  const { playerLoss, enemyLoss } = computeSpinnerDuelLoss(coreCol, hit.impactForce);
+  if (!isPlayerInvulnerable()) {
+    playerBody.rpm = Math.max(0, playerBody.rpm - playerLoss);
+    if (playerLoss > 2.5) notifyPlayerHit();
+  }
+  spider.collidable.rpm = Math.max(
+    0,
+    spider.collidable.rpm - enemyLoss * getSpiderCoreDamageMultiplier(spider),
+  );
   onSpiderCoreCollision(spider);
+  playClashSound(hit.impactForce);
   emitSparks(point, normal, Math.floor(18 + hit.impactForce * 12), Math.min(1, hit.impactForce / 6));
 });
 
@@ -455,6 +485,7 @@ registerCollisionPair('player', 'spider_leg', (_playerCol, legCol, hit) => {
 
     const hpDamage = scalePlayerImpactDamage(hit.impactForce * 0.55 * Math.max(0.4, playerBody.rpm / playerBody.rpmCapacity));
     const { point, normal } = computeContactInfo(_playerCol, legCol);
+    playClashSound(hit.impactForce);
     if (applyDamageToSpiderLeg(spider, leg, hpDamage)) {
       explosions.push(createExplosion({ x: legCol.pos.x, z: legCol.pos.z }));
       emitSparks(point, normal, Math.floor(24 + hit.impactForce * 12), Math.min(1, 0.5 + hit.impactForce / 8));
@@ -470,18 +501,21 @@ registerCollisionPair('player', 'octoboss_core', (_playerCol, coreCol, hit) => {
   if (!boss?.alive) return;
 
   const { point, normal } = computeContactInfo(_playerCol, coreCol);
+  playClashSound(hit.impactForce);
   if (!canDamageOctobossCore(boss)) {
     emitSparks(point, normal, Math.floor(18 + hit.impactForce * 10), Math.min(1, hit.impactForce / 7));
     return;
   }
 
-  const safePlayerRpm = Math.max(0.01, playerBody.rpm);
-  const safeEnemyRpm = Math.max(0.01, coreCol.rpm);
-  const rpmDamage = scalePlayerImpactDamage(COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
-    * hit.impactForce * (playerBody.mass / coreCol.mass)
-    * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor
-    * getOctobossCoreDamageMultiplier(boss));
-  boss.collidable.rpm = Math.max(0, boss.collidable.rpm - rpmDamage);
+  const { playerLoss, enemyLoss } = computeSpinnerDuelLoss(coreCol, hit.impactForce);
+  if (!isPlayerInvulnerable()) {
+    playerBody.rpm = Math.max(0, playerBody.rpm - playerLoss);
+    if (playerLoss > 2.5) notifyPlayerHit();
+  }
+  boss.collidable.rpm = Math.max(
+    0,
+    boss.collidable.rpm - enemyLoss * getOctobossCoreDamageMultiplier(boss),
+  );
   emitSparks(point, normal, Math.floor(22 + hit.impactForce * 12), Math.min(1, hit.impactForce / 6));
 });
 
@@ -492,6 +526,7 @@ registerCollisionPair('player', 'octoboss_tip', (_playerCol, tipCol, hit) => {
     if (!tentacle) continue;
 
     const { point, normal } = computeContactInfo(_playerCol, tipCol);
+    playClashSound(hit.impactForce);
     emitSparks(point, normal, Math.floor(14 + hit.impactForce * 8), Math.min(1, 0.45 + hit.impactForce / 8));
     const dx = playerBody.pos.x - tipCol.pos.x;
     const dz = playerBody.pos.z - tipCol.pos.z;
@@ -680,7 +715,9 @@ const pendingTriggeredEntities = new Map<string, LevelEntity[]>();
 const SPIDER_MOTION_DEBUG = false;
 const PLAYER_WEB_SPEED_MULT = 0.16;
 const PLAYER_WEB_VEL_DAMP = 0.42;
+const PLAYER_ZOMBIE_IMPACT_GRACE = 0.4;
 let playerWebTimer = 0;
+let playerZombieImpactGraceTimer = 0;
 let enemyComboLockTimer = 0;
 let playerLaserHitFxTimer = 0;
 
@@ -796,6 +833,28 @@ interface CheckpointState {
   core: THREE.Mesh;
 }
 
+interface PortalSessionState {
+  arrivedViaPortal: boolean;
+  sourceRefUrl: string | null;
+  forwardedParams: URLSearchParams;
+}
+
+interface PortalVisualState {
+  kind: 'start' | 'exit';
+  group: THREE.Group;
+  ring: THREE.Mesh;
+  inner: THREE.Mesh;
+  label: THREE.Sprite;
+  innerMaterial: THREE.MeshBasicMaterial;
+  labelMaterial: THREE.SpriteMaterial;
+  particles: THREE.Points;
+  particlePositions: Float32Array;
+  particleBaseY: Float32Array;
+  position: Vec2;
+  triggerRadius: number;
+  activeAfterTime: number;
+}
+
 const spawnTriggerZones: SpawnTriggerZone[] = [];
 const ambientTriggerZones: AmbientTriggerZone[] = [];
 const lightingTriggerZones: LightingTriggerZone[] = [];
@@ -812,11 +871,38 @@ const awakenableEncounterEntities: AwakenableEncounterEntity[] = [];
 const KILL_FALL_DELAY = 0.5;
 const DEFAULT_CHECKPOINT_RADIUS = 1.6;
 const RESPAWN_INVULNERABILITY_DURATION = 1.6;
+const VIBE_JAM_PORTAL_URL = 'https://vibejam.cc/portal/2026';
+const PORTAL_DEFAULT_USERNAME = 'spinner-player';
+const PORTAL_DEFAULT_COLOR = '#e94560';
+const PORTAL_TRIGGER_RADIUS = 3.8;
+const PORTAL_EDGE_PADDING = 5.5;
+const PORTAL_START_SPAWN_DISTANCE = 6.5;
+const PORTAL_EXIT_DISTANCE = 14;
+const PORTAL_RETURN_COOLDOWN = 2.75;
+const PORTAL_PARTICLE_COUNT = 220;
+const PORTAL_FORWARD_KEYS = [
+  'username',
+  'color',
+  'speed',
+  'ref',
+  'avatar_url',
+  'team',
+  'hp',
+  'speed_x',
+  'speed_y',
+  'speed_z',
+  'rotation_x',
+  'rotation_y',
+  'rotation_z',
+] as const;
 let playerKillFallTimer = 0;
 let playerSpawnPoint: Vec2 = { x: 0, z: 0 };
 let activeCheckpoint: CheckpointState | null = null;
 let respawnPending = false;
 let respawnInvulnerabilityTimer = 0;
+let startPortalState: PortalVisualState | null = null;
+let exitPortalState: PortalVisualState | null = null;
+let portalTransitionInFlight = false;
 
 function readStringProperty(props: Record<string, unknown> | undefined, key: string): string | null {
   const raw = props?.[key];
@@ -2095,59 +2181,96 @@ function updateAmbientTriggers(): void {
 }
 
 const initialUrl = new URL(window.location.href);
+const portalSession = parsePortalSession(initialUrl);
 let selectedLevelId: LevelChoiceId = DEBUG_SKIP_MAIN_MENU
   ? 'active'
   : parseLevelChoice(initialUrl.searchParams.get('level'));
-const shouldAutostart = DEBUG_SKIP_MAIN_MENU || initialUrl.searchParams.get('autostart') === '1';
+const shouldAutostart = DEBUG_SKIP_MAIN_MENU
+  || initialUrl.searchParams.get('autostart') === '1'
+  || portalSession.arrivedViaPortal;
 
-function replaceGameUrl(clearAutostart: boolean): void {
+function resolveSiblingAppUrl(appSegment: 'game' | 'editor'): string {
   const url = new URL(window.location.href);
-  url.searchParams.set('level', selectedLevelId);
-  if (clearAutostart) url.searchParams.delete('autostart');
-  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-}
-
-function guessSiblingAppUrl(targetPort: string): string {
-  const url = new URL(window.location.href);
-  if (url.port) {
-    url.port = targetPort;
-  }
-  url.pathname = '/';
+  const parts = url.pathname.split('/').filter(Boolean);
+  const currentAppIndex = parts.findIndex((part) => part === 'game' || part === 'editor');
+  const rootParts = currentAppIndex >= 0 ? parts.slice(0, currentAppIndex) : parts;
+  url.pathname = `/${[...rootParts, appSegment, 'index.html'].join('/')}`.replace(/\/+/g, '/');
   url.search = '';
   url.hash = '';
   return url.toString();
 }
 
+function getConfiguredUrl(value: string | undefined): string | null {
+  const configured = value?.trim();
+  if (!configured) return null;
+  return new URL(configured, window.location.href).toString();
+}
+
+function normalizePortalUrl(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  try {
+    return new URL(trimmed, window.location.href).toString();
+  } catch {
+    try {
+      return new URL(`https://${trimmed}`).toString();
+    } catch {
+      return null;
+    }
+  }
+}
+
+function parsePortalSession(url: URL): PortalSessionState {
+  const arrivedViaPortal = url.searchParams.get('portal') === 'true';
+  const forwardedParams = new URLSearchParams();
+  for (const key of PORTAL_FORWARD_KEYS) {
+    const value = url.searchParams.get(key);
+    if (value !== null && value.trim() !== '') forwardedParams.set(key, value);
+  }
+
+  return {
+    arrivedViaPortal,
+    sourceRefUrl: normalizePortalUrl(url.searchParams.get('ref')),
+    forwardedParams,
+  };
+}
+
+function replaceGameUrl(clearAutostart: boolean): void {
+  const url = new URL(getConfiguredUrl(import.meta.env.VITE_GAME_URL) ?? window.location.href);
+  url.searchParams.set('level', selectedLevelId);
+  if (clearAutostart) url.searchParams.delete('autostart');
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
 function getEditorUrl(): string {
-  const configured = import.meta.env.VITE_EDITOR_URL?.trim();
-  return configured || guessSiblingAppUrl('5174');
+  return getConfiguredUrl(import.meta.env.VITE_EDITOR_URL) ?? resolveSiblingAppUrl('editor');
 }
 
 // ─── Overlays ────────────────────────────────────────────────────────────────
 
+const DEFAULT_MENU_INSTRUCTIONS = 'WASD to move, Shift to sprint, X combo, C heat, V spin laser, M to return to the menu.';
+
 const menuOverlay = document.createElement('div');
 menuOverlay.className = 'app-overlay menu-overlay';
 menuOverlay.innerHTML = `
-  <div class="overlay-card">
-    <div class="overlay-kicker">Spinner</div>
-    <h1>Choose Your Arena</h1>
-    <p class="overlay-copy">Jump into a bundled level or load the editor's active map, then tear through it at full RPM.</p>
-    <label class="overlay-field">
-      <span>Level</span>
-      <select class="overlay-select" id="menu-level-select">
-        ${levelChoices.map((choice) => `<option value="${choice.id}">${choice.label}</option>`).join('')}
-      </select>
-    </label>
-    <div class="overlay-actions">
-      <button type="button" class="overlay-btn overlay-btn-primary" id="menu-start-btn">Start Run</button>
-      <button type="button" class="overlay-btn" id="menu-editor-btn">Open Level Editor</button>
+  <div class="overlay-card menu-card">
+    <div class="menu-hero">
+      <h1 class="menu-logo">SPINNER</h1>
     </div>
-    <p class="overlay-meta" id="menu-status">WASD to move, Shift to sprint, X combo, C heat, V spin laser, M to return to the menu.</p>
+    <div class="overlay-actions menu-actions">
+      <button type="button" class="overlay-btn overlay-btn-primary" id="menu-start-btn">START GAME</button>
+      <button type="button" class="overlay-btn" id="menu-editor-btn">LEVEL EDITOR</button>
+    </div>
+    <div class="menu-instructions">
+      <p class="menu-instructions-title">How to Play</p>
+      <p class="overlay-meta menu-status" id="menu-status">${DEFAULT_MENU_INSTRUCTIONS}</p>
+    </div>
   </div>
 `;
 document.body.appendChild(menuOverlay);
 
-const levelSelectEl = menuOverlay.querySelector<HTMLSelectElement>('#menu-level-select')!;
 const menuStartBtn = menuOverlay.querySelector<HTMLButtonElement>('#menu-start-btn')!;
 const menuEditorBtn = menuOverlay.querySelector<HTMLButtonElement>('#menu-editor-btn')!;
 const menuStatusEl = menuOverlay.querySelector<HTMLParagraphElement>('#menu-status')!;
@@ -2182,11 +2305,11 @@ function setMenuVisible(visible: boolean): void {
   menuOverlay.style.display = visible ? 'flex' : 'none';
   gameOverOverlay.style.display = !visible && gameOver ? 'flex' : 'none';
   setHudVisible(!visible);
+  if (visible && !startInFlight) menuStatusEl.textContent = DEFAULT_MENU_INSTRUCTIONS;
 }
 
 function setMenuBusy(busy: boolean, label?: string): void {
   startInFlight = busy;
-  levelSelectEl.disabled = busy;
   menuStartBtn.disabled = busy;
   menuEditorBtn.disabled = busy;
   if (label) menuStatusEl.textContent = label;
@@ -2360,31 +2483,37 @@ function resetGame(): void {
   resetLavaEmbers();
   resetCameraShake();
   resetClashFlashes();
+  clearPortalVisuals();
   playerLaserHitFxTimer = 0;
   fallingVictims.length = 0;
   fallableActors.length = 0;
   playerKillFallTimer = 0;
   playerWebTimer = 0;
+  playerZombieImpactGraceTimer = 0;
   enemyComboLockTimer = 0;
   clearDynamicLevelLights();
   clearCheckpoints();
   clearLevelLights(scene);
   setupLevelLights(scene, currentLevel);
   spawnAll(currentLevel);
+  configurePortalsForCurrentLevel();
   resetAmbientTriggerZones();
   syncLightingZones(true);
   updateCheckpointVisuals(time);
 }
 
-async function startSelectedLevel(): Promise<void> {
+async function startSelectedLevel(options: { suppressLoadingOverlay?: boolean } = {}): Promise<void> {
   if (startInFlight) return;
+  const suppressLoadingOverlay = options.suppressLoadingOverlay === true;
 
   setMenuBusy(true, selectedLevelId === 'active'
     ? 'Loading the editor level...'
     : 'Loading the arena...');
-  showLoadingOverlay('Loading Arena', selectedLevelId === 'active'
-    ? 'Reading the editor level...'
-    : 'Reading level data...');
+  if (!suppressLoadingOverlay) {
+    showLoadingOverlay('Loading Arena', selectedLevelId === 'active'
+      ? 'Reading the editor level...'
+      : 'Reading level data...');
+  }
 
   try {
     const resolvedLevel = await resolveLevel(selectedLevelId);
@@ -2397,14 +2526,14 @@ async function startSelectedLevel(): Promise<void> {
     setMenuVisible(false);
   } catch (error) {
     console.error('Failed to start level:', error);
-    hideLoadingOverlay();
+    if (!suppressLoadingOverlay) hideLoadingOverlay();
     setMenuVisible(true);
     setMenuBusy(false, 'Could not load that level. Check the console for details.');
     return;
   }
 
-  hideLoadingOverlay();
-  setMenuBusy(false, 'WASD to move, Shift to sprint, X combo, C heat, V spin laser, M to return to the menu.');
+  if (!suppressLoadingOverlay) hideLoadingOverlay();
+  setMenuBusy(false, DEFAULT_MENU_INSTRUCTIONS);
 }
 
 function returnToMenu(): void {
@@ -2412,15 +2541,6 @@ function returnToMenu(): void {
   replaceGameUrl(true);
   setMenuVisible(true);
 }
-
-levelSelectEl.value = selectedLevelId;
-levelSelectEl.addEventListener('change', () => {
-  selectedLevelId = parseLevelChoice(levelSelectEl.value);
-  replaceGameUrl(true);
-  menuStatusEl.textContent = selectedLevelId === 'active'
-    ? 'Starts from the editor\'s synced active level when available.'
-    : 'Loads a bundled combat arena.';
-});
 
 menuStartBtn.addEventListener('click', () => {
   void startSelectedLevel();
@@ -2777,6 +2897,297 @@ function getSafeComboReturnPoint(origin: Vec2, fallback: Vec2): Vec2 {
   return cloneVec2(fallback);
 }
 
+function clampPortalPointToArena(point: Vec2): Vec2 {
+  const bounds = getArenaBounds();
+  return {
+    x: clamp(point.x, bounds.minX + PORTAL_EDGE_PADDING, bounds.maxX - PORTAL_EDGE_PADDING),
+    z: clamp(point.z, bounds.minZ + PORTAL_EDGE_PADDING, bounds.maxZ - PORTAL_EDGE_PADDING),
+  };
+}
+
+function isPortalPointUsable(point: Vec2): boolean {
+  const bounds = getArenaBounds();
+  if (point.x < bounds.minX + PORTAL_EDGE_PADDING || point.x > bounds.maxX - PORTAL_EDGE_PADDING) return false;
+  if (point.z < bounds.minZ + PORTAL_EDGE_PADDING || point.z > bounds.maxZ - PORTAL_EDGE_PADDING) return false;
+  return isPointSafeForPlayer(point);
+}
+
+function findPortalPlacement(origin: Vec2, distances: number[], angles: number[]): Vec2 {
+  for (const distance of distances) {
+    for (const angle of angles) {
+      const candidate = {
+        x: origin.x + Math.cos(angle) * distance,
+        z: origin.z + Math.sin(angle) * distance,
+      };
+      if (isPortalPointUsable(candidate)) return candidate;
+    }
+  }
+
+  const clamped = clampPortalPointToArena(origin);
+  if (isPointSafeForPlayer(clamped)) return clamped;
+  return cloneVec2(origin);
+}
+
+function getPortalCurrentGameUrl(): string {
+  const url = new URL(getConfiguredUrl(import.meta.env.VITE_GAME_URL) ?? window.location.href);
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
+function formatPortalNumber(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(2) : '0.00';
+}
+
+function buildPortalTravelParams(returnRefUrl: string): URLSearchParams {
+  const params = new URLSearchParams(portalSession.forwardedParams);
+  const speed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
+  const hp = clamp(Math.round((Math.max(0, playerBody.rpm) / Math.max(1, playerBody.rpmCapacity)) * 100), 1, 100);
+
+  if (!params.has('username')) params.set('username', PORTAL_DEFAULT_USERNAME);
+  if (!params.has('color')) params.set('color', PORTAL_DEFAULT_COLOR);
+  params.set('speed', formatPortalNumber(speed));
+  params.set('hp', String(hp));
+  params.set('speed_x', formatPortalNumber(playerBody.vel.x));
+  params.set('speed_y', '0.00');
+  params.set('speed_z', formatPortalNumber(playerBody.vel.z));
+  params.set('rotation_x', '0.00');
+  params.set('rotation_y', '0.00');
+  params.set('rotation_z', '0.00');
+  params.set('ref', returnRefUrl);
+  return params;
+}
+
+function buildPortalRedirectUrl(baseUrl: string, params: URLSearchParams, includePortalFlag: boolean): string {
+  const url = new URL(baseUrl);
+  for (const [key, value] of params) {
+    url.searchParams.set(key, value);
+  }
+  if (includePortalFlag) url.searchParams.set('portal', 'true');
+  return url.toString();
+}
+
+function createPortalLabelSprite(text: string, colorHex: string): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  canvas.width = 768;
+  canvas.height = 160;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    const fallbackMaterial = new THREE.SpriteMaterial({ color: new THREE.Color(colorHex) });
+    const fallback = new THREE.Sprite(fallbackMaterial);
+    fallback.scale.set(8, 2, 1);
+    return fallback;
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = 'rgba(8, 10, 20, 0.28)';
+  context.beginPath();
+  context.roundRect(24, 22, canvas.width - 48, canvas.height - 44, 24);
+  context.fill();
+  context.lineWidth = 5;
+  context.strokeStyle = colorHex;
+  context.stroke();
+  context.fillStyle = '#ffffff';
+  context.font = '700 58px Arial';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(12.5, 2.6, 1);
+  return sprite;
+}
+
+function createPortalVisual(
+  kind: PortalVisualState['kind'],
+  position: Vec2,
+  ringColor: number,
+  labelText: string,
+): PortalVisualState {
+  const group = new THREE.Group();
+  group.position.set(position.x, 2.6, position.z);
+  group.rotation.x = 0.35;
+
+  const ringMaterial = new THREE.MeshPhongMaterial({
+    color: ringColor,
+    emissive: ringColor,
+    emissiveIntensity: 0.9,
+    transparent: true,
+    opacity: 0.88,
+  });
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(3.1, 0.34, 16, 72),
+    ringMaterial,
+  );
+  group.add(ring);
+
+  const innerMaterial = new THREE.MeshBasicMaterial({
+    color: ringColor,
+    transparent: true,
+    opacity: 0.34,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const inner = new THREE.Mesh(
+    new THREE.CircleGeometry(2.65, 48),
+    innerMaterial,
+  );
+  group.add(inner);
+
+  const particleGeometry = new THREE.BufferGeometry();
+  const particlePositions = new Float32Array(PORTAL_PARTICLE_COUNT * 3);
+  const particleBaseY = new Float32Array(PORTAL_PARTICLE_COUNT);
+  const particleColors = new Float32Array(PORTAL_PARTICLE_COUNT * 3);
+  const color = new THREE.Color(ringColor);
+  for (let i = 0; i < PORTAL_PARTICLE_COUNT; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 3.1 + (Math.random() - 0.5) * 0.85;
+    const y = (Math.random() - 0.5) * 1.2;
+    const baseIndex = i * 3;
+    particlePositions[baseIndex] = Math.cos(angle) * radius;
+    particlePositions[baseIndex + 1] = y;
+    particlePositions[baseIndex + 2] = Math.sin(angle) * radius;
+    particleBaseY[i] = y;
+    particleColors[baseIndex] = color.r;
+    particleColors[baseIndex + 1] = color.g;
+    particleColors[baseIndex + 2] = color.b;
+  }
+  particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+  particleGeometry.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+
+  const particles = new THREE.Points(
+    particleGeometry,
+    new THREE.PointsMaterial({
+      size: 0.18,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  group.add(particles);
+
+  const label = createPortalLabelSprite(labelText, `#${new THREE.Color(ringColor).getHexString()}`);
+  label.position.set(0, 4.7, 0);
+  group.add(label);
+
+  scene.add(group);
+  return {
+    kind,
+    group,
+    ring,
+    inner,
+    label,
+    innerMaterial,
+    labelMaterial: label.material,
+    particles,
+    particlePositions,
+    particleBaseY,
+    position: cloneVec2(position),
+    triggerRadius: PORTAL_TRIGGER_RADIUS,
+    activeAfterTime: 0,
+  };
+}
+
+function disposePortalVisual(portal: PortalVisualState | null): void {
+  if (!portal) return;
+  scene.remove(portal.group);
+  disposeObject3D(portal.group);
+  portal.labelMaterial.map?.dispose();
+}
+
+function clearPortalVisuals(): void {
+  disposePortalVisual(startPortalState);
+  disposePortalVisual(exitPortalState);
+  startPortalState = null;
+  exitPortalState = null;
+  portalTransitionInFlight = false;
+}
+
+function configurePortalsForCurrentLevel(): void {
+  clearPortalVisuals();
+  if (currentLevel.entities.length === 0) return;
+
+  const originalSpawn = cloneVec2(playerSpawnPoint);
+  if (portalSession.arrivedViaPortal && portalSession.sourceRefUrl) {
+    const startPortalPos = isPortalPointUsable(originalSpawn)
+      ? originalSpawn
+      : clampPortalPointToArena(originalSpawn);
+    const arrivalSpawn = findPortalPlacement(
+      startPortalPos,
+      [PORTAL_START_SPAWN_DISTANCE, PORTAL_START_SPAWN_DISTANCE + 2.5, PORTAL_START_SPAWN_DISTANCE + 5],
+      [Math.PI / 2, 0, Math.PI, -Math.PI / 2],
+    );
+    startPortalState = createPortalVisual('start', startPortalPos, 0xff5757, 'RETURN PORTAL');
+    startPortalState.activeAfterTime = time + PORTAL_RETURN_COOLDOWN;
+    playerSpawnPoint = cloneVec2(arrivalSpawn);
+    playerBody.pos.x = arrivalSpawn.x;
+    playerBody.pos.z = arrivalSpawn.z;
+  }
+
+  const exitOrigin = cloneVec2(playerSpawnPoint);
+  const exitPortalPos = findPortalPlacement(
+    exitOrigin,
+    [PORTAL_EXIT_DISTANCE, PORTAL_EXIT_DISTANCE - 3.5, PORTAL_EXIT_DISTANCE + 4.5],
+    [0, Math.PI / 2, Math.PI, -Math.PI / 2],
+  );
+  exitPortalState = createPortalVisual('exit', exitPortalPos, 0x59ff9d, 'VIBE JAM PORTAL');
+}
+
+function updatePortalVisual(portal: PortalVisualState, now: number): void {
+  portal.group.rotation.y = now * 0.55;
+  portal.ring.rotation.z = now * 0.85;
+  portal.innerMaterial.opacity = 0.24 + Math.sin(now * 3.4) * 0.08;
+  portal.label.position.y = 4.7 + Math.sin(now * 2.1) * 0.2;
+
+  const positions = portal.particlePositions;
+  for (let i = 0; i < PORTAL_PARTICLE_COUNT; i++) {
+    positions[i * 3 + 1] = portal.particleBaseY[i] + Math.sin(now * 2.4 + i * 0.17) * 0.18;
+  }
+  portal.particles.geometry.attributes.position.needsUpdate = true;
+}
+
+function tryActivatePortal(portal: PortalVisualState): boolean {
+  if (portalTransitionInFlight) return true;
+  if (time < portal.activeAfterTime) return false;
+  if (distanceSq(playerBody.pos, portal.position) > portal.triggerRadius * portal.triggerRadius) return false;
+
+  const returnRefUrl = getPortalCurrentGameUrl();
+  const travelParams = buildPortalTravelParams(returnRefUrl);
+  let targetUrl: string | null = null;
+
+  if (portal.kind === 'start') {
+    if (!portalSession.sourceRefUrl) return false;
+    targetUrl = buildPortalRedirectUrl(portalSession.sourceRefUrl, travelParams, true);
+  } else {
+    targetUrl = buildPortalRedirectUrl(VIBE_JAM_PORTAL_URL, travelParams, false);
+  }
+
+  portalTransitionInFlight = true;
+  window.location.assign(targetUrl);
+  return true;
+}
+
+function updatePortals(now: number): boolean {
+  if (startPortalState) {
+    updatePortalVisual(startPortalState, now);
+    if (tryActivatePortal(startPortalState)) return true;
+  }
+  if (exitPortalState) {
+    updatePortalVisual(exitPortalState, now);
+    if (tryActivatePortal(exitPortalState)) return true;
+  }
+  return false;
+}
+
 function comboRepeatFalloff(hitCount: number): number {
   const falloff = spinnerConfig.comboRepeatFalloff;
   return falloff[Math.min(hitCount, falloff.length - 1)];
@@ -2937,12 +3348,12 @@ function buildComboTargets(): ComboTarget[] {
   }
 
   for (const boss of OctobossEntities.getAll()) {
-    if (!boss.alive || !canDamageOctobossCore(boss)) continue;
+    if (!boss.alive || !canComboTargetOctobossCore(boss)) continue;
     targets.push({
       id: makeComboTargetId('octoboss-core', boss.collidable),
       collidable: boss.collidable,
       getPos: () => cloneVec2(boss.collidable.pos),
-      isValid: () => boss.alive && canDamageOctobossCore(boss),
+      isValid: () => boss.alive && canComboTargetOctobossCore(boss),
       applyDamage: (damage) => {
         if (!boss.alive || !canDamageOctobossCore(boss)) return;
         boss.collidable.rpm = Math.max(
@@ -3030,8 +3441,10 @@ function buildComboTargets(): ComboTarget[] {
   return targets;
 }
 
-function getNearestComboTargets(from: Vec2): ComboTarget[] {
+function getNearestComboTargets(from: Vec2, maxRange = spinnerConfig.comboTargetRange): ComboTarget[] {
+  const maxRangeSq = maxRange * maxRange;
   return buildComboTargets()
+    .filter((target) => distanceSq(from, target.getPos()) <= maxRangeSq)
     .sort((a, b) => distanceSq(from, a.getPos()) - distanceSq(from, b.getPos()));
 }
 
@@ -3039,7 +3452,7 @@ function resolveComboStrikeTarget(): ComboTarget | null {
   const preferred = comboState.slotTargets[comboState.strikeIndex];
   if (preferred?.isValid()) return preferred;
 
-  const nearest = getNearestComboTargets(playerBody.pos);
+  const nearest = getNearestComboTargets(comboState.originPos);
   return nearest[0] ?? null;
 }
 
@@ -3213,6 +3626,10 @@ function applyComboHit(target: ComboTarget): void {
 
   comboState.hitCounts.set(target.collidable, hitCount + 1);
   target.applyDamage(damage);
+
+  if (target.id.startsWith('spider-leg') || target.id.startsWith('spider-core')) {
+    playClashSound(6.4);
+  }
 
   const hitPos = target.getPos();
   const dirX = hitPos.x - playerBody.pos.x;
@@ -3759,6 +4176,7 @@ function beginPlayerRespawnSequence(mode: 'topple' | 'pit'): void {
   playerBody.vel.x = 0;
   playerBody.vel.z = 0;
   playerWebTimer = 0;
+  playerZombieImpactGraceTimer = 0;
   enemyComboLockTimer = 0;
   playerLaserHitFxTimer = 0;
   playerKillFallTimer = 0;
@@ -3790,6 +4208,7 @@ function finishPlayerRespawn(): void {
   gameOverOverlay.style.display = 'none';
   respawnInvulnerabilityTimer = RESPAWN_INVULNERABILITY_DURATION;
   playerWebTimer = 0;
+  playerZombieImpactGraceTimer = 0;
   enemyComboLockTimer = 0;
   playerLaserHitFxTimer = 0;
   playerKillFallTimer = 0;
@@ -3890,6 +4309,7 @@ function updateLaserSpinnerBeamSystem(delta: number): void {
     );
     if (rpmDamage <= 0) continue;
 
+    playLaserHitSound(playerBody.pos, Math.min(1, rpmDamage / 18));
     playerBody.rpm = Math.max(0, playerBody.rpm - rpmDamage);
     const hitRadius = enemy.config.beamWidth * 0.5 + playerBody.radius * 0.8;
     const hitRadiusSq = hitRadius * hitRadius;
@@ -3982,6 +4402,7 @@ function updateOctobossEyeLaserSystem(delta: number): void {
     );
     if (rpmDamage <= 0) continue;
 
+    playLaserHitSound(playerBody.pos, Math.min(1, rpmDamage / 20));
     playerBody.rpm = Math.max(0, playerBody.rpm - rpmDamage);
     const rpmFrac = boss.collidable.rpm / Math.max(boss.config.coreRpmCapacity, 1);
     const phase = rpmFrac > 0.66 ? 0 : rpmFrac > 0.33 ? 1 : 2;
@@ -4171,13 +4592,23 @@ function updateSpiderCorePassThroughHits(): void {
       continue;
     }
 
-    const safePlayerRpm = Math.max(0.01, playerBody.rpm);
-    const safeEnemyRpm = Math.max(0.01, core.rpm);
-    const rpmDamage = COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
-      * approachSpeed * (playerBody.mass / core.mass)
-      * (safePlayerRpm / safeEnemyRpm) * playerBody.heatFactor
-      * getSpiderCoreDamageMultiplier(spider);
-    spider.collidable.rpm = Math.max(0, spider.collidable.rpm - rpmDamage);
+    const impactForce = Math.min(7.5, Math.max(1.35, approachSpeed * 0.9));
+    const { playerLoss, enemyLoss } = computeSpinnerDuelLoss(core, impactForce);
+    if (!isPlayerInvulnerable()) {
+      playerBody.rpm = Math.max(0, playerBody.rpm - playerLoss);
+      if (playerLoss > 2.5) notifyPlayerHit();
+    }
+    spider.collidable.rpm = Math.max(
+      0,
+      spider.collidable.rpm - enemyLoss * getSpiderCoreDamageMultiplier(spider),
+    );
+    onSpiderCoreCollision(spider);
+    playClashSound(impactForce);
+    const push = Math.max(1.4, approachSpeed * 0.18);
+    playerBody.vel.x -= nx * push;
+    playerBody.vel.z -= nz * push;
+    core.vel.x += nx * push * 0.7;
+    core.vel.z += nz * push * 0.7;
     emitSparks(point, normal, Math.floor(18 + approachSpeed * 10), Math.min(1, approachSpeed / 6));
     spider.corePassThroughCooldown = 0.16;
   }
@@ -4292,7 +4723,11 @@ function applyPlayerClashFlashes(circleHits: CircleHit[]): void {
 }
 
 function isSpinnerClashType(type: string | undefined): boolean {
-  return type === 'enemy' || type === 'laser_spinner' || type === 'hive_flock';
+  return type === 'enemy'
+    || type === 'laser_spinner'
+    || type === 'spider_core'
+    || type === 'octoboss_core'
+    || type === 'hive_flock';
 }
 
 function applyPlayerSpinnerClashSounds(circleHits: CircleHit[]): void {
@@ -4457,12 +4892,19 @@ function killZombie(zombie: ZombieState, gib: boolean): void {
 }
 
 function updateZombieSystem(delta: number): void {
+  playerZombieImpactGraceTimer = Math.max(0, playerZombieImpactGraceTimer - delta);
   for (const zombie of ZombieEntities.getAll()) {
     const attacked = updateZombieAI(zombie, playerBody.pos, delta);
     if (!attacked || isPlayerInvulnerable()) continue;
+    if (playerZombieImpactGraceTimer > 0) continue;
 
-    playerBody.rpm = Math.max(0, playerBody.rpm - zombie.config.attackDamage);
-    notifyPlayerHit();
+    // Prevent melee bite damage from feeling like collision punishment when the
+    // player is actively slamming through enemies at speed.
+    const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
+    if (playerSpeed >= 2.4) continue;
+
+    // playerBody.rpm = Math.max(0, playerBody.rpm - zombie.config.attackDamage);
+    // notifyPlayerHit();
     emitBlood({ x: playerBody.pos.x, y: 0.45, z: playerBody.pos.z }, 8, 0.42);
   }
 }
@@ -4640,9 +5082,9 @@ function checkHiveDeath(): void {
 // ─── Timer ───────────────────────────────────────────────────────────────────
 
 resetGame();
-setMenuVisible(!DEBUG_SKIP_MAIN_MENU);
+setMenuVisible(!(DEBUG_SKIP_MAIN_MENU || shouldAutostart));
 if (shouldAutostart) {
-  void startSelectedLevel();
+  void startSelectedLevel({ suppressLoadingOverlay: portalSession.arrivedViaPortal });
 }
 
 const timer = new THREE.Timer();
@@ -4789,6 +5231,7 @@ function animate(): void {
   // 2c. Kill-fall trigger zones
   updateKillFallZones(delta);
   updateFallingVictims(delta);
+  if (updatePortals(time)) return;
   if (gameOver || respawnPending) {
     syncWallScrapeLoop(0, 1);
     syncSpinnerMotorLoops([]);

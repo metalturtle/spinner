@@ -19,5 +19,5 @@ export const SPINNER_SIZE_SCALE     = 0.75; // shared player/enemy top size mult
 // ─── RPM flat world rules — do NOT scale with capacity ───────────────────────
 export const RPM_OVERDRAIN         = 0;    // extra drain/s above soft cap threshold
 export const WALL_RPM_PENALTY      = 3.0;  // flat RPM cost per wall bounce (constant by design)
-export const PICKUP_RPM_BOOST      = 20;   // flat base RPM from a normal pickup (constant by design)
-export const HYPER_BOOST           = 50;   // flat RPM from hyper pickup (bypasses scaling)
+export const PICKUP_RPM_BOOST      = 100;   // flat base RPM from a normal pickup (constant by design)
+export const HYPER_BOOST           = 200;   // flat RPM from hyper pickup (bypasses scaling)
