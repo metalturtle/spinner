@@ -4,6 +4,8 @@ import { walls, zones } from './physics';
 import { lvZ, type LevelData, type LevelPolygon } from './levelLoader';
 import { createLavaMaterial } from './lavaSurface';
 import { clearLavaEmbers, registerLavaEmitter } from './lavaEmbers';
+import { applyLaserLightToMaterial, setLaserLightBounds } from './laserLightBuffer';
+import { registerRefractionMesh, unregisterRefractionMesh } from './renderer';
 import { registerTopDownCullable } from './sceneCulling';
 import { applyWallExtrusionUVs, applyWorldUVs, getTextureScale, TextureManager } from './textureUtils';
 
@@ -16,10 +18,67 @@ const DEBUG_SHOW_NORMAL_AS_ALBEDO = false;
 const arenaRoots: THREE.Object3D[] = [];
 const lavaLightRoots: THREE.Object3D[] = [];
 const lavaLightCullHandles = new WeakMap<THREE.Object3D, () => void>();
+const defaultRefractionNormalTexture = new THREE.DataTexture(
+  new Uint8Array([128, 128, 255, 255]),
+  1,
+  1,
+  THREE.RGBAFormat,
+);
+defaultRefractionNormalTexture.needsUpdate = true;
 type LavaRegion = { contains(point: { x: number; z: number }): boolean };
 const lavaRegions: LavaRegion[] = [];
 type ArenaBounds = { minX: number; maxX: number; minZ: number; maxZ: number };
 const currentArenaBounds: ArenaBounds = { minX: -20, maxX: 20, minZ: -20, maxZ: 20 };
+
+const MIRROR_WALL_VERTEX_SHADER = `
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+  varying vec3 vWorldNormal;
+  varying vec4 vClipPos;
+
+  void main() {
+    vUv = uv;
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldPos = worldPos.xyz;
+    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    vClipPos = projectionMatrix * viewMatrix * worldPos;
+    gl_Position = vClipPos;
+  }
+`;
+
+const MIRROR_WALL_FRAGMENT_SHADER = `
+  uniform sampler2D uSceneTexture;
+  uniform sampler2D uNormalMap;
+  uniform vec2 uTexelSize;
+  uniform vec3 uTint;
+  uniform float uTintStrength;
+  uniform float uOpacity;
+  uniform float uRefractionStrength;
+
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+  varying vec3 vWorldNormal;
+  varying vec4 vClipPos;
+
+  void main() {
+    vec2 screenUv = (vClipPos.xy / max(vClipPos.w, 0.0001)) * 0.5 + 0.5;
+    vec3 viewNormal = normalize((viewMatrix * vec4(normalize(vWorldNormal), 0.0)).xyz);
+    vec3 mapNormal = texture2D(uNormalMap, vUv).xyz * 2.0 - 1.0;
+    vec2 distortionDir = viewNormal.xy * 0.65 + mapNormal.xy * 0.9;
+
+    float waveA = sin(vWorldPos.x * 1.35 + vWorldPos.y * 7.5 + vWorldPos.z * 0.8);
+    float waveB = cos(vWorldPos.z * 1.55 - vWorldPos.x * 0.95 + vWorldPos.y * 5.2);
+    vec2 waveOffset = vec2(waveA, waveB) * 0.35;
+
+    vec2 offset = (distortionDir + waveOffset) * (uRefractionStrength * uTexelSize);
+    vec2 sampleUv = clamp(screenUv + offset, vec2(0.001), vec2(0.999));
+
+    vec4 sceneSample = texture2D(uSceneTexture, sampleUv);
+    vec3 refracted = mix(sceneSample.rgb, sceneSample.rgb * uTint, uTintStrength);
+
+    gl_FragColor = vec4(refracted, uOpacity);
+  }
+`;
 
 export function getArenaBounds(): ArenaBounds {
   return currentArenaBounds;
@@ -150,7 +209,29 @@ function isMirrorWall(poly: LevelPolygon): boolean {
   return raw === true || raw === 'true' || raw === '1';
 }
 
-function extrudeWallPoly(poly: LevelPolygon, mat: THREE.MeshStandardMaterial): THREE.Mesh {
+function createMirrorWallMaterial(poly: LevelPolygon, normalMap: THREE.Texture | null): THREE.ShaderMaterial {
+  const tint = poly.color ? new THREE.Color(poly.color) : new THREE.Color(0xdff8ff);
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uSceneTexture: { value: null },
+      uNormalMap: { value: normalMap ?? defaultRefractionNormalTexture },
+      uTexelSize: { value: new THREE.Vector2(1, 1) },
+      uTint: { value: tint },
+      uTintStrength: { value: 0.18 },
+      uOpacity: { value: 0.68 },
+      uRefractionStrength: { value: 6.0 },
+    },
+    vertexShader: MIRROR_WALL_VERTEX_SHADER,
+    fragmentShader: MIRROR_WALL_FRAGMENT_SHADER,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  material.userData.isMirrorRefractionMaterial = true;
+  return material;
+}
+
+function extrudeWallPoly(poly: LevelPolygon, mat: THREE.Material): THREE.Mesh {
   const shape = makeShapeFromPolygon(poly);
   const geo = new THREE.ExtrudeGeometry(shape, { depth: WALL_HEIGHT, bevelEnabled: false });
   const textureScale = getTextureScale(poly.textureId, poly.textureScale);
@@ -160,8 +241,8 @@ function extrudeWallPoly(poly: LevelPolygon, mat: THREE.MeshStandardMaterial): T
   const mesh = new THREE.Mesh(geo, mat);
   // ExtrudeGeometry extrudes along +Z; rotate so it stands upright in XZ world
   mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = 0;
-  mesh.castShadow = true;
+  mesh.position.y = mat.transparent ? 0.01 : 0;
+  mesh.castShadow = !mat.transparent;
   mesh.receiveShadow = true;
   return mesh;
 }
@@ -178,6 +259,7 @@ function clearLavaLights(scene: THREE.Scene): void {
 function clearArenaRoots(scene: THREE.Scene): void {
   while (arenaRoots.length > 0) {
     const root = arenaRoots.pop()!;
+    unregisterRefractionMesh(root);
     scene.remove(root);
   }
 }
@@ -235,6 +317,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
   walls.length = 0;
   zones.length = 0;
   setArenaBoundsFromLevel(level);
+  setLaserLightBounds(currentArenaBounds);
 
   // ─── Separate polygons and circles by layer ──────────────────────────────
   const polys        = level.polygons ?? [];
@@ -274,6 +357,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
       );
       if (!isLava) {
         const mat = mesh.material as THREE.MeshStandardMaterial;
+        applyLaserLightToMaterial(mat);
         const normalMap = TextureManager.getNormal(poly.textureId, poly.useReliefMap);
         mat.normalMap = DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap;
         mat.bumpMap = TextureManager.getBump(poly.textureId, poly.useReliefMap);
@@ -314,6 +398,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
         makeSurfaceMat(c.color, c.textureId),
       );
       const mat = mesh.material as THREE.MeshStandardMaterial;
+      applyLaserLightToMaterial(mat);
       const normalMap = TextureManager.getNormal(c.textureId, c.useReliefMap);
       mat.normalMap = DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap;
       mat.bumpMap = TextureManager.getBump(c.textureId, c.useReliefMap);
@@ -341,6 +426,7 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
       new THREE.PlaneGeometry(maxX - minX, maxZ - minZ),
       makeSurfaceMat(),
     );
+    applyLaserLightToMaterial(mesh.material as THREE.MeshStandardMaterial);
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
     mesh.receiveShadow = true;
@@ -353,19 +439,23 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
     const mirror = isMirrorWall(poly);
     const hasTexture = Boolean(poly.textureId);
     const normalMap = TextureManager.getNormal(poly.textureId, poly.useReliefMap);
+    const bumpMap = TextureManager.getBump(poly.textureId, poly.useReliefMap);
     const map = DEBUG_SHOW_NORMAL_AS_ALBEDO && normalMap ? normalMap : TextureManager.get(poly.textureId);
-    const wallMat = new THREE.MeshStandardMaterial({
-      color: hasTexture ? 0xffffff : getSurfaceColor(poly.color, WALL_COLOR, hasTexture),
-      map,
-      normalMap: DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap,
-      bumpMap: TextureManager.getBump(poly.textureId, poly.useReliefMap),
-      emissive: mirror ? new THREE.Color(0x74cfe6) : hasTexture ? 0x000000 : new THREE.Color(WALL_EMISSIVE),
-      roughness: mirror ? 0.08 : 0.4,
-      metalness: mirror ? 0.95 : 0.6,
-    });
-    if (poly.useReliefMap) {
-      wallMat.normalScale = new THREE.Vector2(0.9, 0.9);
-      wallMat.bumpScale = 0.16;
+    const wallMat = mirror
+      ? createMirrorWallMaterial(poly, DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap)
+      : new THREE.MeshStandardMaterial({
+          color: hasTexture ? 0xffffff : getSurfaceColor(poly.color, WALL_COLOR, hasTexture),
+          map,
+          normalMap: DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap,
+          bumpMap,
+          emissive: hasTexture ? 0x000000 : new THREE.Color(WALL_EMISSIVE),
+          roughness: 0.4,
+          metalness: 0.6,
+        });
+    if (poly.useReliefMap && !mirror) {
+      const standardWallMat = wallMat as THREE.MeshStandardMaterial;
+      standardWallMat.normalScale = new THREE.Vector2(0.9, 0.9);
+      standardWallMat.bumpScale = 0.16;
     }
     // Collision: one segment per edge
     const verts = poly.vertices;
@@ -379,7 +469,9 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
     }
     if (!invisible) {
       // Visual: extrude the whole polygon shape upward (one solid mesh per polygon)
-      addArenaRoot(scene, extrudeWallPoly(poly, wallMat));
+      const wallMesh = extrudeWallPoly(poly, wallMat);
+      if (mirror) registerRefractionMesh(wallMesh);
+      addArenaRoot(scene, wallMesh);
     }
   }
 

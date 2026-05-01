@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  renderer, scene, camera,
+  renderer, renderScene, scene, camera,
   getDefaultGlobalLightingState,
   resetGlobalLightingTarget,
   setGlobalLightingTarget,
@@ -118,6 +118,9 @@ import { createLevelPointLightRoot, setupLevelLights, clearLevelLights } from '.
 import { updateLavaSurfaces } from './lavaSurface';
 import { initLavaEmbers, resetLavaEmbers, updateLavaEmbers } from './lavaEmbers';
 import { createFireTorch, destroyFireTorch, type FireTorch, updateFireTorch } from './fireTorch';
+import { addLaserLightPoint, addLaserLightSegment, beginLaserLightFrame, endLaserLightFrame } from './laserLightBuffer';
+import { createLaserGlowMaterial, createLaserRefractionMaterial } from './laserBeamMaterials';
+import { registerRefractionMesh } from './renderer';
 import { initSpaceBackground, updateSpaceBackground } from './spaceBackground';
 import {
   createSlidingDoor, defaultSlidingDoorConfig, destroySlidingDoor,
@@ -2584,27 +2587,16 @@ function createPlayerLaserVisuals(): PlayerLaserVisualRig {
 
   const beam = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshBasicMaterial({
-      color: 0xffb36b,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
+    createLaserRefractionMaterial(0xff84f4),
   );
   beam.visible = false;
   beam.renderOrder = 6;
   group.add(beam);
+  registerRefractionMesh(beam);
 
   const glow = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshBasicMaterial({
-      color: 0xfff3d1,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
+    createLaserGlowMaterial(0xffddff, 0xff5fc7),
   );
   glow.visible = false;
   glow.renderOrder = 7;
@@ -2740,6 +2732,21 @@ function pointSegmentDistanceSq(point: Vec2, seg: Segment): number {
     z: seg.p1.z + t * dz,
   };
   return distanceSq(point, closest);
+}
+
+function getClosestPointOnSegment(point: Vec2, seg: Segment): Vec2 {
+  const dx = seg.p2.x - seg.p1.x;
+  const dz = seg.p2.z - seg.p1.z;
+  const segLenSq = dx * dx + dz * dz;
+  if (segLenSq <= 0.000001) return { x: seg.p1.x, z: seg.p1.z };
+
+  const t = Math.max(0, Math.min(1,
+    ((point.x - seg.p1.x) * dx + (point.z - seg.p1.z) * dz) / segLenSq
+  ));
+  return {
+    x: seg.p1.x + t * dx,
+    z: seg.p1.z + t * dz,
+  };
 }
 
 function isPointSafeForPlayer(point: Vec2): boolean {
@@ -3582,16 +3589,81 @@ function updatePlayerLaserVisuals(time: number): void {
   }
 
   group.visible = true;
-  setBeamSegmentMesh(beam, segment.start, segment.end, spinnerConfig.spinningLaserWidth);
-  setBeamSegmentMesh(glow, segment.start, segment.end, spinnerConfig.spinningLaserWidth * 0.58);
+  setBeamSegmentMesh(beam, segment.start, segment.end, spinnerConfig.spinningLaserWidth * 1.45);
+  setBeamSegmentMesh(glow, segment.start, segment.end, spinnerConfig.spinningLaserWidth * 1.8);
+  beam.scale.y = 0.26;
+  glow.scale.y = 0.34;
 
   const pulse = 0.78 + 0.22 * Math.sin(time * Math.PI * 18);
-  const beamMat = beam.material as THREE.MeshBasicMaterial;
-  const glowMat = glow.material as THREE.MeshBasicMaterial;
-  beamMat.color.set(0xff6fe5);
-  glowMat.color.set(0xffdcfb);
-  beamMat.opacity = 0.48 * pulse;
-  glowMat.opacity = 0.92 * pulse;
+  const beamMat = beam.material as THREE.ShaderMaterial;
+  const glowMat = glow.material as THREE.ShaderMaterial;
+  beamMat.uniforms.uTime.value = time;
+  glowMat.uniforms.uTime.value = time;
+  beamMat.uniforms.uOpacity.value = 0.52 * pulse;
+  glowMat.uniforms.uOpacity.value = 1.28 * pulse;
+}
+
+function updateLaserLighting(): void {
+  beginLaserLightFrame();
+
+  if (playerLaserState.mode !== 'idle' && playerLaserState.segment) {
+    addLaserLightSegment({
+      start: playerLaserState.segment.start,
+      end: playerLaserState.segment.end,
+      width: spinnerConfig.spinningLaserWidth,
+      color: 0xff88ef,
+      intensity: 2.4,
+    });
+    addLaserLightPoint({
+      point: playerLaserState.segment.end,
+      radius: spinnerConfig.spinningLaserWidth * 3.4,
+      color: 0xffd6f9,
+      intensity: 1.6,
+    });
+  }
+
+  for (const enemy of LaserSpinnerEntities.getAll()) {
+    if (!enemy.alive || enemy.beamVisualStrength <= 0.01) continue;
+    for (const segment of enemy.beamSegments) {
+      addLaserLightSegment({
+        start: segment.start,
+        end: segment.end,
+        width: enemy.config.beamWidth,
+        color: enemy.baseColor,
+        intensity: 1.2 + enemy.beamVisualStrength * 1.25,
+      });
+      addLaserLightPoint({
+        point: segment.end,
+        radius: enemy.config.beamWidth * 2.8,
+        color: enemy.baseColor,
+        intensity: 0.9 + enemy.beamVisualStrength * 0.65,
+      });
+    }
+  }
+
+  for (const boss of OctobossEntities.getAll()) {
+    if (!boss.alive || boss.eyeLaserVisualStrength <= 0.01) continue;
+    const rpmFrac = boss.collidable.rpm / Math.max(boss.config.coreRpmCapacity, 1);
+    const phase = rpmFrac > 0.66 ? 0 : rpmFrac > 0.33 ? 1 : 2;
+    const beamWidth = boss.config.eyeLaserWidth[phase];
+    for (const segment of boss.eyeLaserSegments) {
+      addLaserLightSegment({
+        start: segment.start,
+        end: segment.end,
+        width: beamWidth,
+        color: 0xff9542,
+        intensity: 1.4 + boss.eyeLaserVisualStrength * 1.5,
+      });
+      addLaserLightPoint({
+        point: segment.end,
+        radius: beamWidth * 3.2,
+        color: 0xffc889,
+        intensity: 1.0 + boss.eyeLaserVisualStrength * 0.85,
+      });
+    }
+  }
+
+  endLaserLightFrame();
 }
 
 function updatePlayerHeatAuraVisuals(time: number): void {
@@ -3757,6 +3829,52 @@ function updateTurretSystem(delta: number): void {
   updateExplosions(explosions, delta);
 }
 
+function applyLaserHitToPlayer(
+  contactPoint: Vec2,
+  beamStart: Vec2,
+  beamEnd: Vec2,
+  delta: number,
+  knockbackPerSecond: number,
+  flashIntensity: number,
+  sparkCount: number,
+  plasmaCount: number,
+  fxHeight: number,
+): void {
+  const beamDx = beamEnd.x - beamStart.x;
+  const beamDz = beamEnd.z - beamStart.z;
+  const beamLen = Math.hypot(beamDx, beamDz) || 1;
+
+  let nx = playerBody.pos.x - contactPoint.x;
+  let nz = playerBody.pos.z - contactPoint.z;
+  let normalLen = Math.hypot(nx, nz);
+  if (normalLen < 0.0001) {
+    nx = -beamDz / beamLen;
+    nz = beamDx / beamLen;
+    normalLen = Math.hypot(nx, nz) || 1;
+  }
+  nx /= normalLen;
+  nz /= normalLen;
+
+  playerBody.vel.x *= 0.9;
+  playerBody.vel.z *= 0.9;
+  playerBody.vel.x += nx * knockbackPerSecond * delta;
+  playerBody.vel.z += nz * knockbackPerSecond * delta;
+
+  if (playerLaserHitFxTimer > 0) return;
+
+  notifyPlayerHit();
+  triggerCameraShake(flashIntensity * 0.9);
+  emitClashFlash({ x: contactPoint.x, y: fxHeight, z: contactPoint.z }, flashIntensity);
+  emitSparks(
+    { x: contactPoint.x, y: fxHeight, z: contactPoint.z },
+    { x: nx, y: 0, z: nz },
+    sparkCount,
+    flashIntensity,
+  );
+  emitPlasma({ x: contactPoint.x, y: fxHeight, z: contactPoint.z }, plasmaCount, flashIntensity * 0.42);
+  playerLaserHitFxTimer = 0.08;
+}
+
 function updateLaserSpinnerBeamSystem(delta: number): void {
   playerLaserHitFxTimer = Math.max(0, playerLaserHitFxTimer - delta);
 
@@ -3773,10 +3891,24 @@ function updateLaserSpinnerBeamSystem(delta: number): void {
     if (rpmDamage <= 0) continue;
 
     playerBody.rpm = Math.max(0, playerBody.rpm - rpmDamage);
-    if (playerLaserHitFxTimer <= 0) {
-      notifyPlayerHit();
-      emitPlasma({ x: playerBody.pos.x, y: 0.45, z: playerBody.pos.z }, 10, 0.32);
-      playerLaserHitFxTimer = 0.12;
+    const hitRadius = enemy.config.beamWidth * 0.5 + playerBody.radius * 0.8;
+    const hitRadiusSq = hitRadius * hitRadius;
+    for (const segment of enemy.beamSegments) {
+      const beamSegment: Segment = { p1: segment.start, p2: segment.end };
+      if (pointSegmentDistanceSq(playerBody.pos, beamSegment) > hitRadiusSq) continue;
+      const contactPoint = getClosestPointOnSegment(playerBody.pos, beamSegment);
+      applyLaserHitToPlayer(
+        contactPoint,
+        segment.start,
+        segment.end,
+        delta,
+        32.0,
+        0.34,
+        9,
+        8,
+        0.46,
+      );
+      break;
     }
   }
 }
@@ -3851,8 +3983,27 @@ function updateOctobossEyeLaserSystem(delta: number): void {
     if (rpmDamage <= 0) continue;
 
     playerBody.rpm = Math.max(0, playerBody.rpm - rpmDamage);
-    notifyPlayerHit();
-    emitPlasma({ x: playerBody.pos.x, y: 0.6, z: playerBody.pos.z }, 12, 0.38);
+    const rpmFrac = boss.collidable.rpm / Math.max(boss.config.coreRpmCapacity, 1);
+    const phase = rpmFrac > 0.66 ? 0 : rpmFrac > 0.33 ? 1 : 2;
+    const hitRadius = boss.config.eyeLaserWidth[phase] * 0.5 + playerBody.radius * 0.8;
+    const hitRadiusSq = hitRadius * hitRadius;
+    for (const segment of boss.eyeLaserSegments) {
+      const beamSegment: Segment = { p1: segment.start, p2: segment.end };
+      if (pointSegmentDistanceSq(playerBody.pos, beamSegment) > hitRadiusSq) continue;
+      const contactPoint = getClosestPointOnSegment(playerBody.pos, beamSegment);
+      applyLaserHitToPlayer(
+        contactPoint,
+        segment.start,
+        segment.end,
+        delta,
+        40.0,
+        0.42,
+        12,
+        10,
+        0.62,
+      );
+      break;
+    }
   }
 }
 
@@ -4535,7 +4686,7 @@ function animate(): void {
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
     updateGlobalLighting(delta);
     profiler?.nextPhase('render');
-    renderer.render(scene, camera);
+    renderScene(scene, camera);
     finishProfilerFrame();
     return;
   }
@@ -4558,7 +4709,7 @@ function animate(): void {
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
     updateGlobalLighting(delta);
     profiler?.nextPhase('render');
-    renderer.render(scene, camera);
+    renderScene(scene, camera);
     finishProfilerFrame();
     return;
   }
@@ -4581,7 +4732,7 @@ function animate(): void {
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
     updateGlobalLighting(delta);
     profiler?.nextPhase('render');
-    renderer.render(scene, camera);
+    renderScene(scene, camera);
     finishProfilerFrame();
     return;
   }
@@ -4654,7 +4805,7 @@ function animate(): void {
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
     updateGlobalLighting(delta);
     profiler?.nextPhase('render');
-    renderer.render(scene, camera);
+    renderScene(scene, camera);
     finishProfilerFrame();
     return;
   }
@@ -4756,7 +4907,7 @@ function animate(): void {
     updateTopDownCulling(camera, SCENE_CULL_PADDING);
     updateGlobalLighting(delta);
     profiler?.nextPhase('render');
-    renderer.render(scene, camera);
+    renderScene(scene, camera);
     finishProfilerFrame();
     return;
   }
@@ -4805,11 +4956,12 @@ function animate(): void {
     rpmCapacity: playerBody.rpmCapacity,
     spinSign: 1,
   });
+  updateLaserLighting();
   syncSpinnerMotorLoops(buildSpinnerMotorLoops());
   updateTopDownCulling(camera, SCENE_CULL_PADDING);
   updateGlobalLighting(delta);
   profiler?.nextPhase('render');
-  renderer.render(scene, camera);
+  renderScene(scene, camera);
   finishProfilerFrame();
 }
 

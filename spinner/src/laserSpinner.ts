@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { createTop, TOP_BASE_RADIUS, type TopResult } from './top';
 import { updateSpinnerVisuals, type SpinnerTiltState } from './spinnerVisuals';
-import { scene } from './renderer';
+import { registerRefractionMesh, scene, unregisterRefractionMesh } from './renderer';
 import { getArenaBounds } from './arena';
 import { collidables, type Collidable, type Segment, type Vec2 } from './physics';
+import { createLaserGlowMaterial, createLaserRefractionMaterial } from './laserBeamMaterials';
 import {
   applySpinnerWallAvoidance,
   beginSpinnerBurst,
@@ -166,28 +167,17 @@ function buildBeamVisuals(maxSegments: number, color: number): {
   for (let i = 0; i < maxSegments; i += 1) {
     const beam = new THREE.Mesh(
       new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshBasicMaterial({
-        color,
-        transparent: true,
-        opacity: 0,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
+      createLaserRefractionMaterial(color),
     );
     beam.visible = false;
     beam.renderOrder = 4;
     group.add(beam);
     beamMeshes.push(beam);
+    registerRefractionMesh(beam);
 
     const glow = new THREE.Mesh(
       new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshBasicMaterial({
-        color: 0xfff1d6,
-        transparent: true,
-        opacity: 0,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
+      createLaserGlowMaterial(0xfff5f1, color),
     );
     glow.visible = false;
     glow.renderOrder = 5;
@@ -565,16 +555,19 @@ export function updateLaserSpinnerVisuals(enemy: LaserSpinnerState, time: number
       continue;
     }
 
-    setBeamSegmentMesh(beam, seg.start, seg.end, enemy.config.beamWidth);
-    setBeamSegmentMesh(glow, seg.start, seg.end, enemy.config.beamWidth * 0.52);
-    glow.position.y = 0.26;
-    glow.scale.y = 0.06;
+    setBeamSegmentMesh(beam, seg.start, seg.end, enemy.config.beamWidth * 1.35);
+    setBeamSegmentMesh(glow, seg.start, seg.end, enemy.config.beamWidth * 1.72);
+    beam.scale.y = 0.24;
+    glow.position.y = 0.24;
+    glow.scale.y = 0.3;
 
-    const beamMat = beam.material as THREE.MeshBasicMaterial;
-    const glowMat = glow.material as THREE.MeshBasicMaterial;
+    const beamMat = beam.material as THREE.ShaderMaterial;
+    const glowMat = glow.material as THREE.ShaderMaterial;
     const pulse = 0.82 + 0.18 * Math.sin(time * Math.PI * (enemy.beamPhase === 'firing' ? 24 : 10) + i * 0.4);
-    beamMat.opacity = enemy.beamVisualStrength * 0.4 * pulse;
-    glowMat.opacity = enemy.beamVisualStrength * 0.95 * pulse;
+    beamMat.uniforms.uTime.value = time;
+    glowMat.uniforms.uTime.value = time;
+    beamMat.uniforms.uOpacity.value = enemy.beamVisualStrength * 0.42 * pulse;
+    glowMat.uniforms.uOpacity.value = enemy.beamVisualStrength * 1.12 * pulse;
   }
 }
 
@@ -601,6 +594,7 @@ export function destroyLaserSpinner(enemy: LaserSpinnerState): void {
   untagCollidable(enemy.collidable);
   scene.remove(enemy.topResult.tiltGroup);
   scene.remove(enemy.beamGroup);
+  unregisterRefractionMesh(enemy.beamGroup);
   const idx = collidables.indexOf(enemy.collidable);
   if (idx !== -1) collidables.splice(idx, 1);
 }

@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { scene } from './renderer';
+import { registerRefractionMesh, scene, unregisterRefractionMesh } from './renderer';
 import { collidables, type Collidable, type Segment, type Vec2 } from './physics';
 import { createHpBar, updateHpBar } from './hpBar';
 import { getArenaBounds } from './arena';
+import { createLaserGlowMaterial, createLaserRefractionMaterial } from './laserBeamMaterials';
 import {
   nextEntityId,
   registerMovement,
@@ -110,7 +111,7 @@ export const OCTOBOSS_TIER_1: OctobossConfig = {
   doubleRecover: [0.5, 0.42, 0.34],
   exposeDuration: [1.25, 1.05, 0.9],
   attackCooldown: [0.55, 0.42, 0.32],
-  eyeLaserRange: 36,
+  eyeLaserRange: 128,
   eyeLaserWidth: [0.44, 0.5, 0.56],
   eyeLaserDamagePerSecond: [18, 24, 30],
   eyeLaserWindup: [0.78, 0.66, 0.56],
@@ -400,28 +401,17 @@ function buildEyeLaserVisuals(color: number): {
   for (let i = 0; i < 1; i += 1) {
     const beam = new THREE.Mesh(
       new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshBasicMaterial({
-        color,
-        transparent: true,
-        opacity: 0,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
+      createLaserRefractionMaterial(color),
     );
     beam.visible = false;
     beam.renderOrder = 4;
     group.add(beam);
     beamMeshes.push(beam);
+    registerRefractionMesh(beam);
 
     const glow = new THREE.Mesh(
       new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshBasicMaterial({
-        color: 0xfff1d6,
-        transparent: true,
-        opacity: 0,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
+      createLaserGlowMaterial(0xfff6e2, color),
     );
     glow.visible = false;
     glow.renderOrder = 5;
@@ -1515,16 +1505,20 @@ export function updateOctobossVisuals(
     }
 
     const beamWidth = boss.config.eyeLaserWidth[phase];
-    setBeamSegmentMesh(beam, seg.start, seg.end, beamWidth);
-    setBeamSegmentMesh(glow, seg.start, seg.end, beamWidth * 0.54);
-    glow.position.y = 2.04;
-    glow.scale.y = 0.08;
+    setBeamSegmentMesh(beam, seg.start, seg.end, beamWidth * 1.38);
+    setBeamSegmentMesh(glow, seg.start, seg.end, beamWidth * 1.86);
+    beam.position.y = 1.98;
+    beam.scale.y = 0.24;
+    glow.position.y = 2.02;
+    glow.scale.y = 0.34;
 
-    const beamMat = beam.material as THREE.MeshBasicMaterial;
-    const glowMat = glow.material as THREE.MeshBasicMaterial;
+    const beamMat = beam.material as THREE.ShaderMaterial;
+    const glowMat = glow.material as THREE.ShaderMaterial;
     const pulse = 0.82 + 0.18 * Math.sin(time * Math.PI * (boss.eyeLaserPhase === 'firing' ? 24 : 10));
-    beamMat.opacity = boss.eyeLaserVisualStrength * 0.5 * pulse;
-    glowMat.opacity = boss.eyeLaserVisualStrength * 1.0 * pulse;
+    beamMat.uniforms.uTime.value = time;
+    glowMat.uniforms.uTime.value = time;
+    beamMat.uniforms.uOpacity.value = boss.eyeLaserVisualStrength * 0.54 * pulse;
+    glowMat.uniforms.uOpacity.value = boss.eyeLaserVisualStrength * 1.18 * pulse;
   }
 
   updateHpBar(boss.hpBarFill, rpmFrac, 1.4);
@@ -1538,6 +1532,7 @@ export function destroyOctoboss(boss: OctobossState): void {
   boss.alive = false;
   deregisterEntity(boss.id);
   untagCollidable(boss.collidable);
+  unregisterRefractionMesh(boss.eyeLaserGroup);
   const coreIdx = collidables.indexOf(boss.collidable);
   if (coreIdx !== -1) collidables.splice(coreIdx, 1);
 

@@ -143,10 +143,12 @@ backburner:
     enemy spinner also effects ember
     drag selection in level editor
     saving custom level to cache and custom level option in main menu
+    eventual health recovery
 
 
 bugs:
     sometimes entities slip through walls
+    blood drag doesnt stop
 
 
 done:

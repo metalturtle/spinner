@@ -5,6 +5,13 @@ scene.background = null;
 
 const MAX_RENDER_PIXEL_RATIO = 1.25;
 const SHADOW_MAP_SIZE = 1024;
+const refractionTargetSize = new THREE.Vector2();
+const refractionTexelSize = new THREE.Vector2(1, 1);
+
+interface RefractionUniforms {
+  uSceneTexture: { value: THREE.Texture | null };
+  uTexelSize: { value: THREE.Vector2 };
+}
 
 function getRenderPixelRatio(): number {
   return Math.min(window.devicePixelRatio, MAX_RENDER_PIXEL_RATIO);
@@ -24,6 +31,85 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x000000, 0);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const refractionCaptureTarget = new THREE.WebGLRenderTarget(1, 1, {
+  minFilter: THREE.LinearFilter,
+  magFilter: THREE.LinearFilter,
+  depthBuffer: true,
+  stencilBuffer: false,
+});
+const refractionMeshes = new Set<THREE.Mesh>();
+const refractionMaterials = new Set<THREE.ShaderMaterial>();
+
+function isRefractionMaterial(material: THREE.Material): material is THREE.ShaderMaterial {
+  return material instanceof THREE.ShaderMaterial && material.userData.isMirrorRefractionMaterial === true;
+}
+
+function ensureRefractionTargetSize(): void {
+  renderer.getDrawingBufferSize(refractionTargetSize);
+  const width = Math.max(1, Math.floor(refractionTargetSize.x));
+  const height = Math.max(1, Math.floor(refractionTargetSize.y));
+  if (refractionCaptureTarget.width !== width || refractionCaptureTarget.height !== height) {
+    refractionCaptureTarget.setSize(width, height);
+  }
+  refractionTexelSize.set(1 / width, 1 / height);
+}
+
+export function registerRefractionMesh(mesh: THREE.Mesh): void {
+  refractionMeshes.add(mesh);
+  const material = mesh.material;
+  if (Array.isArray(material)) {
+    for (const entry of material) {
+      if (isRefractionMaterial(entry)) refractionMaterials.add(entry);
+    }
+    return;
+  }
+  if (isRefractionMaterial(material)) refractionMaterials.add(material);
+}
+
+export function unregisterRefractionMesh(root: THREE.Object3D): void {
+  root.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    refractionMeshes.delete(obj);
+    const material = obj.material;
+    if (Array.isArray(material)) {
+      for (const entry of material) {
+        if (isRefractionMaterial(entry)) refractionMaterials.delete(entry);
+      }
+      return;
+    }
+    if (isRefractionMaterial(material)) refractionMaterials.delete(material);
+  });
+}
+
+export function renderScene(activeScene: THREE.Scene, activeCamera: THREE.Camera): void {
+  if (refractionMeshes.size === 0) {
+    renderer.render(activeScene, activeCamera);
+    return;
+  }
+
+  ensureRefractionTargetSize();
+
+  const visibility = new Map<THREE.Mesh, boolean>();
+  for (const mesh of refractionMeshes) {
+    visibility.set(mesh, mesh.visible);
+    mesh.visible = false;
+  }
+
+  renderer.setRenderTarget(refractionCaptureTarget);
+  renderer.clear(true, true, true);
+  renderer.render(activeScene, activeCamera);
+
+  for (const [mesh, wasVisible] of visibility) mesh.visible = wasVisible;
+
+  for (const material of refractionMaterials) {
+    const uniforms = material.uniforms as unknown as RefractionUniforms;
+    uniforms.uSceneTexture.value = refractionCaptureTarget.texture;
+    uniforms.uTexelSize.value.copy(refractionTexelSize);
+  }
+
+  renderer.setRenderTarget(null);
+  renderer.render(activeScene, activeCamera);
+}
 
 const container = document.getElementById('canvas-container')!;
 container.appendChild(renderer.domElement);

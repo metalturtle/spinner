@@ -3816,7 +3816,8 @@
         }
       ],
       "properties": {},
-      "color": "#33cc66"
+      "color": "#33cc66",
+      "textureId": "sci-fi"
     },
     {
       "id": "poly_momfwto3dwr3l6",
@@ -3841,7 +3842,8 @@
         }
       ],
       "properties": {},
-      "color": "#cc33ff"
+      "color": "#cc33ff",
+      "textureId": "sci-fi"
     },
     {
       "id": "poly_momfxmpxhcupus",
@@ -3891,7 +3893,8 @@
         }
       ],
       "properties": {},
-      "color": "#33cccc"
+      "color": "#33cccc",
+      "textureId": "sci-fi"
     },
     {
       "id": "poly_momfy0sowzkro6",
@@ -3916,7 +3919,8 @@
         }
       ],
       "properties": {},
-      "color": "#3388ff"
+      "color": "#3388ff",
+      "textureId": "sci-fi"
     },
     {
       "id": "poly_momfyvkawa5kl1",
@@ -4049,7 +4053,8 @@
         }
       ],
       "properties": {},
-      "color": "#33cccc"
+      "color": "#33cccc",
+      "textureId": "sci-fi"
     },
     {
       "id": "poly_momfzqbp73v9vi",
@@ -4101,7 +4106,8 @@
         }
       ],
       "properties": {},
-      "color": "#ff5533"
+      "color": "#ff5533",
+      "textureId": "sci-fi"
     },
     {
       "id": "poly_momg00ro7il9yn",
@@ -4207,7 +4213,8 @@
         }
       ],
       "properties": {},
-      "color": "#33cccc"
+      "color": "#33cccc",
+      "textureId": "sci-fi"
     },
     {
       "id": "poly_momg0mmpeww8un",
@@ -4232,7 +4239,8 @@
         }
       ],
       "properties": {},
-      "color": "#3388ff"
+      "color": "#3388ff",
+      "textureId": "sci-fi"
     },
     {
       "id": "poly_momg0tuysrhwlo",
@@ -4257,7 +4265,8 @@
         }
       ],
       "properties": {},
-      "color": "#ff5533"
+      "color": "#ff5533",
+      "textureId": "sci-fi"
     },
     {
       "id": "poly_momg0ylqttqon8",
@@ -4336,7 +4345,9 @@
         }
       ],
       "properties": {},
-      "color": "#ffcc33"
+      "color": "#ffcc33",
+      "textureId": "sci-fi",
+      "textureScale": 4
     },
     {
       "id": "poly_momg1dapla1dgk",
@@ -4471,7 +4482,8 @@
       "properties": {
         "mirror": "true"
       },
-      "color": "#cc33ff"
+      "color": "#cc33ff",
+      "textureId": "sci-fi"
     },
     {
       "id": "poly_momg2r13q8bnb4",
@@ -4506,20 +4518,20 @@
       "layer": "trigger",
       "vertices": [
         {
-          "x": 150,
-          "y": 213
+          "x": 147,
+          "y": 212
         },
         {
-          "x": 243,
-          "y": 213
+          "x": 240,
+          "y": 212
         },
         {
-          "x": 243,
-          "y": 283
+          "x": 240,
+          "y": 282
         },
         {
-          "x": 150,
-          "y": 283
+          "x": 147,
+          "y": 282
         }
       ],
       "properties": {
@@ -5168,6 +5180,57 @@
       "position": {
         "x": 180,
         "y": 236
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#5274ff",
+        "intensity": "20.0",
+        "range": "20",
+        "decay": "0.5",
+        "height": "1.5"
+      }
+    },
+    {
+      "id": "ent_momhrn983ywx6f",
+      "name": "Point Light 42",
+      "type": "light_point",
+      "position": {
+        "x": 204,
+        "y": 228
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#5274ff",
+        "intensity": "20.0",
+        "range": "20",
+        "decay": "0.5",
+        "height": "1.5"
+      }
+    },
+    {
+      "id": "ent_momhso749rsl2q",
+      "name": "Point Light 43",
+      "type": "light_point",
+      "position": {
+        "x": 216,
+        "y": 248
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#5274ff",
+        "intensity": "20.0",
+        "range": "20",
+        "decay": "0.5",
+        "height": "1.5"
+      }
+    },
+    {
+      "id": "ent_momhtdoam2wk1c",
+      "name": "Point Light 44",
+      "type": "light_point",
+      "position": {
+        "x": 194,
+        "y": 271
       },
       "rotation": 0,
       "properties": {
