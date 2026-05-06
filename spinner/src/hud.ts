@@ -6,9 +6,60 @@ let labelEl!: HTMLDivElement;
 let fpsEl!: HTMLDivElement;
 let wrapEl!: HTMLDivElement;
 let smoothedFps = 60;
+let fpsAccumTime = 0;
+const FPS_TEXT_INTERVAL_SEC = 0.2;
 const abilityWrapEls: HTMLDivElement[] = [];
 const abilityFillEls: HTMLDivElement[] = [];
 const abilityLabelEls: HTMLDivElement[] = [];
+
+// Last-written caches — DOM style writes are expensive even when the value is
+// unchanged because the browser still flags affected elements for re-style /
+// re-layout. Skip writes when the value matches what we last set.
+const lastSingle: Record<string, string> = {};
+const lastByIndex: Record<string, string[]> = {
+  abilityWidth: [],
+  abilityFill: [],
+  abilityShadow: [],
+  abilityLabelText: [],
+  abilityLabelColor: [],
+};
+
+function setTextOnce(el: HTMLElement, key: string, value: string): void {
+  if (lastSingle[key] === value) return;
+  lastSingle[key] = value;
+  el.textContent = value;
+}
+
+function setStyleOnce(
+  el: HTMLElement,
+  prop: 'color' | 'textShadow' | 'width' | 'backgroundColor' | 'boxShadow',
+  key: string,
+  value: string,
+): void {
+  if (lastSingle[key] === value) return;
+  lastSingle[key] = value;
+  el.style[prop] = value;
+}
+
+function setTextAt(el: HTMLElement, bucket: string, idx: number, value: string): void {
+  const arr = lastByIndex[bucket];
+  if (arr[idx] === value) return;
+  arr[idx] = value;
+  el.textContent = value;
+}
+
+function setStyleAt(
+  el: HTMLElement,
+  prop: 'color' | 'textShadow' | 'width' | 'backgroundColor' | 'boxShadow',
+  bucket: string,
+  idx: number,
+  value: string,
+): void {
+  const arr = lastByIndex[bucket];
+  if (arr[idx] === value) return;
+  arr[idx] = value;
+  el.style[prop] = value;
+}
 
 export interface AbilityHudState {
   keyLabel: string;
@@ -106,27 +157,35 @@ export function updateHud(rpm: number, time: number, delta: number, abilities: A
   const instantFps = delta > 0 ? 1 / delta : smoothedFps;
   smoothedFps += (instantFps - smoothedFps) * 0.1;
 
-  el.textContent = value.toString();
-  fpsEl.textContent = `FPS ${Math.round(smoothedFps)}`;
+  setTextOnce(el, 'rpmText', value.toString());
+  // Throttle the FPS readout — natural ±1 jitter every frame would otherwise
+  // trigger a textContent write + style recalc on every tick.
+  fpsAccumTime += delta;
+  if (fpsAccumTime >= FPS_TEXT_INTERVAL_SEC) {
+    fpsAccumTime = 0;
+    setTextOnce(fpsEl, 'fpsText', `FPS ${Math.round(smoothedFps)}`);
+  }
 
+  let color: string;
+  let shadow: string;
   if (rpm > softCap) {
-    // Overcharged — cyan/white pulse
     const pulse = 0.75 + 0.25 * Math.sin(time * 6 * Math.PI * 2);
     const g = Math.round(220 * pulse);
     const b = Math.round(255 * pulse);
-    el.style.color      = `rgb(0,${g},${b})`;
-    el.style.textShadow = `0 0 22px rgba(0,${g},${b},${pulse * 0.9})`;
+    color  = `rgb(0,${g},${b})`;
+    shadow = `0 0 22px rgba(0,${g},${b},${pulse * 0.9})`;
   } else if (fraction < 0.25 && fraction > 0) {
-    // Critical pulse
     const pulse = 0.6 + 0.4 * Math.sin(time * 8 * Math.PI * 2);
     const r = Math.round(233 * pulse);
-    el.style.color      = `rgb(${r},${Math.round(69 * pulse)},${Math.round(96 * pulse)})`;
-    el.style.textShadow = `0 0 18px rgba(233,69,96,${pulse * 0.8})`;
+    color  = `rgb(${r},${Math.round(69 * pulse)},${Math.round(96 * pulse)})`;
+    shadow = `0 0 18px rgba(233,69,96,${pulse * 0.8})`;
   } else {
     const [r, g, b] = rpmRgb(fraction);
-    el.style.color      = `rgb(${r},${g},${b})`;
-    el.style.textShadow = `0 0 14px rgba(${r},${g},${b},0.5)`;
+    color  = `rgb(${r},${g},${b})`;
+    shadow = `0 0 14px rgba(${r},${g},${b},0.5)`;
   }
+  setStyleOnce(el, 'color', 'rpmColor', color);
+  setStyleOnce(el, 'textShadow', 'rpmShadow', shadow);
 
   for (let i = 0; i < abilityFillEls.length; i += 1) {
     const ability = abilities[i];
@@ -135,41 +194,52 @@ export function updateHud(rpm: number, time: number, delta: number, abilities: A
     const palette = getAbilityPalette(ability?.accent ?? 'combo');
 
     if (!ability) {
-      fill.style.width = '0%';
-      fill.style.backgroundColor = '#445566';
-      fill.style.boxShadow = 'none';
-      label.textContent = '';
+      setStyleAt(fill, 'width', 'abilityWidth', i, '0%');
+      setStyleAt(fill, 'backgroundColor', 'abilityFill', i, '#445566');
+      setStyleAt(fill, 'boxShadow', 'abilityShadow', i, 'none');
+      setTextAt(label, 'abilityLabelText', i, '');
       continue;
     }
 
-    fill.style.width = `${Math.max(0, Math.min(1, ability.cooldownFraction)) * 100}%`;
+    // Round to 0.1% increments — width changes below that aren't visible and
+    // would otherwise force a layout every frame during cooldown.
+    const widthPct = Math.round(Math.max(0, Math.min(1, ability.cooldownFraction)) * 1000) / 10;
+    setStyleAt(fill, 'width', 'abilityWidth', i, `${widthPct}%`);
 
+    let bg: string;
+    let glow: string;
+    let text: string;
+    let labelColor: string;
     if (!ability.unlocked) {
-      fill.style.backgroundColor = '#4f6370';
-      fill.style.boxShadow = '0 0 8px rgba(79,99,112,0.25)';
-      label.textContent = `${ability.keyLabel} LOCKED`;
-      label.style.color = '#8fa4af';
+      bg = '#4f6370';
+      glow = '0 0 8px rgba(79,99,112,0.25)';
+      text = `${ability.keyLabel} LOCKED`;
+      labelColor = '#8fa4af';
     } else if (ability.active) {
-      fill.style.backgroundColor = palette.activeFill;
-      fill.style.boxShadow = palette.activeGlow;
-      label.textContent = `${ability.keyLabel} ACTIVE`;
-      label.style.color = '#f6fbff';
+      bg = palette.activeFill;
+      glow = palette.activeGlow;
+      text = `${ability.keyLabel} ACTIVE`;
+      labelColor = '#f6fbff';
     } else if (ability.ready && !ability.blockedByRpm) {
-      fill.style.backgroundColor = palette.readyFill;
-      fill.style.boxShadow = palette.readyGlow;
-      label.textContent = `${ability.keyLabel} READY`;
-      label.style.color = '#f1f8fc';
+      bg = palette.readyFill;
+      glow = palette.readyGlow;
+      text = `${ability.keyLabel} READY`;
+      labelColor = '#f1f8fc';
     } else if (ability.ready) {
-      fill.style.backgroundColor = '#ff9a5c';
-      fill.style.boxShadow = '0 0 10px rgba(255,154,92,0.55)';
-      label.textContent = `${ability.keyLabel} LOW RPM`;
-      label.style.color = '#ffbf97';
+      bg = '#ff9a5c';
+      glow = '0 0 10px rgba(255,154,92,0.55)';
+      text = `${ability.keyLabel} LOW RPM`;
+      labelColor = '#ffbf97';
     } else {
-      fill.style.backgroundColor = '#8ac6df';
-      fill.style.boxShadow = '0 0 8px rgba(138,198,223,0.35)';
-      label.textContent = `${ability.keyLabel} CHARGING`;
-      label.style.color = '#a9c6d4';
+      bg = '#8ac6df';
+      glow = '0 0 8px rgba(138,198,223,0.35)';
+      text = `${ability.keyLabel} CHARGING`;
+      labelColor = '#a9c6d4';
     }
+    setStyleAt(fill, 'backgroundColor', 'abilityFill', i, bg);
+    setStyleAt(fill, 'boxShadow', 'abilityShadow', i, glow);
+    setTextAt(label, 'abilityLabelText', i, text);
+    setStyleAt(label, 'color', 'abilityLabelColor', i, labelColor);
   }
 }
 

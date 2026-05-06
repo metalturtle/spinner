@@ -29,16 +29,32 @@ function isSpinnerDuelType(type: string | undefined): boolean {
 }
 
 export function computeSpinnerDuelLoss(enemy: Collidable, impactForce: number): { playerLoss: number; enemyLoss: number } {
-  const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
-  const enemySpeed = Math.hypot(enemy.vel.x, enemy.vel.z);
+  // Below this closing velocity the contact is a scrape (e.g. player dragging the enemy
+  // around) rather than a clash — drains nothing on either side.
+  if (impactForce < spinnerConfig.duelMinImpactForce) {
+    return { playerLoss: 0, enemyLoss: 0 };
+  }
+  // Intent is each body's velocity component along the contact normal toward
+  // the other body. Sideways or away-from-target motion doesn't count as
+  // "ramming" — only the velocity actually directed AT the other spinner.
+  // This is what makes the rammer take little damage when slamming a static
+  // target: their attack damage scales with their inbound velocity, while the
+  // target's attack damage (their inbound velocity) is ~0.
+  const dx = enemy.pos.x - playerBody.pos.x;
+  const dz = enemy.pos.z - playerBody.pos.z;
+  const dist = Math.hypot(dx, dz) || 1;
+  const nx = dx / dist;
+  const nz = dz / dist;
+  const playerVelTowardEnemy = Math.max(0, playerBody.vel.x * nx + playerBody.vel.z * nz);
+  const enemyVelTowardPlayer = Math.max(0, -(enemy.vel.x * nx + enemy.vel.z * nz));
   const playerFrac = clamp(playerBody.rpm / Math.max(playerBody.rpmCapacity, 1), 0.05, 1.5);
   const enemyFrac = clamp(enemy.rpm / Math.max(enemy.rpmCapacity, 1), 0.05, 1.5);
   const rpmEdge = clamp(playerFrac - enemyFrac, -0.4, 0.4);
   const sharedCapacity = Math.sqrt(playerBody.rpmCapacity * enemy.rpmCapacity);
-  const cappedImpact = clamp(impactForce, 0.65, spinnerConfig.duelImpactCap);
+  const cappedImpact = Math.min(impactForce, spinnerConfig.duelImpactCap);
   const clashBase = COLLISION_DAMAGE_RATIO * sharedCapacity * cappedImpact;
-  const playerIntent = clamp(playerSpeed / Math.max(spinnerConfig.duelSpeedReference, 0.001), 0, 1.35);
-  const enemyIntent = clamp(enemySpeed / Math.max(spinnerConfig.duelSpeedReference, 0.001), 0, 1.35);
+  const playerIntent = clamp(playerVelTowardEnemy / Math.max(spinnerConfig.duelSpeedReference, 0.001), 0, 1.35);
+  const enemyIntent = clamp(enemyVelTowardPlayer / Math.max(spinnerConfig.duelSpeedReference, 0.001), 0, 1.35);
   const playerRpmMult = 1 + Math.max(0, rpmEdge) * spinnerConfig.duelRpmInfluenceScale;
   const enemyRpmMult = 1 + Math.max(0, -rpmEdge) * spinnerConfig.duelRpmInfluenceScale;
   const sharedLoss = clashBase * spinnerConfig.duelSharedDamageScale * (0.7 + Math.abs(rpmEdge) * 0.2);
@@ -48,11 +64,49 @@ export function computeSpinnerDuelLoss(enemy: Collidable, impactForce: number): 
   const enemyRecoil = clashBase * 0.03 * enemyIntent;
   const minLoss = Math.max(0.3, clashBase * 0.02);
   const maxLoss = clashBase * 1.6;
+  const protectionFactor = enemy.protectionFactor ?? 1;
+
+  if(enemy.protectionFactor) {
+    console.log("applying protection factor")
+  }
+
+  // Per-side i-frames: a body that recently took a duel hit is immune to
+  // further duel damage until the cooldown expires. Stops sustained pushing
+  // from causing rapid microhits while the impulse keeps separating and
+  // reconnecting the bodies. Caller is responsible for refreshing the
+  // cooldown after a hit lands (see refreshDuelHitCooldowns).
+  const playerInCooldown = (playerBody.duelHitCooldown ?? 0) > 0;
+  const enemyInCooldown  = (enemy.duelHitCooldown ?? 0) > 0;
 
   return {
-    playerLoss: clamp(sharedLoss + enemyAttack + playerRecoil, minLoss, maxLoss),
-    enemyLoss: clamp(sharedLoss + playerAttack + enemyRecoil, minLoss, maxLoss),
+    playerLoss: playerInCooldown ? 0 : clamp(sharedLoss + enemyAttack + playerRecoil, minLoss, maxLoss),
+    enemyLoss:  enemyInCooldown  ? 0 : clamp((sharedLoss + playerAttack + enemyRecoil) * protectionFactor, minLoss, maxLoss) * playerImpactDamageMultiplier * 2,
   };
+}
+
+/**
+ * Apply the duel-hit i-frame cooldown to whichever side actually took damage.
+ * Call this immediately after consuming the values from computeSpinnerDuelLoss.
+ */
+export function refreshDuelHitCooldowns(
+  enemy: Collidable,
+  playerLossApplied: number,
+  enemyLossApplied: number,
+): void {
+  const cooldown = spinnerConfig.duelHitCooldown;
+  if (playerLossApplied > 0) playerBody.duelHitCooldown = cooldown;
+  if (enemyLossApplied > 0) enemy.duelHitCooldown = cooldown;
+}
+
+/**
+ * Decay every collidable's duel-hit cooldown. Run once per frame.
+ */
+export function tickDuelHitCooldowns(delta: number): void {
+  for (const c of collidables) {
+    if (c.duelHitCooldown !== undefined && c.duelHitCooldown > 0) {
+      c.duelHitCooldown = Math.max(0, c.duelHitCooldown - delta);
+    }
+  }
 }
 
 // ─── Player Body ─────────────────────────────────────────────────────────────
@@ -81,6 +135,14 @@ export const playerProximity: ProximityBody = {
 const topResult = createTop();
 const { tiltGroup, spinGroup, bodyMat } = topResult;
 scene.add(tiltGroup);
+
+/**
+ * Player's spinner visuals, exposed so game-level code can re-attempt the
+ * aura-light acquisition at level start. createTop() runs once at module
+ * load — if the pool was empty then (slider at 0), the player's auraLight
+ * stays null even if the pool grows later.
+ */
+export const playerMotionVisuals = topResult.motionVisuals;
 
 function syncPlayerTopScale(): void {
   spinGroup.scale.setScalar(spinnerConfig.radius / TOP_BASE_RADIUS);
@@ -176,50 +238,6 @@ export function playerRpmHooks(delta: number, playerWallHit: boolean, circleHits
   for (const zone of zones) {
     if (isPointInFloorZone(playerBody.pos, zone)) {
       playerBody.rpm -= zone.drainRate * delta;
-    }
-  }
-
-  // RPM collision damage (bidirectional — centralized here, not per-entity pair)
-  for (const hit of circleHits) {
-    const playerIsA = hit.i === 0;
-    const playerIsB = hit.j === 0;
-    if (!playerIsA && !playerIsB) continue;
-
-    const enemy = collidables[playerIsA ? hit.j : hit.i];
-    const enemyType = getCollidableType(enemy);
-    if (
-      enemyType === 'zombie'
-      || enemyType === 'laser_spinner'
-      || enemyType === 'spider_leg'
-      || enemyType === 'spider_core'
-      || enemyType === 'octoboss_core'
-    ) {
-      // These are handled in game.ts with bespoke collision rules; avoid double-dipping here.
-      continue;
-    }
-    if (isSpinnerDuelType(enemyType)) {
-      const { playerLoss, enemyLoss } = computeSpinnerDuelLoss(enemy, hit.impactForce);
-      playerBody.rpm = Math.max(0, playerBody.rpm - playerLoss);
-      if (!enemy.isStatic) {
-        enemy.rpm = Math.max(0, enemy.rpm - enemyLoss);
-      }
-      continue;
-    }
-
-    const safePlayerRpm = Math.max(0.01, playerBody.rpm);
-    const safeEnemyRpm  = Math.max(0.01, enemy.rpm);
-
-    const damage = COLLISION_DAMAGE_RATIO * enemy.rpmCapacity
-      * hit.impactForce * (enemy.mass / playerBody.mass)
-      * (safeEnemyRpm / safePlayerRpm) * enemy.heatFactor;
-
-    const enemyDamage = COLLISION_DAMAGE_RATIO * playerBody.rpmCapacity
-      * hit.impactForce * (playerBody.mass / enemy.mass)
-      * (playerBody.rpm / safeEnemyRpm) * playerBody.heatFactor * playerImpactDamageMultiplier;
-
-    playerBody.rpm = Math.max(0, playerBody.rpm - damage);
-    if (!enemy.isStatic) {
-      enemy.rpm = Math.max(0, enemy.rpm - enemyDamage);
     }
   }
 

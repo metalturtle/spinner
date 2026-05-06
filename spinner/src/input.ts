@@ -9,6 +9,7 @@ let comboPressed = false;
 let heatPressed = false;
 let profilerTogglePressed = false;
 let spectorCapturePressed = false;
+let cameraViewTogglePressed = false;
 
 window.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
@@ -19,6 +20,7 @@ window.addEventListener('keydown', (e) => {
   if (key === 'v') spinningLaserHeld = true;
   if (key === 'p' && !e.repeat) profilerTogglePressed = true;
   if (key === 'o' && !e.repeat) spectorCapturePressed = true;
+  if (key === 'i' && !e.repeat) cameraViewTogglePressed = true;
 });
 
 window.addEventListener('keyup', (e) => {
@@ -50,4 +52,28 @@ export function consumeSpectorCapturePressed(): boolean {
   if (!spectorCapturePressed) return false;
   spectorCapturePressed = false;
   return true;
+}
+
+export function consumeCameraViewTogglePressed(): boolean {
+  if (!cameraViewTogglePressed) return false;
+  cameraViewTogglePressed = false;
+  return true;
+}
+
+// ─── Mutators (used by touch input to drive the same state as the keyboard) ──
+
+export function setShiftHeld(value: boolean): void {
+  shiftHeld = value;
+}
+
+export function setSpinningLaserHeld(value: boolean): void {
+  spinningLaserHeld = value;
+}
+
+export function triggerCombo(): void {
+  comboPressed = true;
+}
+
+export function triggerHeat(): void {
+  heatPressed = true;
 }

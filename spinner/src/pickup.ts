@@ -1,7 +1,14 @@
 import * as THREE from 'three';
-import { scene } from './renderer';
 import type { Vec2 } from './physics';
 import { registerProximityBody, deregisterProximityBody, type ProximityBody } from './systems';
+import { addToChunk, getOrCreateChunk } from './chunkManager';
+
+/** Parent a pickup mesh to the chunk that contains its world position.
+ *  Hidden chunks early-return in projectObject, so off-screen pickups pay
+ *  zero per-frame traversal/render cost. */
+function addPickupToChunk(mesh: THREE.Object3D, pos: Vec2): void {
+  addToChunk(getOrCreateChunk(pos.x, pos.z), mesh);
+}
 
 // ─── Shaders ────────────────────────────────────────────────────────────────
 
@@ -168,7 +175,7 @@ export function createNormalPickup(pos: Vec2): Pickup {
   const visual = makePickupVisual('normal');
   const mesh = visual.mesh;
   mesh.position.set(pos.x, 0.8, pos.z);
-  scene.add(mesh);
+  addPickupToChunk(mesh, pos);
 
   const pickupPos = { x: pos.x, z: pos.z };
   const proxBody: ProximityBody = {
@@ -206,7 +213,7 @@ export function createHyperPickup(pos: Vec2): Pickup {
   const visual = makePickupVisual('hyper');
   const mesh = visual.mesh;
   mesh.position.set(pos.x, 1.0, pos.z);
-  scene.add(mesh);
+  addPickupToChunk(mesh, pos);
 
   const pickupPos = { x: pos.x, z: pos.z };
   const proxBody: ProximityBody = {
@@ -244,7 +251,7 @@ export function createGrowthPickup(pos: Vec2): Pickup {
   const visual = makePickupVisual('growth');
   const mesh = visual.mesh;
   mesh.position.set(pos.x, 0.9, pos.z);
-  scene.add(mesh);
+  addPickupToChunk(mesh, pos);
 
   const pickupPos = { x: pos.x, z: pos.z };
   const proxBody: ProximityBody = {
@@ -285,7 +292,7 @@ function createAbilityPickup(
   const visual = makePickupVisual(type);
   const mesh = visual.mesh;
   mesh.position.set(pos.x, 0.96, pos.z);
-  scene.add(mesh);
+  addPickupToChunk(mesh, pos);
 
   const pickupPos = { x: pos.x, z: pos.z };
   const proxBody: ProximityBody = {
@@ -337,7 +344,10 @@ export function createSpinningLaserUnlockPickup(pos: Vec2): Pickup {
 export function collectPickup(pickup: Pickup): void {
   pickup.collected = true;
   pickup.proximityBody.active = false;
-  scene.remove(pickup.mesh);
+  // Pickup's parent is now a chunk root, not the scene root, so use
+  // removeFromParent() rather than scene.remove() (which only removes
+  // direct children of the scene).
+  pickup.mesh.removeFromParent();
 }
 
 // ─── RPM Gain ───────────────────────────────────────────────────────────────
@@ -449,7 +459,7 @@ export function resetPickups(pickups: Pickup[], originalCount: number): void {
   // Remove dynamically spawned pickups
   while (pickups.length > originalCount) {
     const extra = pickups.pop()!;
-    if (!extra.collected) scene.remove(extra.mesh);
+    if (!extra.collected) extra.mesh.removeFromParent();
     deregisterProximityBody('pickup', extra.proximityBody);
   }
 
@@ -459,7 +469,7 @@ export function resetPickups(pickups: Pickup[], originalCount: number): void {
     if (p.collected) {
       p.collected = false;
       p.mesh.position.set(p.pos.x, p.floatY, p.pos.z);
-      scene.add(p.mesh);
+      addPickupToChunk(p.mesh, p.pos);
     }
     p.proximityBody.active = true;
     registerProximityBody('pickup', p.proximityBody);

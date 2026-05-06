@@ -68,7 +68,7 @@ export interface OctobossConfig {
 }
 
 export const OCTOBOSS_TIER_1: OctobossConfig = {
-  coreRpmCapacity: 30,
+  coreRpmCapacity: 400,
   coreRadius: 2.0,
   coreMass: 0.1,
   coreMaxSpeed: [6.4, 7.3, 8.6],
@@ -329,13 +329,11 @@ export function canDamageOctobossCore(boss: OctobossState): boolean {
 }
 
 export function canComboTargetOctobossCore(boss: OctobossState): boolean {
-  return canDamageOctobossCore(boss)
-    || (boss.tentacleMode === 'chasing' && boss.tentacleModeTimer <= 0.18);
+  // Combo can target the core at any phase — the strike bypasses the tentacle
+  // shield. Standard ram damage still respects canDamageOctobossCore.
+  return boss.alive;
 }
 
-export function getOctobossCoreDamageMultiplier(boss: OctobossState): number {
-  return canDamageOctobossCore(boss) ? 1.0 : 0;
-}
 
 export function getOctobossTipDamage(boss: OctobossState): number {
   return boss.config.tipDamage[getPhaseIndex(boss)];
@@ -784,8 +782,8 @@ function makeTentacle(
     radius: config.tipRadius,
     mass: config.tipMass,
     isStatic: true,
-    rpm: 1,
-    rpmCapacity: 1,
+    rpm: 500,
+    rpmCapacity: 0,
     heatFactor: 0.08,
   };
   collidables.push(collidable);
@@ -941,6 +939,7 @@ export function createOctoboss(pos: Vec2, config: OctobossConfig): OctobossState
     rpm: config.coreRpmCapacity,
     rpmCapacity: config.coreRpmCapacity,
     heatFactor: 1.08,
+    protectionFactor: 0.3,
   };
   const id = nextEntityId();
   registerMovement(id, collidable, config.coreMaxSpeed[0], 0.95);
@@ -1592,9 +1591,9 @@ export function updateOctobossVisuals(
   boss.baseSpinGroup.rotation.y += delta * (phase === 2 ? 4.8 : phase === 1 ? 4.0 : 3.4);
 
   const bladeSpinSpeed = boss.tentacleMode === 'chasing'
-    ? 48
+    ? 128
     : boss.tentacleMode === 'extending'
-      ? 48
+      ? 128
       : boss.tentacleMode === 'retracting'
         ? 14
         : 9;

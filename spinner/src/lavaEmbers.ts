@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { lvZ, type LevelPolygon } from './levelLoader';
 import { registerTopDownCullable } from './sceneCulling';
 
-const MAX_EMBERS = 2400;
+const MAX_EMBERS = 1200;
 const VERTS_PER_EMBER = 2;
 const DEAD_TIME = -9999;
 const SURFACE_Y = 0.08;

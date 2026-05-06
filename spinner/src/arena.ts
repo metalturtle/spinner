@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { WALL_HEIGHT } from './constants';
 import { walls, zones } from './physics';
 import { lvZ, type LevelData, type LevelPolygon } from './levelLoader';
@@ -8,6 +9,16 @@ import { applyLaserLightToMaterial, setLaserLightBounds } from './laserLightBuff
 import { registerRefractionMesh, unregisterRefractionMesh } from './renderer';
 import { registerTopDownCullable } from './sceneCulling';
 import { applyWallExtrusionUVs, applyWorldUVs, getTextureScale, TextureManager } from './textureUtils';
+import { getLightsDisabled } from './settings';
+import { addToChunk, getChunksOverlappingBbox, setupChunks, type Chunk } from './chunkManager';
+import {
+  circleToPolygon,
+  clipPolygonToRect,
+  polygonAreaAbs,
+  polygonBbox,
+  type Rect,
+  type Vec2 as ClipVec2,
+} from './polygonClip';
 
 const WALL_COLOR    = 0x0f3460;
 const WALL_EMISSIVE = 0x051030;
@@ -16,6 +27,8 @@ const CIRCLE_FLOOR_SEGMENTS = 48;
 const CIRCLE_FLOOR_INSET = 0.05;
 const DEBUG_SHOW_NORMAL_AS_ALBEDO = false;
 const arenaRoots: THREE.Object3D[] = [];
+interface LavaLightState { light: THREE.PointLight; baseIntensity: number }
+const lavaLightStates: LavaLightState[] = [];
 const lavaLightRoots: THREE.Object3D[] = [];
 const lavaLightCullHandles = new WeakMap<THREE.Object3D, () => void>();
 const defaultRefractionNormalTexture = new THREE.DataTexture(
@@ -254,6 +267,14 @@ function clearLavaLights(scene: THREE.Scene): void {
     lavaLightCullHandles.delete(root);
     scene.remove(root);
   }
+  lavaLightStates.length = 0;
+}
+
+export function refreshLavaLightIntensities(): void {
+  const disabled = getLightsDisabled();
+  for (const state of lavaLightStates) {
+    state.light.intensity = disabled ? 0 : state.baseIntensity;
+  }
 }
 
 function clearArenaRoots(scene: THREE.Scene): void {
@@ -267,6 +288,15 @@ function clearArenaRoots(scene: THREE.Scene): void {
 function addArenaRoot(scene: THREE.Scene, root: THREE.Object3D): void {
   arenaRoots.push(root);
   scene.add(root);
+  // Arena geometry is positioned at level load and never moves. Locking
+  // the matrices skips Three.js's per-frame compose + multiplyMatrices
+  // for every wall and floor, and stops the parent recursion entirely
+  // (because matrixWorldAutoUpdate=false makes scene skip these subtrees
+  // in updateMatrixWorld).
+  root.updateMatrix();
+  root.updateMatrixWorld(true);
+  root.matrixAutoUpdate = false;
+  root.matrixWorldAutoUpdate = false;
 }
 
 function addLavaLight(scene: THREE.Scene, poly: LevelPolygon): void {
@@ -300,12 +330,17 @@ function addLavaLight(scene: THREE.Scene, poly: LevelPolygon): void {
   root.position.set(centerX, 2, centerZ);
 
   const lightRange = Math.max(6, radius * 2.8);
-  const light = new THREE.PointLight(0xff6a1a, (100.2 + radius * 0.18) * 10, lightRange, 1.6);
+  const baseLightIntensity = (100.2 + radius * 0.18) * 10;
+  const light = new THREE.PointLight(0xff6a1a, baseLightIntensity, lightRange, 1.6);
   light.castShadow = false;
   root.add(light);
 
+  lavaLightStates.push({ light, baseIntensity: baseLightIntensity });
   lavaLightRoots.push(root);
-  lavaLightCullHandles.set(root, registerTopDownCullable(root, lightRange));
+  // Toggle intensity rather than visibility — see levelLights.ts for rationale.
+  lavaLightCullHandles.set(root, registerTopDownCullable(root, lightRange, root, (active) => {
+    light.intensity = (!getLightsDisabled() && active) ? baseLightIntensity : 0;
+  }));
   scene.add(root);
 }
 
@@ -318,6 +353,12 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
   zones.length = 0;
   setArenaBoundsFromLevel(level);
   setLaserLightBounds(currentArenaBounds);
+  // Build the spatial-chunk grid for this level. Walls, floors, and other
+  // static visuals are bucketed into chunks; chunks far from the player are
+  // hidden each frame so projectObject and rendering skip those subtrees
+  // entirely. Lights stay scene-rooted (chunk visibility doesn't affect
+  // them) to avoid the NUM_POINT_LIGHTS recompile cascade.
+  setupChunks(scene);
 
   // ─── Separate polygons and circles by layer ──────────────────────────────
   const polys        = level.polygons ?? [];
@@ -340,41 +381,151 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
     });
   }
 
+  // ─── Material caches and merge groups ────────────────────────────────────
+  // Levels often repeat the same texture/color across many wall and floor
+  // polys. Without merging, each poly creates its own material + mesh =
+  // its own draw call. Keying materials on (color, textureId, useReliefMap)
+  // lets identical-looking polys share a material, and their geometries
+  // get merged into a single mesh per material — collapsing dozens of
+  // wall/floor draw calls (and scene-graph nodes, and matrix updates)
+  // into a handful.
+  const floorMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
+  const wallMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
+
+  // Per-chunk per-material merge groups for FLOORS only. Key is
+  // `${chunkKey}|${matKey}` so floors sharing a material but in different
+  // chunks get their own merged mesh — flat floors clip cleanly at chunk
+  // boundaries without visible artifacts.
+  type ChunkMergeEntry = {
+    chunk: Chunk;
+    material: THREE.MeshStandardMaterial;
+    geos: THREE.BufferGeometry[];
+  };
+  const floorChunkMerge = new Map<string, ChunkMergeEntry>();
+
+  // Walls use a GLOBAL per-material merge group (no chunking).
+  // Reason: extruding a clipped wall polygon creates new vertical side
+  // faces along the chunk boundary, which protrude visibly in circular
+  // rooms. Walls are usually short (mostly fit in one chunk) and merge
+  // into ~5 meshes total anyway, so the chunk-cull benefit is marginal.
+  // Three.js's per-mesh frustum cull still skips the merged wall meshes
+  // when their bounding sphere is fully outside the camera frustum.
+  const wallGlobalMerge = new Map<string, THREE.BufferGeometry[]>();
+
+  const matKey = (color: string | undefined, textureId: string | undefined, useReliefMap: boolean): string =>
+    `${color ?? ''}|${textureId ?? ''}|${useReliefMap ? 1 : 0}`;
+
+  const getFloorMaterial = (color: string | undefined, textureId: string | undefined, useReliefMap: boolean): THREE.MeshStandardMaterial => {
+    const key = matKey(color, textureId, useReliefMap);
+    let mat = floorMaterialCache.get(key);
+    if (mat) return mat;
+    mat = makeSurfaceMat(color, textureId);
+    applyLaserLightToMaterial(mat);
+    const normalMap = TextureManager.getNormal(textureId, useReliefMap);
+    mat.normalMap = DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap;
+    mat.bumpMap = TextureManager.getBump(textureId, useReliefMap);
+    if (useReliefMap) {
+      mat.normalScale = new THREE.Vector2(0.6, 0.6);
+      mat.bumpScale = 0.1;
+    }
+    floorMaterialCache.set(key, mat);
+    return mat;
+  };
+
+  const getWallMaterial = (poly: LevelPolygon): THREE.MeshStandardMaterial => {
+    const useRelief = !!poly.useReliefMap;
+    const key = matKey(poly.color, poly.textureId, useRelief);
+    let mat = wallMaterialCache.get(key);
+    if (mat) return mat;
+    const hasTexture = Boolean(poly.textureId);
+    const normalMap = TextureManager.getNormal(poly.textureId, useRelief);
+    const bumpMap = TextureManager.getBump(poly.textureId, useRelief);
+    const map = DEBUG_SHOW_NORMAL_AS_ALBEDO && normalMap ? normalMap : TextureManager.get(poly.textureId);
+    mat = new THREE.MeshStandardMaterial({
+      color: hasTexture ? 0xffffff : getSurfaceColor(poly.color, WALL_COLOR, hasTexture),
+      map,
+      normalMap: DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap,
+      bumpMap,
+      emissive: hasTexture ? 0x000000 : new THREE.Color(WALL_EMISSIVE),
+      roughness: 0.4,
+      metalness: 0.6,
+    });
+    if (useRelief) {
+      mat.normalScale = new THREE.Vector2(0.9, 0.9);
+      mat.bumpScale = 0.16;
+    }
+    wallMaterialCache.set(key, mat);
+    return mat;
+  };
+
+  /** Convert level vertices into the ClipVec2 array the clipper expects. */
+  const polyToClipPoints = (vertices: ReadonlyArray<{ x: number; y: number }>): ClipVec2[] => {
+    const out: ClipVec2[] = new Array(vertices.length);
+    for (let i = 0; i < vertices.length; i++) {
+      out[i] = { x: vertices[i].x, y: vertices[i].y };
+    }
+    return out;
+  };
+
+  /** Build a Shape from already-clipped outer vertices. Holes are clipped
+   *  against the same chunk rect; degenerate (zero-area) results dropped. */
+  const buildShapeFromClipped = (
+    outer: ClipVec2[],
+    holes: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>> | undefined,
+    clipRect: Rect,
+  ): THREE.Shape | null => {
+    if (outer.length < 3 || polygonAreaAbs(outer) < 0.001) return null;
+    const shape = new THREE.Shape();
+    shape.moveTo(outer[0].x, outer[0].y);
+    for (let i = 1; i < outer.length; i++) {
+      shape.lineTo(outer[i].x, outer[i].y);
+    }
+    shape.closePath();
+    if (holes) {
+      for (const hole of holes) {
+        const clippedHole = clipPolygonToRect(polyToClipPoints(hole), clipRect);
+        if (clippedHole.length < 3 || polygonAreaAbs(clippedHole) < 0.001) continue;
+        const holePath = new THREE.Path();
+        holePath.moveTo(clippedHole[0].x, clippedHole[0].y);
+        for (let i = 1; i < clippedHole.length; i++) {
+          holePath.lineTo(clippedHole[i].x, clippedHole[i].y);
+        }
+        holePath.closePath();
+        shape.holes.push(holePath);
+      }
+    }
+    return shape;
+  };
+
+  const pushChunkGeo = (
+    bucket: Map<string, ChunkMergeEntry>,
+    chunk: Chunk,
+    material: THREE.MeshStandardMaterial,
+    matKeyStr: string,
+    geo: THREE.BufferGeometry,
+  ): void => {
+    const fullKey = `${chunk.key}|${matKeyStr}`;
+    let entry = bucket.get(fullKey);
+    if (!entry) {
+      entry = { chunk, material, geos: [] };
+      bucket.set(fullKey, entry);
+    }
+    entry.geos.push(geo);
+  };
+
   // ─── Floor geometry ───────────────────────────────────────────────────────
   if (floorPolys.length > 0) {
-    // Polygon floor: ShapeGeometry in XY plane, rotated flat into XZ
     for (const poly of floorPolys) {
-      const shape = makeShapeFromPolygon(poly);
-      const floorGeo = new THREE.ShapeGeometry(shape);
-      const isLava = isLavaSurface(poly);
-      const textureScale = !isLava ? getTextureScale(poly.textureId, poly.textureScale) : null;
-      if (textureScale && !isLava) {
-        applyWorldUVs(floorGeo, textureScale);
-      }
-      const mesh = new THREE.Mesh(
-        floorGeo,
-        isLava ? createLavaMaterial() : makeSurfaceMat(poly.color, poly.textureId),
-      );
-      if (!isLava) {
-        const mat = mesh.material as THREE.MeshStandardMaterial;
-        applyLaserLightToMaterial(mat);
-        if(poly.useReliefMap) {
-          console.log("using reliev map:", poly.textureId)
-        }
-        const normalMap = TextureManager.getNormal(poly.textureId, poly.useReliefMap);
-        mat.normalMap = DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap;
-        mat.bumpMap = TextureManager.getBump(poly.textureId, poly.useReliefMap);
-        if (poly.useReliefMap) {
-          mat.normalScale = new THREE.Vector2(0.6, 0.6);
-          mat.bumpScale = 0.1;
-        }
-      }
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.y = isLava ? 0.02 : 0;
-      mesh.receiveShadow = true;
-      addArenaRoot(scene, mesh);
+      if (isLavaSurface(poly)) {
+        // Animated lava material can't merge — keep as its own mesh at scene root.
+        const shape = makeShapeFromPolygon(poly);
+        const floorGeo = new THREE.ShapeGeometry(shape);
+        const mesh = new THREE.Mesh(floorGeo, createLavaMaterial());
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.y = 0.02;
+        mesh.receiveShadow = true;
+        addArenaRoot(scene, mesh);
 
-      if (isLava) {
         zones.push({
           vertices: poly.vertices.map((v) => ({ x: v.x, z: lvZ(v.y) })),
           holes: (poly.holes ?? []).map((hole) => hole.map((v) => ({ x: v.x, z: lvZ(v.y) }))),
@@ -383,36 +534,85 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
         registerLavaRegion(buildLavaRegionFromPolygon(poly));
         registerLavaEmitter(poly);
         addLavaLight(scene, poly);
+        continue;
+      }
+
+      // Non-lava: clip the floor against every chunk it overlaps so each
+      // chunk only owns the slice of geometry that physically lives in it.
+      const polyPoints = polyToClipPoints(poly.vertices);
+      const bbox = polygonBbox(polyPoints);
+      if (!bbox) continue;
+      // Convert level Y range to world Z range (lvZ(y) = -y).
+      const chunks = getChunksOverlappingBbox(bbox.minX, -bbox.maxY, bbox.maxX, -bbox.minY);
+      if (chunks.length === 0) continue;
+
+      const useRelief = !!poly.useReliefMap;
+      const mat = getFloorMaterial(poly.color, poly.textureId, useRelief);
+      const matKeyStr = matKey(poly.color, poly.textureId, useRelief);
+      const textureScale = getTextureScale(poly.textureId, poly.textureScale);
+
+      if (chunks.length === 1) {
+        // Fast path: poly fits in a single chunk, no clipping needed.
+        const shape = makeShapeFromPolygon(poly);
+        const geo = new THREE.ShapeGeometry(shape);
+        if (textureScale) applyWorldUVs(geo, textureScale);
+        geo.rotateX(-Math.PI / 2);
+        pushChunkGeo(floorChunkMerge, chunks[0], mat, matKeyStr, geo);
+        continue;
+      }
+
+      // Slow path: clip per chunk and emit one geometry per non-empty piece.
+      for (const chunk of chunks) {
+        const clipped = clipPolygonToRect(polyPoints, chunk.clipRectLevel);
+        const clipShape = buildShapeFromClipped(clipped, poly.holes, chunk.clipRectLevel);
+        if (!clipShape) continue;
+        const geo = new THREE.ShapeGeometry(clipShape);
+        if (textureScale) applyWorldUVs(geo, textureScale);
+        geo.rotateX(-Math.PI / 2);
+        pushChunkGeo(floorChunkMerge, chunk, mat, matKeyStr, geo);
       }
     }
   }
 
   if (floorCircles.length > 0) {
-    // Circle floor: CircleGeometry centered at circle.center
     for (const c of floorCircles) {
       const radius = Math.max(0.01, c.radius - CIRCLE_FLOOR_INSET);
-      const floorGeo = new THREE.CircleGeometry(radius, CIRCLE_FLOOR_SEGMENTS);
-      const textureScale = getTextureScale(c.textureId, c.textureScale);
-      if (textureScale) {
-        applyWorldUVs(floorGeo, textureScale, c.center.x, c.center.y);
-      }
-      const mesh = new THREE.Mesh(
-        floorGeo,
-        makeSurfaceMat(c.color, c.textureId),
+      const cz = lvZ(c.center.y);
+      const chunks = getChunksOverlappingBbox(
+        c.center.x - radius, cz - radius,
+        c.center.x + radius, cz + radius,
       );
-      const mat = mesh.material as THREE.MeshStandardMaterial;
-      applyLaserLightToMaterial(mat);
-      const normalMap = TextureManager.getNormal(c.textureId, c.useReliefMap);
-      mat.normalMap = DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap;
-      mat.bumpMap = TextureManager.getBump(c.textureId, c.useReliefMap);
-      if (c.useReliefMap) {
-        mat.normalScale = new THREE.Vector2(0.6, 0.6);
-        mat.bumpScale = 0.1;
+      if (chunks.length === 0) continue;
+
+      const useRelief = !!c.useReliefMap;
+      const mat = getFloorMaterial(c.color, c.textureId, useRelief);
+      const matKeyStr = matKey(c.color, c.textureId, useRelief);
+      const textureScale = getTextureScale(c.textureId, c.textureScale);
+
+      if (chunks.length === 1) {
+        // Fast path: smooth CircleGeometry centered, then translated to
+        // its world position (baked into the geometry).
+        const floorGeo = new THREE.CircleGeometry(radius, CIRCLE_FLOOR_SEGMENTS);
+        if (textureScale) applyWorldUVs(floorGeo, textureScale, c.center.x, c.center.y);
+        floorGeo.rotateX(-Math.PI / 2);
+        floorGeo.translate(c.center.x, 0, cz);
+        pushChunkGeo(floorChunkMerge, chunks[0], mat, matKeyStr, floorGeo);
+        continue;
       }
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(c.center.x, 0, lvZ(c.center.y));
-      mesh.receiveShadow = true;
-      addArenaRoot(scene, mesh);
+
+      // Slow path: tessellate the circle (in level coords) and clip it per
+      // chunk. The tessellation hides the chunk-boundary cuts at typical
+      // viewing distance.
+      const tess = circleToPolygon(c.center.x, c.center.y, radius, CIRCLE_FLOOR_SEGMENTS);
+      for (const chunk of chunks) {
+        const clipped = clipPolygonToRect(tess, chunk.clipRectLevel);
+        const clipShape = buildShapeFromClipped(clipped, undefined, chunk.clipRectLevel);
+        if (!clipShape) continue;
+        const geo = new THREE.ShapeGeometry(clipShape);
+        if (textureScale) applyWorldUVs(geo, textureScale);
+        geo.rotateX(-Math.PI / 2);
+        pushChunkGeo(floorChunkMerge, chunk, mat, matKeyStr, geo);
+      }
     }
   }
 
@@ -440,27 +640,8 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
   for (const poly of wallPolys) {
     const invisible = isInvisibleWall(poly);
     const mirror = isMirrorWall(poly);
-    const hasTexture = Boolean(poly.textureId);
-    const normalMap = TextureManager.getNormal(poly.textureId, poly.useReliefMap);
-    const bumpMap = TextureManager.getBump(poly.textureId, poly.useReliefMap);
-    const map = DEBUG_SHOW_NORMAL_AS_ALBEDO && normalMap ? normalMap : TextureManager.get(poly.textureId);
-    const wallMat = mirror
-      ? createMirrorWallMaterial(poly, DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap)
-      : new THREE.MeshStandardMaterial({
-          color: hasTexture ? 0xffffff : getSurfaceColor(poly.color, WALL_COLOR, hasTexture),
-          map,
-          normalMap: DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap,
-          bumpMap,
-          emissive: hasTexture ? 0x000000 : new THREE.Color(WALL_EMISSIVE),
-          roughness: 0.4,
-          metalness: 0.6,
-        });
-    if (poly.useReliefMap && !mirror) {
-      const standardWallMat = wallMat as THREE.MeshStandardMaterial;
-      standardWallMat.normalScale = new THREE.Vector2(0.9, 0.9);
-      standardWallMat.bumpScale = 0.16;
-    }
-    // Collision: one segment per edge
+
+    // Collision: one segment per edge (always, even for invisible walls)
     const verts = poly.vertices;
     for (let i = 0; i < verts.length; i++) {
       const p1 = verts[i], p2 = verts[(i + 1) % verts.length];
@@ -470,12 +651,76 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
         reflective: mirror,
       });
     }
-    if (!invisible) {
-      // Visual: extrude the whole polygon shape upward (one solid mesh per polygon)
+    if (invisible) continue;
+
+    if (mirror) {
+      // Mirror walls have unique uniforms (sceneTexture etc.) — keep as
+      // individual meshes with their own shader material.
+      const normalMap = TextureManager.getNormal(poly.textureId, poly.useReliefMap);
+      const wallMat = createMirrorWallMaterial(poly, DEBUG_SHOW_NORMAL_AS_ALBEDO ? null : normalMap);
       const wallMesh = extrudeWallPoly(poly, wallMat);
-      if (mirror) registerRefractionMesh(wallMesh);
+      registerRefractionMesh(wallMesh);
       addArenaRoot(scene, wallMesh);
+      continue;
     }
+
+    // Non-mirror: build the unclipped wall extrusion and push to the global
+    // per-material merge group. We don't clip walls because extruding a
+    // clipped polygon creates new vertical side faces along the cut edge,
+    // which protrude visibly in circular rooms.
+    getWallMaterial(poly);
+    const useRelief = !!poly.useReliefMap;
+    const matKeyStr = matKey(poly.color, poly.textureId, useRelief);
+    const textureScale = getTextureScale(poly.textureId, poly.textureScale);
+    const shape = makeShapeFromPolygon(poly);
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: WALL_HEIGHT, bevelEnabled: false });
+    if (textureScale) applyWallExtrusionUVs(geo, textureScale);
+    geo.rotateX(-Math.PI / 2);
+
+    let arr = wallGlobalMerge.get(matKeyStr);
+    if (!arr) { arr = []; wallGlobalMerge.set(matKeyStr, arr); }
+    arr.push(geo);
   }
 
+  // ─── Emit merged meshes into their chunks ────────────────────────────────
+  // Each merged mesh is parented to a chunk root (not the scene root) so
+  // its draw call + traversal cost vanishes when the chunk is hidden.
+  // We mark each merged mesh as fully static — its geometry is in world
+  // coords, its parent chunk has identity transform, so its matrixWorld is
+  // identity and never needs recomputing.
+  const finishStaticMesh = (mesh: THREE.Mesh, chunk: Chunk): void => {
+    mesh.updateMatrix();
+    mesh.matrixAutoUpdate = false;
+    addToChunk(chunk, mesh);
+    mesh.updateMatrixWorld(true);
+    mesh.matrixWorldAutoUpdate = false;
+  };
+
+  for (const entry of floorChunkMerge.values()) {
+    if (entry.geos.length === 0) continue;
+    const merged = mergeGeometries(entry.geos);
+    if (!merged) {
+      console.warn(`[arena] floor merge failed for chunk=${entry.chunk.key} (attribute mismatch)`);
+      continue;
+    }
+    const mesh = new THREE.Mesh(merged, entry.material);
+    mesh.receiveShadow = true;
+    finishStaticMesh(mesh, entry.chunk);
+    for (const geo of entry.geos) geo.dispose();
+  }
+  // Walls: globally merged by material, parented to the scene root via
+  // addArenaRoot. addArenaRoot already locks matrices for static objects.
+  for (const [key, geos] of wallGlobalMerge) {
+    if (geos.length === 0) continue;
+    const merged = mergeGeometries(geos);
+    if (!merged) {
+      console.warn(`[arena] wall merge failed for matKey=${key} (attribute mismatch)`);
+      continue;
+    }
+    const mesh = new THREE.Mesh(merged, wallMaterialCache.get(key)!);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    addArenaRoot(scene, mesh);
+    for (const geo of geos) geo.dispose();
+  }
 }

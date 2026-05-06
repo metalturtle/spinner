@@ -3,6 +3,7 @@ import { scene } from './renderer';
 import { RPM_SOFT_CAP_RATIO, SPINNER_SIZE_SCALE } from './constants';
 import { collidables, type Collidable, type Vec2 } from './physics';
 import { createTop, TOP_BASE_RADIUS, type TopResult } from './top';
+import { releaseAuraLight } from './auraLightPool';
 import { updateSpinnerVisuals, type SpinnerTiltState } from './spinnerVisuals';
 import {
   applySpinnerWallAvoidance,
@@ -63,7 +64,7 @@ export interface EnemySpinnerConfig {
 }
 
 export const ENEMY_SPINNER_TIER_1: EnemySpinnerConfig = {
-  rpmCapacity:   120,
+  rpmCapacity:   1,
   rpmDecayRate:  0.0,
   rpmSpeedDrain: 0.0,      // enemy spinners only lose RPM from combat, not movement
   radius:        1.425 * SPINNER_SIZE_SCALE,
@@ -496,6 +497,9 @@ export function destroyEnemySpinner(enemy: EnemySpinnerState): void {
   enemy.alive = false;
   deregisterEntity(enemy.id);
   untagCollidable(enemy.collidable);
+  if (enemy.topResult.motionVisuals) {
+    releaseAuraLight(enemy.topResult.motionVisuals.auraLight);
+  }
   scene.remove(enemy.topResult.tiltGroup);
   const idx = collidables.indexOf(enemy.collidable);
   if (idx !== -1) collidables.splice(idx, 1);

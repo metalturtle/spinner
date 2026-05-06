@@ -3,6 +3,7 @@ import { scene } from './renderer';
 import { ARENA_SIZE } from './constants';
 import { collidables, zones, type Collidable, type Vec2, type FloorZone } from './physics';
 import { createTop, type TopResult } from './top';
+import { releaseAuraLight } from './auraLightPool';
 import { updateSpinnerVisuals, type SpinnerTiltState } from './spinnerVisuals';
 import { createHpBar, updateHpBar } from './hpBar';
 import {
@@ -412,6 +413,9 @@ export function destroyDreadnought(boss: DreadnoughtState): void {
   boss.alive = false;
   deregisterEntity(boss.id);
   untagCollidable(boss.collidable);
+  if (boss.topResult.motionVisuals) {
+    releaseAuraLight(boss.topResult.motionVisuals.auraLight);
+  }
   scene.remove(boss.topResult.tiltGroup);
   scene.remove(boss.group);
   clearDrainZones(boss);

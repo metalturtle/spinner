@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Vec2 } from './physics';
 import type { SpinnerMotionVisuals } from './top';
+import { getLightsDisabled } from './settings';
 
 // ─── Shared visual constants for all spinners ────────────────────────────────
 
@@ -90,7 +91,13 @@ export function updateSpinnerVisuals(
     motionVisuals.speedHalo.visible = haloStrength > 0.015;
     motionVisuals.speedHalo.scale.setScalar(haloScale * haloPulse);
     motionVisuals.speedHaloMat.opacity = Math.min(0.52, haloStrength);
-    motionVisuals.auraLight.intensity = (20.25 + rpmFrac * 0.6 + speedFrac * 0.4 + overFrac * 0.5) * auraPulse;
-    motionVisuals.auraLight.distance = 10 + rpmFrac * 2.4 + overFrac * 1.6;
+    if (motionVisuals.auraLight) {
+      const lightsOff = getLightsDisabled();
+      motionVisuals.auraLight.intensity = lightsOff ? 0 : (20.25 + rpmFrac * 0.6 + speedFrac * 0.4 + overFrac * 0.5) * auraPulse;
+      if (!lightsOff) {
+        motionVisuals.auraLight.distance = 10 + rpmFrac * 2.4 + overFrac * 1.6;
+        motionVisuals.auraLightAnchor.getWorldPosition(motionVisuals.auraLight.position);
+      }
+    }
   }
 }

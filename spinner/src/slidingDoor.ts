@@ -3,8 +3,12 @@ import { WALL_HEIGHT, WALL_THICKNESS } from './constants';
 import { type Segment, type Vec2, walls } from './physics';
 import { scene } from './renderer';
 import { nextEntityId } from './systems';
+import { TextureManager } from './textureUtils';
 
-const DOOR_COLOR = 0x6f7f95;
+const DOOR_TEXTURE_ID = 'sci-fi';
+// Tile sci-fi panels: roughly one tile per 1.4 world units across the leaf and height.
+const DOOR_TEXTURE_WORLD_SCALE = 1.4;
+const DOOR_COLOR = 0xa8b2c0;
 const DOOR_EMISSIVE = 0x1a2233;
 const OPEN_EPSILON = 0.001;
 
@@ -41,13 +45,31 @@ export interface SlidingDoorState {
   rightSegment: Segment;
 }
 
-function makeDoorMaterial(): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
+function makeTiledDoorTexture(source: THREE.Texture | null, leafWidth: number, height: number): THREE.Texture | null {
+  if (!source) return null;
+  // Clone so per-door .repeat doesn't bleed into other consumers of this shared texture.
+  const tex = source.clone();
+  tex.needsUpdate = true;
+  tex.repeat.set(leafWidth / DOOR_TEXTURE_WORLD_SCALE, height / DOOR_TEXTURE_WORLD_SCALE);
+  return tex;
+}
+
+function makeDoorMaterial(leafWidth: number, height: number): THREE.MeshStandardMaterial {
+  const baseMap = makeTiledDoorTexture(TextureManager.get(DOOR_TEXTURE_ID), leafWidth, height);
+  const normalMap = makeTiledDoorTexture(TextureManager.getNormal(DOOR_TEXTURE_ID, true), leafWidth, height);
+
+  const material = new THREE.MeshStandardMaterial({
     color: DOOR_COLOR,
     emissive: new THREE.Color(DOOR_EMISSIVE),
     roughness: 0.34,
     metalness: 0.72,
   });
+  if (baseMap) material.map = baseMap;
+  if (normalMap) {
+    material.normalMap = normalMap;
+    material.normalScale = new THREE.Vector2(0.6, 0.6);
+  }
+  return material;
 }
 
 function toWorldPoint(door: SlidingDoorState, localX: number): Vec2 {
@@ -97,8 +119,8 @@ export function createSlidingDoor(pos: Vec2, config: SlidingDoorConfig): Sliding
   root.rotation.y = -angleRad;
 
   const panelGeo = new THREE.BoxGeometry(leafWidth, height, thickness);
-  const leftPanel = new THREE.Mesh(panelGeo, makeDoorMaterial());
-  const rightPanel = new THREE.Mesh(panelGeo.clone(), makeDoorMaterial());
+  const leftPanel = new THREE.Mesh(panelGeo, makeDoorMaterial(leafWidth, height));
+  const rightPanel = new THREE.Mesh(panelGeo.clone(), makeDoorMaterial(leafWidth, height));
   leftPanel.position.y = height * 0.5;
   rightPanel.position.y = height * 0.5;
   leftPanel.castShadow = true;

@@ -67,6 +67,15 @@ export function collectLevelAssetManifest(level: LevelData): LevelAssetManifest 
       case 'zombie':
         includesZombieAssets = true;
         break;
+      case 'sliding_door':
+        // Door panels render with the sci-fi tile texture; preload its base + normal map.
+        if (!textureRequests.has('sci-fi')) {
+          textureRequests.set('sci-fi', { textureId: 'sci-fi', useReliefMap: true });
+        } else {
+          const existing = textureRequests.get('sci-fi')!;
+          existing.useReliefMap = true;
+        }
+        break;
     }
   }
 

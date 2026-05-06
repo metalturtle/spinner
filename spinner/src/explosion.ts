@@ -346,3 +346,74 @@ export function compactExplosions(explosions: Explosion[]): void {
     if (!explosions[i].alive) explosions.splice(i, 1);
   }
 }
+
+/**
+ * Add dummy fireball + energy explosion meshes to the scene so their
+ * ShaderMaterial programs compile during level-load compileAsync. Without
+ * this, the first explosion at gameplay-time triggers a multi-second stall.
+ * Returns a disposer that removes the dummies after compilation completes.
+ */
+export function prewarmExplosionMaterials(): () => void {
+  const farY = -200;
+
+  // Fireball variant (also covers createRobotExplosion — same shader).
+  const fireballMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime:    { value: 0 },
+      uLife:    { value: 0 },
+      uSeed:    { value: 0 },
+      uOpacity: { value: 0 },
+    },
+    vertexShader:   FIREBALL_EXPLOSION_VERT,
+    fragmentShader: FIREBALL_EXPLOSION_FRAG,
+    transparent:    true,
+    depthWrite:     false,
+    blending:       THREE.NormalBlending,
+    side:           THREE.DoubleSide,
+  });
+  const fireballMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 28), fireballMat);
+  fireballMesh.position.set(0, farY, 0);
+  fireballMesh.frustumCulled = false;
+  scene.add(fireballMesh);
+
+  // Energy variant.
+  const energyMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime:    { value: 0 },
+      uLife:    { value: 0 },
+      uSeed:    { value: 0 },
+      uOpacity: { value: 0 },
+    },
+    vertexShader:   ENERGY_EXPLOSION_VERT,
+    fragmentShader: ENERGY_EXPLOSION_FRAG,
+    transparent:    true,
+    depthWrite:     false,
+    blending:       THREE.AdditiveBlending,
+    side:           THREE.DoubleSide,
+  });
+  const energyMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 24), energyMat);
+  energyMesh.position.set(0, farY, 0);
+  energyMesh.frustumCulled = false;
+  scene.add(energyMesh);
+
+  return () => {
+    // Remove the meshes from the scene (no draw-call cost during gameplay)
+    // but DO NOT call material.dispose() — that triggers WebGLShaderCache
+    // to evict the shader stage if usedTimes hits 0, and the next material
+    // with the same source gets a fresh shader ID, a fresh cacheKey, and a
+    // fresh compile mid-game. Keeping the dummy materials alive holds the
+    // shader stage so subsequent createFireballExplosion calls hit the
+    // program cache. Geometry is fine to dispose.
+    scene.remove(fireballMesh);
+    fireballMesh.geometry.dispose();
+    scene.remove(energyMesh);
+    energyMesh.geometry.dispose();
+    keepAlive.push(fireballMat, energyMat);
+  };
+}
+
+// Holds prewarm dummy materials beyond the disposer so their shader stages
+// stay in WebGLShaderCache and their compiled programs in WebGLPrograms.
+// Without this, disposing the dummy evicts the stage and the first real
+// explosion mid-game compiles its shader from scratch.
+const keepAlive: THREE.Material[] = [];

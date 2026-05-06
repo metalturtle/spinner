@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import {
   renderer, renderScene, scene, camera,
+  compileForRefractionTarget,
   getDefaultGlobalLightingState,
   resetGlobalLightingTarget,
   setGlobalLightingTarget,
   updateGlobalLighting,
   type GlobalLightingState,
 } from './renderer';
-import { createArena, getArenaBounds, isPointInLava } from './arena';
+import { createArena, getArenaBounds, isPointInLava, refreshLavaLightIntensities } from './arena';
+import { getLightPoolSize, setLightPoolSize, LIGHT_POOL_SIZE_MIN, LIGHT_POOL_SIZE_MAX, getLightsDisabled, setLightsDisabled, getRefractionDisabled, setRefractionDisabled, getShadowsDisabled, setShadowsDisabled } from './settings';
 import {
   RPM_HALF_POINT_RATIO, COLLISION_DAMAGE_RATIO,
   PICKUP_RPM_BOOST, HYPER_BOOST,
@@ -15,7 +17,17 @@ import {
 import { spinnerConfig, resetSpinnerConfig } from './spinnerConfig';
 import { runCollisions, collidables, walls, zones, isCollidableEnabled, type CircleHit, type Collidable, type Segment, type Vec2 } from './physics';
 import { initHud, updateHud, setHudVisible, type AbilityHudState } from './hud';
-import { initCamera, resetCameraShake, triggerCameraShake, updateCamera } from './camera';
+import { initToasts, showToast, clearToasts } from './toast';
+import { initYoutubeMusic, playYoutubeMusic } from './youtubeMusic';
+
+// Background music — YouTube video ID parsed from the watch URL.
+// https://www.youtube.com/watch?v=sXVCF6y0-7s
+const BACKGROUND_MUSIC_VIDEO_ID = 'sXVCF6y0-7s';
+import {
+  initCamera, resetCameraShake, triggerCameraShake, updateCamera,
+  toggleCameraView,
+  startDoorCinematic, isCameraInCinematic, cancelCameraCinematic, isWorldPointOnScreen,
+} from './camera';
 import { emitClashFlash, initClashFlashes, resetClashFlashes, updateClashFlashes } from './clashFlash';
 import {
   defineEntityType,
@@ -28,24 +40,22 @@ import {
   playerRpmHooks, updatePlayerVisuals, updateTopple, notifyHit as notifyPlayerHit,
   startPlayerPitFallDeath, startPlayerToppleDeath,
   setPlayerControlLocked, setPlayerInvulnerable, isPlayerInvulnerable,
-  addPlayerCapacity, computeSpinnerDuelLoss, getPlayerImpactDamageMultiplier, setPlayerImpactDamageMultiplier,
+  addPlayerCapacity, computeSpinnerDuelLoss, refreshDuelHitCooldowns, tickDuelHitCooldowns,
+  getPlayerImpactDamageMultiplier, setPlayerImpactDamageMultiplier,
+  playerMotionVisuals,
 } from './player';
 import {
   createNormalPickup, createHyperPickup, createComboUnlockPickup, createHeatUnlockPickup, createSpinningLaserUnlockPickup,
   updatePickups, spawnPickupAt, spawnGrowthPickupAt, ejectPickupAt,
   collectPickup, pickupRpmGain, type Pickup,
 } from './pickup';
-import { loadActiveLevelFromBrowser } from './activeLevelStorage';
+import { hasActiveLevelInBrowser, loadActiveLevelFromBrowser } from './activeLevelStorage';
 import { type LevelData, lvPos, lvZ } from './levelLoader';
-import level1 from './levels/level1.json';
-import level2 from './levels/level2.json';
-import level3 from './levels/level3.json';
-import level4 from './levels/level4.json';
-import level5 from './levels/level5.json';
 import levelActive from './levels/level-active.json';
 import { createTurret, updateTurret, applyDamageToTurret, destroyTurret, TURRET_TIER_1 } from './turret';
-import { createProjectile, updateProjectiles, type Projectile } from './projectile';
-import { createExplosion, createRobotExplosion, updateExplosions, type Explosion } from './explosion';
+import { createProjectile, updateProjectiles, releaseProjectileResources, prewarmProjectileMaterials, syncProjectileLightPoolToSetting, zeroAllProjectileLights, type Projectile } from './projectile';
+import { syncAuraLightPoolToSetting, refreshAuraLight, zeroAllAuraLights } from './auraLightPool';
+import { createExplosion, createRobotExplosion, updateExplosions, prewarmExplosionMaterials, type Explosion } from './explosion';
 import {
   createObstacle, syncObstacle, obstacleHpDamage, applyDamageToObstacle, destroyObstacle,
   CRATE_CONFIG, BARREL_CONFIG, type ObstacleState,
@@ -88,7 +98,7 @@ import {
 } from './bossSpiderReliquary';
 import {
   createOctoboss, updateOctobossAI, syncOctobossTentacles, updateOctobossVisuals,
-  canDamageOctobossCore, canComboTargetOctobossCore, getOctobossCoreDamageMultiplier, getOctobossTipDamage, traceOctobossEyeLaser,
+  canDamageOctobossCore, canComboTargetOctobossCore, getOctobossTipDamage, traceOctobossEyeLaser,
   isOctobossDead, destroyOctoboss, OCTOBOSS_TIER_1, type OctobossState,
 } from './bossOctoboss';
 import {
@@ -111,17 +121,17 @@ import {
   isHeadHit, applyDamageToSlug, isSlugDead, destroySlugworm,
   BIG_SLUGWORM, BABY_SLUGWORM, type SlugwormState,
 } from './slugworm';
-import { createPoisonProjectile } from './projectile';
+import { createPoisonProjectile, createAcidBallProjectile } from './projectile';
 import { initGooDecals, spawnGooSplat, spawnBloodSplat, updateGooDecals, resetGooDecals } from './gooDecals';
-import { spawnZombieGibs, updateGibs, resetGibs } from './gibs';
-import { updateRicochetBubbles, resetRicochetBubbles } from './ricochetBubbles';
-import { createLevelPointLightRoot, setupLevelLights, clearLevelLights } from './levelLights';
+import { spawnZombieGibs, updateGibs, resetGibs, prewarmGibMaterials } from './gibs';
+import { updateRicochetBubbles, resetRicochetBubbles, prewarmRicochetBubbleMaterial } from './ricochetBubbles';
+import { createLevelPointLightRoot, setupLevelLights, clearLevelLights, activateTriggeredLights, refreshLevelLightIntensities } from './levelLights';
 import { updateLavaSurfaces } from './lavaSurface';
 import { initLavaEmbers, resetLavaEmbers, updateLavaEmbers } from './lavaEmbers';
 import { createFireTorch, destroyFireTorch, type FireTorch, updateFireTorch } from './fireTorch';
 import { addLaserLightPoint, addLaserLightSegment, beginLaserLightFrame, endLaserLightFrame } from './laserLightBuffer';
 import { createLaserGlowMaterial, createLaserRefractionMaterial } from './laserBeamMaterials';
-import { registerRefractionMesh } from './renderer';
+import { registerRefractionMesh, applyRefractionDisabledState, applyShadowsDisabledState } from './renderer';
 import { initSpaceBackground, updateSpaceBackground } from './spaceBackground';
 import {
   createSlidingDoor, defaultSlidingDoorConfig, destroySlidingDoor,
@@ -129,16 +139,19 @@ import {
 } from './slidingDoor';
 import type { LevelCircle, LevelEntity, LevelPolygon } from './levelLoader';
 import {
+  consumeCameraViewTogglePressed,
   consumeComboPressed,
   consumeHeatPressed,
   consumeProfilerTogglePressed,
   consumeSpectorCapturePressed,
   spinningLaserHeld,
 } from './input';
+import { initTouchInput, setTouchControlsVisible } from './touchInput';
 import { createProfiler } from './profiler';
 import type { FrameCounts, FrameMode, RenderStats, SceneStats } from './profilerTypes';
 import { createSpectorCaptureController } from './spectorCapture';
 import { updateTopDownCulling } from './sceneCulling';
+import { updateChunkVisibility } from './chunkManager';
 import {
   initSound,
   preloadSoundAssets,
@@ -163,51 +176,45 @@ import { runLoadTasks, type LoadTask } from './assetLoader';
 
 // ─── Level-driven state ──────────────────────────────────────────────────────
 
-type LevelChoiceId = 'active' | 'level1' | 'level2' | 'level3' | 'level4' | 'level5';
+type LevelChoiceId = 'main' | 'custom';
 const DEBUG_SKIP_MAIN_MENU = false;
 
-const bundledLevels: Record<Exclude<LevelChoiceId, 'active'>, LevelData> = {
-  level1: level1 as LevelData,
-  level2: level2 as LevelData,
-  level3: level3 as LevelData,
-  level4: level4 as LevelData,
-  level5: level5 as LevelData,
+const bundledLevels: Record<Exclude<LevelChoiceId, 'custom'>, LevelData> = {
+  main: levelActive as LevelData,
 };
 
-const bundledActiveLevel = levelActive as LevelData;
 const EMPTY_LEVEL: LevelData = { version: 1, gridSize: 1, entities: [] };
 const levelChoices: Array<{ id: LevelChoiceId; label: string }> = [
-  { id: 'active', label: 'Active Level (Editor)' },
-  { id: 'level1', label: 'Level 1' },
-  { id: 'level2', label: 'Level 2' },
-  { id: 'level3', label: 'Level 3' },
-  { id: 'level4', label: 'Level 4' },
-  { id: 'level5', label: 'Level 5' },
+  { id: 'main',   label: 'Main Game' },
+  { id: 'custom', label: 'Custom Map (Editor)' },
 ];
 
 function parseLevelChoice(value: string | null): LevelChoiceId {
-  if (!value) return 'active';
-  return levelChoices.some((choice) => choice.id === value) ? value as LevelChoiceId : 'active';
+  if (!value) return 'main';
+  // Backward-compat: the editor's Play link uses ?level=active.
+  if (value === 'active') return 'custom';
+  return levelChoices.some((choice) => choice.id === value) ? value as LevelChoiceId : 'main';
 }
 
-async function loadRuntimeActiveLevel(): Promise<LevelData> {
-  try {
-    const response = await fetch(`/api/active-level?ts=${Date.now()}`, { cache: 'no-store' });
-    if (!response.ok) throw new Error(await response.text());
-    return await response.json() as LevelData;
-  } catch (error) {
-    console.warn('Failed to fetch runtime active level from the dev API:', error);
+async function loadCustomLevel(): Promise<LevelData> {
+  if (import.meta.env.DEV) {
+    try {
+      const response = await fetch(`/api/active-level?ts=${Date.now()}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(await response.text());
+      return await response.json() as LevelData;
+    } catch (error) {
+      console.warn('Failed to fetch runtime active level from the dev API:', error);
+    }
   }
 
   const browserLevel = loadActiveLevelFromBrowser();
   if (browserLevel) return browserLevel;
 
-  console.warn('Falling back to bundled active level.');
-  return bundledActiveLevel;
+  throw new Error('No custom map saved. Use the level editor first.');
 }
 
 async function resolveLevel(choice: LevelChoiceId): Promise<LevelData> {
-  if (choice === 'active') return loadRuntimeActiveLevel();
+  if (choice === 'custom') return loadCustomLevel();
   return bundledLevels[choice];
 }
 
@@ -257,6 +264,16 @@ let currentLevel: LevelData = EMPTY_LEVEL;
 // ─── Scene Setup ─────────────────────────────────────────────────────────────
 
 initHud();
+initToasts();
+void initYoutubeMusic(BACKGROUND_MUSIC_VIDEO_ID, { volume: 0.35, loop: true });
+
+const musicCreditEl = document.createElement('div');
+musicCreditEl.className = 'music-credit';
+musicCreditEl.innerHTML = `
+  <span class="music-credit-label">Music</span>
+  <span class="music-credit-track">TABOO — Life In The Universe</span>
+`;
+document.body.appendChild(musicCreditEl);
 setHudVisible(false);
 initCamera();
 initSound();
@@ -268,7 +285,10 @@ initClashFlashes(scene);
 // initSpaceBackground();
 
 const profiler = createProfiler({
-  enabled: import.meta.env.DEV && new URL(window.location.href).searchParams.get('profile') === '1',
+  // Enable in any build (dev or prod) when the URL has `?profile=1`. The
+  // query string is its own gate — keeps the overlay off by default but
+  // available for production debugging.
+  enabled: new URL(window.location.href).searchParams.get('profile') === '1',
   overlayEnabled: true,
   batchWindowMs: 500,
   collectorBaseUrl: '/api/perf-log',
@@ -278,7 +298,9 @@ const SCENE_CULL_PADDING = 2;
 
 let spectorCaptureControllerPromise: Promise<Awaited<ReturnType<typeof createSpectorCaptureController>>> | null = null;
 
-if (import.meta.env.DEV && new URL(window.location.href).searchParams.get('spector') === '1') {
+// Enable in any build (dev or prod) when the URL has `?spector=1`. Same
+// gating story as the profiler above — the URL flag is enough on its own.
+if (new URL(window.location.href).searchParams.get('spector') === '1') {
   spectorCaptureControllerPromise = createSpectorCaptureController(renderer.domElement);
 }
 
@@ -368,10 +390,36 @@ registerCollisionPair('player', 'laser_spinner', (_playerCol, enemyCol, hit) => 
     if (playerLoss > 2.5) notifyPlayerHit();
   }
   enemy.collidable.rpm = Math.max(0, enemy.collidable.rpm - enemyLoss);
+  refreshDuelHitCooldowns(enemyCol, isPlayerInvulnerable() ? 0 : playerLoss, enemyLoss);
   onLaserSpinnerCollision(enemy);
   const { point, normal } = computeContactInfo(_playerCol, enemyCol);
   emitSparks(point, normal, Math.floor(14 + hit.impactForce * 10), Math.min(1, hit.impactForce / 8));
 });
+
+registerCollisionPair('player', 'enemy', (_playerCol, enemyCol, hit) => {
+  const enemy = EnemyEntities.getAll().find((e) => e.collidable === enemyCol);
+  if (!enemy?.alive) return;
+
+  console.log("hitting enemy");
+  // if (enemy?.alive && !isPlayerInvulnerable()) {
+  //   const comboLock = getLaserSpinnerComboLockDuration(enemy);
+  //   if (comboLock > 0) {
+  //     enemyComboLockTimer = Math.max(enemyComboLockTimer, comboLock);
+  //     setPlayerControlLocked(true);
+  //   }
+  // }
+
+  const { playerLoss, enemyLoss } = computeSpinnerDuelLoss(enemyCol, hit.impactForce);
+  if (!isPlayerInvulnerable()) {
+    playerBody.rpm = Math.max(0, playerBody.rpm - playerLoss);
+    if (playerLoss > 2.5) notifyPlayerHit();
+  }
+  enemy.collidable.rpm = Math.max(0, enemy.collidable.rpm - enemyLoss);
+  refreshDuelHitCooldowns(enemyCol, isPlayerInvulnerable() ? 0 : playerLoss, enemyLoss);
+  const { point, normal } = computeContactInfo(_playerCol, enemyCol);
+  emitSparks(point, normal, Math.floor(14 + hit.impactForce * 10), Math.min(1, hit.impactForce / 8));
+});
+
 
 registerCollisionPair('player', 'zombie', (_playerCol, zombieCol, hit) => {
   const zombie = ZombieEntities.getAll().find((z) => z.collidable === zombieCol);
@@ -468,10 +516,9 @@ registerCollisionPair('player', 'spider_core', (_playerCol, coreCol, hit) => {
     playerBody.rpm = Math.max(0, playerBody.rpm - playerLoss);
     if (playerLoss > 2.5) notifyPlayerHit();
   }
-  spider.collidable.rpm = Math.max(
-    0,
-    spider.collidable.rpm - enemyLoss * getSpiderCoreDamageMultiplier(spider),
-  );
+  const spiderCoreLoss = enemyLoss * getSpiderCoreDamageMultiplier(spider);
+  spider.collidable.rpm = Math.max(0, spider.collidable.rpm - spiderCoreLoss);
+  refreshDuelHitCooldowns(coreCol, isPlayerInvulnerable() ? 0 : playerLoss, spiderCoreLoss);
   onSpiderCoreCollision(spider);
   playClashSound(hit.impactForce);
   emitSparks(point, normal, Math.floor(18 + hit.impactForce * 12), Math.min(1, hit.impactForce / 6));
@@ -483,10 +530,12 @@ registerCollisionPair('player', 'spider_leg', (_playerCol, legCol, hit) => {
     const leg = spider.legs.find((entry) => entry.alive && entry.collidable === legCol);
     if (!leg) continue;
 
-    const hpDamage = scalePlayerImpactDamage(hit.impactForce * 0.55 * Math.max(0.4, playerBody.rpm / playerBody.rpmCapacity));
+    // const hpDamage = scalePlayerImpactDamage(hit.impactForce * 0.55);
+      const { playerLoss, enemyLoss } = computeSpinnerDuelLoss(legCol, hit.impactForce);
     const { point, normal } = computeContactInfo(_playerCol, legCol);
     playClashSound(hit.impactForce);
-    if (applyDamageToSpiderLeg(spider, leg, hpDamage)) {
+    refreshDuelHitCooldowns(legCol, isPlayerInvulnerable() ? 0 : playerLoss, enemyLoss);
+    if (applyDamageToSpiderLeg(spider, leg, enemyLoss)) {
       explosions.push(createExplosion({ x: legCol.pos.x, z: legCol.pos.z }));
       emitSparks(point, normal, Math.floor(24 + hit.impactForce * 12), Math.min(1, 0.5 + hit.impactForce / 8));
     } else {
@@ -502,10 +551,10 @@ registerCollisionPair('player', 'octoboss_core', (_playerCol, coreCol, hit) => {
 
   const { point, normal } = computeContactInfo(_playerCol, coreCol);
   playClashSound(hit.impactForce);
-  if (!canDamageOctobossCore(boss)) {
-    emitSparks(point, normal, Math.floor(18 + hit.impactForce * 10), Math.min(1, hit.impactForce / 7));
-    return;
-  }
+  // if (!canDamageOctobossCore(boss)) {
+  //   emitSparks(point, normal, Math.floor(18 + hit.impactForce * 10), Math.min(1, hit.impactForce / 7));
+  //   return;
+  // }
 
   const { playerLoss, enemyLoss } = computeSpinnerDuelLoss(coreCol, hit.impactForce);
   if (!isPlayerInvulnerable()) {
@@ -514,8 +563,10 @@ registerCollisionPair('player', 'octoboss_core', (_playerCol, coreCol, hit) => {
   }
   boss.collidable.rpm = Math.max(
     0,
-    boss.collidable.rpm - enemyLoss * getOctobossCoreDamageMultiplier(boss),
+    boss.collidable.rpm - enemyLoss,
   );
+  refreshDuelHitCooldowns(coreCol, isPlayerInvulnerable() ? 0 : playerLoss, enemyLoss);
+  console.log("applied damage to the octoboss: ", boss.collidable.rpm, enemyLoss)
   emitSparks(point, normal, Math.floor(22 + hit.impactForce * 12), Math.min(1, hit.impactForce / 6));
 });
 
@@ -653,12 +704,15 @@ registerProximityPair('player', 'pickup', (_playerProx, pickupProx) => {
   } else if (pickup.type === 'combo_unlock') {
     playerAbilityUnlocks.combo = true;
     playPickupSound('growth');
+    showToast('Received: Combo Attack (X)', 'unlock');
   } else if (pickup.type === 'heat_unlock') {
     playerAbilityUnlocks.heatAttack = true;
     playPickupSound('growth');
+    showToast('Received: Heat Aura (C)', 'unlock');
   } else if (pickup.type === 'spinning_laser_unlock') {
     playerAbilityUnlocks.spinningLaser = true;
     playPickupSound('growth');
+    showToast('Received: Spinning Laser (V)', 'unlock');
   }
   collectPickup(pickup);
 });
@@ -833,6 +887,19 @@ interface CheckpointState {
   core: THREE.Mesh;
 }
 
+interface LevelCompleteState {
+  id: string;
+  pos: Vec2;
+  radius: number;
+  pulseOffset: number;
+  triggered: boolean;
+  group: THREE.Group;
+  baseRing: THREE.Mesh;
+  haloRing: THREE.Mesh;
+  beam: THREE.Mesh;
+  core: THREE.Mesh;
+}
+
 interface PortalSessionState {
   arrivedViaPortal: boolean;
   sourceRefUrl: string | null;
@@ -867,9 +934,11 @@ const closeTriggerDoorIds = new Map<string, Set<number>>();
 const fallingVictims: FallingVictim[] = [];
 const fallableActors: FallableActor[] = [];
 const checkpoints: CheckpointState[] = [];
+const levelCompleteCheckpoints: LevelCompleteState[] = [];
 const awakenableEncounterEntities: AwakenableEncounterEntity[] = [];
 const KILL_FALL_DELAY = 0.5;
 const DEFAULT_CHECKPOINT_RADIUS = 1.6;
+const DEFAULT_LEVEL_COMPLETE_RADIUS = 1.85;
 const RESPAWN_INVULNERABILITY_DURATION = 1.6;
 const VIBE_JAM_PORTAL_URL = 'https://vibejam.cc/portal/2026';
 const PORTAL_DEFAULT_USERNAME = 'spinner-player';
@@ -1105,6 +1174,7 @@ function updateCheckpointVisuals(now: number): void {
   for (const checkpoint of checkpoints) {
     refreshCheckpointVisual(checkpoint, now);
   }
+  updateLevelCompleteVisuals(now);
 }
 
 function clearCheckpoints(): void {
@@ -1114,6 +1184,7 @@ function clearCheckpoints(): void {
     disposeObject3D(checkpoint.group);
   }
   activeCheckpoint = null;
+  clearLevelCompleteCheckpoints();
 }
 
 function setCurrentCheckpoint(checkpoint: CheckpointState | null): void {
@@ -1134,6 +1205,7 @@ function activateCheckpoint(checkpoint: CheckpointState): void {
     24,
     0.8,
   );
+  showToast('Checkpoint Reached', 'checkpoint');
 }
 
 function updateCheckpointActivation(): void {
@@ -1143,6 +1215,125 @@ function updateCheckpointActivation(): void {
     if (dx * dx + dz * dz <= checkpoint.radius * checkpoint.radius) {
       activateCheckpoint(checkpoint);
     }
+  }
+  for (const beacon of levelCompleteCheckpoints) {
+    if (beacon.triggered) continue;
+    const dx = playerBody.pos.x - beacon.pos.x;
+    const dz = playerBody.pos.z - beacon.pos.z;
+    if (dx * dx + dz * dz <= beacon.radius * beacon.radius) {
+      beacon.triggered = true;
+      triggerLevelComplete(beacon);
+    }
+  }
+}
+
+function createLevelCompleteMarker(pos: Vec2): LevelCompleteState {
+  const group = new THREE.Group();
+  group.position.set(pos.x, 0, pos.z);
+
+  const baseRing = new THREE.Mesh(
+    new THREE.TorusGeometry(1.05, 0.11, 14, 48),
+    new THREE.MeshStandardMaterial({
+      color: 0xffd66e,
+      emissive: 0xb87510,
+      emissiveIntensity: 0.95,
+      metalness: 0.18,
+      roughness: 0.32,
+    }),
+  );
+  baseRing.rotation.x = Math.PI / 2;
+  baseRing.position.y = 0.06;
+  group.add(baseRing);
+
+  const haloRing = new THREE.Mesh(
+    new THREE.TorusGeometry(1.42, 0.06, 12, 36),
+    new THREE.MeshBasicMaterial({
+      color: 0xfff1b0,
+      transparent: true,
+      opacity: 0.55,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  haloRing.rotation.x = Math.PI / 2;
+  haloRing.position.y = 0.1;
+  group.add(haloRing);
+
+  // Tall additive beam — the visual call-to-action that reads from across the arena.
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55, 0.42, 28, 14, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xffe49a,
+      transparent: true,
+      opacity: 0.42,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  beam.position.y = 14;
+  group.add(beam);
+
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(0.28, 18, 18),
+    new THREE.MeshBasicMaterial({
+      color: 0xfff7d0,
+      transparent: true,
+      opacity: 0.95,
+    }),
+  );
+  core.position.y = 1.55;
+  group.add(core);
+
+  scene.add(group);
+
+  return {
+    id: '',
+    pos: cloneVec2(pos),
+    radius: DEFAULT_LEVEL_COMPLETE_RADIUS,
+    pulseOffset: Math.random() * Math.PI * 2,
+    triggered: false,
+    group,
+    baseRing,
+    haloRing,
+    beam,
+    core,
+  };
+}
+
+function refreshLevelCompleteVisual(beacon: LevelCompleteState, now: number): void {
+  const pulse = 0.5 + 0.5 * Math.sin(now * 2.4 + beacon.pulseOffset);
+  const scroll = 0.5 + 0.5 * Math.sin(now * 1.6 + beacon.pulseOffset * 0.5);
+
+  const ringMat = beacon.baseRing.material as THREE.MeshStandardMaterial;
+  const haloMat = beacon.haloRing.material as THREE.MeshBasicMaterial;
+  const beamMat = beacon.beam.material as THREE.MeshBasicMaterial;
+  const coreMat = beacon.core.material as THREE.MeshBasicMaterial;
+
+  ringMat.emissiveIntensity = 0.85 + pulse * 0.4;
+  haloMat.opacity = 0.45 + pulse * 0.22;
+  beamMat.opacity = 0.32 + scroll * 0.22;
+  coreMat.opacity = 0.78 + pulse * 0.2;
+
+  beacon.baseRing.rotation.z = now * 0.45;
+  beacon.haloRing.rotation.z = -now * 0.7;
+  beacon.haloRing.scale.setScalar(0.98 + pulse * 0.1);
+  beacon.core.position.y = 1.55 + pulse * 0.18;
+  beacon.beam.scale.x = 1.0 + Math.sin(now * 4 + beacon.pulseOffset) * 0.05;
+  beacon.beam.scale.z = beacon.beam.scale.x;
+}
+
+function updateLevelCompleteVisuals(now: number): void {
+  for (const beacon of levelCompleteCheckpoints) {
+    refreshLevelCompleteVisual(beacon, now);
+  }
+}
+
+function clearLevelCompleteCheckpoints(): void {
+  while (levelCompleteCheckpoints.length > 0) {
+    const beacon = levelCompleteCheckpoints.pop()!;
+    scene.remove(beacon.group);
+    disposeObject3D(beacon.group);
   }
 }
 
@@ -1257,7 +1448,35 @@ function closeEncounterDoors(encounter: EncounterState): void {
 
 function clearEncounter(encounter: EncounterState): void {
   encounter.cleared = true;
-  openEncounterDoors(encounter);
+
+  // Skip the cutaway if there's nothing to show, or one is already running.
+  if (encounter.doorIds.size === 0 || isCameraInCinematic()) {
+    openEncounterDoors(encounter);
+    return;
+  }
+
+  // Pick the first off-screen door as the focus target. If every door is already
+  // visible, no cinematic is needed — just open them.
+  let focusDoor: SlidingDoorState | null = null;
+  for (const doorId of encounter.doorIds) {
+    const door = slidingDoorsById.get(doorId);
+    if (!door) continue;
+    if (!isWorldPointOnScreen(door.origin.x, door.origin.z)) {
+      focusDoor = door;
+      break;
+    }
+  }
+
+  if (!focusDoor) {
+    openEncounterDoors(encounter);
+    return;
+  }
+
+  startDoorCinematic({ x: focusDoor.origin.x, z: focusDoor.origin.z }, {
+    onPanArrive: () => openEncounterDoors(encounter),
+    onComplete:  () => syncPlayerControlLock(),
+  });
+  syncPlayerControlLock();
 }
 
 function activateEncounter(id: string): void {
@@ -1269,6 +1488,11 @@ function activateEncounter(id: string): void {
     return;
   }
   closeEncounterDoors(encounter);
+  // No compileAsync here. Load-time prewarm forces every node visible while
+  // it runs, so encounter-locked entities' programs are already in cache.
+  // Calling compileAsync at the moment the player crosses a trigger zone
+  // synchronously walks every visible material — that walk *was* the stall
+  // people felt as "the laser-room stutter."
 }
 
 function registerEncounterMember(levelEntity: LevelEntity, runtimeId: number): void {
@@ -1859,6 +2083,13 @@ function spawnLevelEntity(ent: LevelEntity): void {
       }
       break;
     }
+    case 'level_complete': {
+      const beacon = createLevelCompleteMarker(pos);
+      beacon.id = ent.id;
+      beacon.radius = readNumberProperty(ent.properties, 'radius', DEFAULT_LEVEL_COMPLETE_RADIUS, 0.5);
+      levelCompleteCheckpoints.push(beacon);
+      break;
+    }
     case 'obstacle': {
       const cfg = ent.properties?.config === 'barrel' ? BARREL_CONFIG : CRATE_CONFIG;
       const obstacle = ObstacleEntities.spawn(pos, cfg);
@@ -2137,6 +2368,12 @@ function spawnAll(level: LevelData): void {
       continue;
     }
 
+    // Level point lights are spawned in setupLevelLights — even encounter-
+    // locked ones live in the scene from the start with intensity 0, so
+    // activating an encounter doesn't change NUM_POINT_LIGHTS. Skip them
+    // here so we don't double-spawn or queue them for trigger spawn.
+    if (ent.type === 'light_point') continue;
+
     const spawnTrigger = readStringProperty(ent.properties, 'spawnTrigger');
     if (spawnTrigger && !shouldPreloadTriggeredEntity(ent)) {
       const pending = pendingTriggeredEntities.get(spawnTrigger);
@@ -2145,7 +2382,6 @@ function spawnAll(level: LevelData): void {
       continue;
     }
 
-    if (ent.type === 'light_point') continue;
     spawnLevelEntity(ent);
   }
 }
@@ -2158,6 +2394,7 @@ function updateTriggerSpawns(): void {
     activateCloseTrigger(zone.id);
     spawnTriggeredEntities(zone.id);
     awakenEncounterEntities(zone.id);
+    activateTriggeredLights(zone.id);
     activateEncounter(zone.id);
   }
 }
@@ -2183,7 +2420,7 @@ function updateAmbientTriggers(): void {
 const initialUrl = new URL(window.location.href);
 const portalSession = parsePortalSession(initialUrl);
 let selectedLevelId: LevelChoiceId = DEBUG_SKIP_MAIN_MENU
-  ? 'active'
+  ? 'main'
   : parseLevelChoice(initialUrl.searchParams.get('level'));
 const shouldAutostart = DEBUG_SKIP_MAIN_MENU
   || initialUrl.searchParams.get('autostart') === '1'
@@ -2260,8 +2497,30 @@ menuOverlay.innerHTML = `
       <h1 class="menu-logo">SPINNER</h1>
     </div>
     <div class="overlay-actions menu-actions">
+      <label class="overlay-field">
+        <span>Map</span>
+        <select class="overlay-select" id="menu-level-select">
+          ${levelChoices.map((choice) => `<option value="${choice.id}">${choice.label}</option>`).join('')}
+        </select>
+      </label>
       <button type="button" class="overlay-btn overlay-btn-primary" id="menu-start-btn">START GAME</button>
       <button type="button" class="overlay-btn" id="menu-editor-btn">LEVEL EDITOR</button>
+      <label class="overlay-field">
+        <span>Light pool size <span id="menu-light-pool-value">${getLightPoolSize()}</span></span>
+        <input type="range" id="menu-light-pool" min="${LIGHT_POOL_SIZE_MIN}" max="${LIGHT_POOL_SIZE_MAX}" step="1" value="${getLightPoolSize()}">
+      </label>
+      <label class="overlay-field overlay-field-check">
+        <span>Disable all lights</span>
+        <input type="checkbox" id="menu-disable-lights"${getLightsDisabled() ? ' checked' : ''}>
+      </label>
+      <label class="overlay-field overlay-field-check">
+        <span>Disable refraction (mirror walls)</span>
+        <input type="checkbox" id="menu-disable-refraction"${getRefractionDisabled() ? ' checked' : ''}>
+      </label>
+      <label class="overlay-field overlay-field-check">
+        <span>Disable shadows</span>
+        <input type="checkbox" id="menu-disable-shadows"${getShadowsDisabled() ? ' checked' : ''}>
+      </label>
     </div>
     <div class="menu-instructions">
       <p class="menu-instructions-title">How to Play</p>
@@ -2274,6 +2533,82 @@ document.body.appendChild(menuOverlay);
 const menuStartBtn = menuOverlay.querySelector<HTMLButtonElement>('#menu-start-btn')!;
 const menuEditorBtn = menuOverlay.querySelector<HTMLButtonElement>('#menu-editor-btn')!;
 const menuStatusEl = menuOverlay.querySelector<HTMLParagraphElement>('#menu-status')!;
+const menuLevelSelect = menuOverlay.querySelector<HTMLSelectElement>('#menu-level-select')!;
+const menuLightPoolSlider = menuOverlay.querySelector<HTMLInputElement>('#menu-light-pool')!;
+const menuLightPoolValue = menuOverlay.querySelector<HTMLSpanElement>('#menu-light-pool-value')!;
+const menuDisableLightsCheckbox = menuOverlay.querySelector<HTMLInputElement>('#menu-disable-lights')!;
+const menuDisableRefractionCheckbox = menuOverlay.querySelector<HTMLInputElement>('#menu-disable-refraction')!;
+const menuDisableShadowsCheckbox = menuOverlay.querySelector<HTMLInputElement>('#menu-disable-shadows')!;
+
+menuDisableRefractionCheckbox.addEventListener('change', () => {
+  setRefractionDisabled(menuDisableRefractionCheckbox.checked);
+  // Hide / show every registered mirror wall in the current scene. When
+  // they're hidden, renderScene's anyVisible check short-circuits and the
+  // second (refraction) render pass is skipped — roughly halves the
+  // per-frame rendering cost on busy levels.
+  applyRefractionDisabledState();
+});
+
+menuDisableShadowsCheckbox.addEventListener('change', () => {
+  setShadowsDisabled(menuDisableShadowsCheckbox.checked);
+  // Flip renderer.shadowMap.enabled and force materials to re-init their
+  // shadow-related uniforms next frame. Three.js skips the entire shadow
+  // render pass when shadowMap.enabled is false.
+  applyShadowsDisabledState();
+});
+
+menuDisableLightsCheckbox.addEventListener('change', () => {
+  const disabled = menuDisableLightsCheckbox.checked;
+  setLightsDisabled(disabled);
+  if (disabled) {
+    zeroAllAuraLights();
+    zeroAllProjectileLights();
+  }
+  refreshLevelLightIntensities();
+  refreshLavaLightIntensities();
+  // Torches and aura lights self-restore/zero next update frame via getLightsDisabled() checks.
+});
+
+menuLightPoolSlider.addEventListener('input', () => {
+  const value = Number.parseInt(menuLightPoolSlider.value, 10);
+  setLightPoolSize(value);
+  menuLightPoolValue.textContent = String(value);
+});
+// Apply on slider release. Resizing the pool changes NUM_POINT_LIGHTS and
+// triggers a one-shot recompile of every visible lit material — too costly
+// to do on every `input` tick during a drag, but fine on `change` (fired
+// when the user lets go) since the menu overlay hides any visual hitch and
+// it means the next Start Game already sees the right pool.
+menuLightPoolSlider.addEventListener('change', () => {
+  syncAuraLightPoolToSetting();
+  syncProjectileLightPoolToSetting();
+  // If the pool was empty when the player's createTop() ran (slider at 0),
+  // its auraLight is null. Now that the pool has grown, claim one for the
+  // player so the slider's effect is visible.
+  if (playerMotionVisuals) refreshAuraLight(playerMotionVisuals, 0xe94560);
+  // Force the renderer to compile programs for the new light count so the
+  // next render doesn't stall on first lit material.
+  void renderer.compileAsync(scene, camera);
+});
+
+function syncMenuLevelSelect(): void {
+  const customAvailable = import.meta.env.DEV || hasActiveLevelInBrowser();
+  for (const option of menuLevelSelect.options) {
+    if (option.value === 'custom') {
+      option.disabled = !customAvailable;
+      option.textContent = customAvailable ? 'Custom Map (Editor)' : 'Custom Map (none saved)';
+    }
+  }
+  // If the previously selected choice is no longer available, fall back to main.
+  if (selectedLevelId === 'custom' && !customAvailable) selectedLevelId = 'main';
+  menuLevelSelect.value = selectedLevelId;
+}
+
+menuLevelSelect.addEventListener('change', () => {
+  selectedLevelId = parseLevelChoice(menuLevelSelect.value);
+});
+
+syncMenuLevelSelect();
 
 const gameOverOverlay = document.createElement('div');
 gameOverOverlay.className = 'app-overlay gameover-overlay';
@@ -2293,10 +2628,29 @@ document.body.appendChild(gameOverOverlay);
 const gameOverRestartBtn = gameOverOverlay.querySelector<HTMLButtonElement>('#gameover-restart-btn')!;
 const gameOverMenuBtn = gameOverOverlay.querySelector<HTMLButtonElement>('#gameover-menu-btn')!;
 
+const levelCompleteOverlay = document.createElement('div');
+levelCompleteOverlay.className = 'app-overlay level-complete-overlay';
+levelCompleteOverlay.innerHTML = `
+  <div class="overlay-card overlay-card-compact">
+    <div class="overlay-kicker">Run Complete</div>
+    <h2>Level Done</h2>
+    <p class="overlay-copy">You reached the beacon. Replay this level or head back to the main menu.</p>
+    <div class="overlay-actions">
+      <button type="button" class="overlay-btn overlay-btn-primary" id="level-complete-replay-btn">Replay</button>
+      <button type="button" class="overlay-btn" id="level-complete-menu-btn">Main Menu</button>
+    </div>
+  </div>
+`;
+document.body.appendChild(levelCompleteOverlay);
+
+const levelCompleteReplayBtn = levelCompleteOverlay.querySelector<HTMLButtonElement>('#level-complete-replay-btn')!;
+const levelCompleteMenuBtn = levelCompleteOverlay.querySelector<HTMLButtonElement>('#level-complete-menu-btn')!;
+
 // ─── Shared State ────────────────────────────────────────────────────────────
 
 let time = 0;
 let gameOver = false;
+let levelComplete = false;
 let menuVisible = true;
 let startInFlight = false;
 
@@ -2304,7 +2658,10 @@ function setMenuVisible(visible: boolean): void {
   menuVisible = visible;
   menuOverlay.style.display = visible ? 'flex' : 'none';
   gameOverOverlay.style.display = !visible && gameOver ? 'flex' : 'none';
+  levelCompleteOverlay.style.display = !visible && levelComplete ? 'flex' : 'none';
   setHudVisible(!visible);
+  setTouchControlsVisible(!visible && !gameOver && !levelComplete);
+  if (visible) syncMenuLevelSelect();
   if (visible && !startInFlight) menuStatusEl.textContent = DEFAULT_MENU_INSTRUCTIONS;
 }
 
@@ -2312,6 +2669,7 @@ function setMenuBusy(busy: boolean, label?: string): void {
   startInFlight = busy;
   menuStartBtn.disabled = busy;
   menuEditorBtn.disabled = busy;
+  menuLevelSelect.disabled = busy;
   if (label) menuStatusEl.textContent = label;
 }
 
@@ -2449,6 +2807,10 @@ function resetGame(): void {
   playerAbilityUnlocks.heatAttack = false;
   playerAbilityUnlocks.spinningLaser = false;
   resetAmbientTrack();
+  cancelCameraCinematic();
+  clearToasts();
+  levelComplete = false;
+  levelCompleteOverlay.style.display = 'none';
   respawnPending = false;
   respawnInvulnerabilityTimer = 0;
   syncPlayerInvulnerability();
@@ -2468,7 +2830,10 @@ function resetGame(): void {
   for (const p of pickups) { if (!p.collected) scene.remove(p.mesh); }
   pickups.length = 0;
 
-  for (const p of projectiles) { if (p.alive) scene.remove(p.mesh); }
+  for (const p of projectiles) {
+    if (p.alive) scene.remove(p.mesh);
+    releaseProjectileResources(p);
+  }
   projectiles.length = 0;
   for (const e of explosions)  { if (e.alive) scene.remove(e.mesh); }
   explosions.length = 0;
@@ -2506,11 +2871,11 @@ async function startSelectedLevel(options: { suppressLoadingOverlay?: boolean } 
   if (startInFlight) return;
   const suppressLoadingOverlay = options.suppressLoadingOverlay === true;
 
-  setMenuBusy(true, selectedLevelId === 'active'
+  setMenuBusy(true, selectedLevelId === 'custom'
     ? 'Loading the editor level...'
     : 'Loading the arena...');
   if (!suppressLoadingOverlay) {
-    showLoadingOverlay('Loading Arena', selectedLevelId === 'active'
+    showLoadingOverlay('Loading Arena', selectedLevelId === 'custom'
       ? 'Reading the editor level...'
       : 'Reading level data...');
   }
@@ -2523,7 +2888,56 @@ async function startSelectedLevel(options: { suppressLoadingOverlay?: boolean } 
     resetGame();
     gameOver = false;
     replaceGameUrl(true);
+    // Pre-compile every material's shader program so the first render of a
+    // new entity doesn't stall on getProgramParameter(LINK_STATUS) — that
+    // single call was costing 1.6s+ during traversal.
+    const compileStart = performance.now();
+    // Apply the light-pool slider before prewarm — resizing the pools
+    // changes NUM_POINT_LIGHTS, which forces every visible lit shader to
+    // recompile. Doing it here folds the cost into the loading screen
+    // instead of stuttering the first gameplay frame.
+    syncAuraLightPoolToSetting();
+    syncProjectileLightPoolToSetting();
+    // The player's createTop runs at module load; if the pool was empty
+    // back then (slider at 0), the aura-light reference is null. Now that
+    // the pool has been resized for this run, give the player back its aura.
+    if (playerMotionVisuals) refreshAuraLight(playerMotionVisuals, 0xe94560);
+    // Spawn dummies for runtime-created effects (gibs, explosions). Their
+    // materials are normally created on first kill, which causes a multi-
+    // second compile stall. By having them in the scene during compileAsync,
+    // their shader programs get compiled at load instead.
+    const disposeGibPrewarm = prewarmGibMaterials();
+    const disposeExplosionPrewarm = prewarmExplosionMaterials();
+    const disposeProjectilePrewarm = prewarmProjectileMaterials();
+    const disposeRicochetPrewarm = prewarmRicochetBubbleMaterial();
+    // Three's compileAsync uses traverseVisible — meshes with visible=false
+    // (encounter-pending entities, currently inactive doors, etc.) are
+    // skipped, so their materials only compile mid-game. Force everything
+    // visible during the compile pass, then restore.
+    const visibilityCache = new Map<THREE.Object3D, boolean>();
+    scene.traverse((obj) => {
+      visibilityCache.set(obj, obj.visible);
+      obj.visible = true;
+    });
+    await renderer.compileAsync(scene, camera);
+    // Three's WebGLRenderer hardcodes LinearSRGBColorSpace for non-XR render
+    // targets, so the mirror's refraction pass renders with a different
+    // outputColorSpace than the canvas — and three keys its program cache on
+    // outputColorSpace. Run a second pass bound to the refraction target so
+    // every visible material's srgb-linear variant lands in the cache too.
+    // Without this the first frame the mirror is on screen recompiles every
+    // visible lit material.
+    await compileForRefractionTarget(scene, camera);
+    visibilityCache.forEach((wasVisible, obj) => {
+      obj.visible = wasVisible;
+    });
+    disposeGibPrewarm();
+    disposeExplosionPrewarm();
+    disposeProjectilePrewarm();
+    disposeRicochetPrewarm();
+    console.log(`[startup] shader pre-compile finished in ${(performance.now() - compileStart).toFixed(0)}ms`);
     setMenuVisible(false);
+    (window as unknown as { __markGameplayStart?: () => void }).__markGameplayStart?.();
   } catch (error) {
     console.error('Failed to start level:', error);
     if (!suppressLoadingOverlay) hideLoadingOverlay();
@@ -2543,6 +2957,8 @@ function returnToMenu(): void {
 }
 
 menuStartBtn.addEventListener('click', () => {
+  // Triggered inside a real user gesture so the browser allows audio autoplay.
+  playYoutubeMusic();
   void startSelectedLevel();
 });
 
@@ -3355,11 +3771,10 @@ function buildComboTargets(): ComboTarget[] {
       getPos: () => cloneVec2(boss.collidable.pos),
       isValid: () => boss.alive && canComboTargetOctobossCore(boss),
       applyDamage: (damage) => {
-        if (!boss.alive || !canDamageOctobossCore(boss)) return;
-        boss.collidable.rpm = Math.max(
-          0,
-          boss.collidable.rpm - damage * getOctobossCoreDamageMultiplier(boss),
-        );
+        if (!boss.alive) return;
+        // Combo strikes bypass the tentacle shield — apply damage directly
+        // rather than gating on canDamageOctobossCore / its multiplier.
+        boss.collidable.rpm = Math.max(0, boss.collidable.rpm - damage);
       },
     });
   }
@@ -3694,9 +4109,39 @@ function isAnyPlayerSpecialBusy(): boolean {
 }
 
 function syncPlayerControlLock(): void {
-  const shouldLock = gameOver || respawnPending || enemyComboLockTimer > 0 || isComboBusy();
+  const shouldLock = gameOver || levelComplete || respawnPending || enemyComboLockTimer > 0 || isComboBusy() || isCameraInCinematic();
   setPlayerControlLocked(shouldLock);
 }
+
+function triggerLevelComplete(beacon: LevelCompleteState): void {
+  if (levelComplete) return;
+  levelComplete = true;
+  levelCompleteOverlay.style.display = 'flex';
+  setTouchControlsVisible(false);
+  cancelCameraCinematic();
+  syncPlayerControlLock();
+  emitPlasma({ x: beacon.pos.x, y: 1.4, z: beacon.pos.z }, 36, 0.85);
+  emitSparks(
+    { x: beacon.pos.x, y: 0.18, z: beacon.pos.z },
+    { x: 0, y: 1, z: 0 },
+    48,
+    0.95,
+  );
+  showToast('Level Complete!', 'unlock');
+}
+
+levelCompleteReplayBtn.addEventListener('click', () => {
+  if (!levelComplete) return;
+  levelComplete = false;
+  levelCompleteOverlay.style.display = 'none';
+  void startSelectedLevel();
+});
+
+levelCompleteMenuBtn.addEventListener('click', () => {
+  levelComplete = false;
+  levelCompleteOverlay.style.display = 'none';
+  returnToMenu();
+});
 
 function shouldSnapComboCamera(): boolean {
   return comboState.phase === 'active'
@@ -4193,6 +4638,8 @@ function completePlayerDeathSequence(): void {
   respawnPending = false;
   gameOver = true;
   gameOverOverlay.style.display = 'flex';
+  setTouchControlsVisible(false);
+  cancelCameraCinematic();
 }
 
 function finishPlayerRespawn(): void {
@@ -4206,6 +4653,7 @@ function finishPlayerRespawn(): void {
   respawnPending = false;
   gameOver = false;
   gameOverOverlay.style.display = 'none';
+  setTouchControlsVisible(!menuVisible);
   respawnInvulnerabilityTimer = RESPAWN_INVULNERABILITY_DURATION;
   playerWebTimer = 0;
   playerZombieImpactGraceTimer = 0;
@@ -4351,6 +4799,13 @@ function updateSpiderSystem(delta: number): void {
     if (!spider.alive) continue;
     const events = updateSpiderReliquaryAI(spider, playerBody.pos, playerBody.radius, playerWebTimer > 0, delta);
     for (const event of events) {
+      // Acid spawn event — fire a flying ball projectile and skip the rest of
+      // the area-attack handling (no AOE sparks / no hitPlayer logic, since
+      // hits resolve through the projectile system).
+      if (event.kind === 'acid' && event.firePos && event.fireDir && event.speed !== undefined) {
+        projectiles.push(createAcidBallProjectile(event.firePos, event.fireDir, event.speed, event.damage));
+        continue;
+      }
       emitSparks(
         event.point,
         { x: 0, y: 1, z: 0 },
@@ -4563,6 +5018,10 @@ function updateOctobossDrillContacts(delta: number): void {
 function updateSpiderCorePassThroughHits(): void {
   for (const spider of SpiderEntities.getAll()) {
     if (!spider.alive || spider.corePassThroughCooldown > 0) continue;
+    // In final-core mode the body is registered with physics and the standard
+    // 'player'/'spider_core' pair handler applies damage — skip manual hits to
+    // avoid double-counting.
+    if (canDamageSpiderCore(spider)) continue;
 
     const core = spider.collidable;
     const dx = core.pos.x - playerBody.pos.x;
@@ -4598,10 +5057,9 @@ function updateSpiderCorePassThroughHits(): void {
       playerBody.rpm = Math.max(0, playerBody.rpm - playerLoss);
       if (playerLoss > 2.5) notifyPlayerHit();
     }
-    spider.collidable.rpm = Math.max(
-      0,
-      spider.collidable.rpm - enemyLoss * getSpiderCoreDamageMultiplier(spider),
-    );
+    const spiderCoreLoss = enemyLoss * getSpiderCoreDamageMultiplier(spider);
+    spider.collidable.rpm = Math.max(0, spider.collidable.rpm - spiderCoreLoss);
+    refreshDuelHitCooldowns(core, isPlayerInvulnerable() ? 0 : playerLoss, spiderCoreLoss);
     onSpiderCoreCollision(spider);
     playClashSound(impactForce);
     const push = Math.max(1.4, approachSpeed * 0.18);
@@ -5082,8 +5540,22 @@ function checkHiveDeath(): void {
 // ─── Timer ───────────────────────────────────────────────────────────────────
 
 resetGame();
+initTouchInput();
 setMenuVisible(!(DEBUG_SKIP_MAIN_MENU || shouldAutostart));
 if (shouldAutostart) {
+  // Optimistic attempt — may succeed if the browser doesn't require a gesture.
+  playYoutubeMusic();
+  // Fallback: start music on the very first user interaction (key press, tap,
+  // click) in case the browser blocked the autoplay attempt above.
+  const startMusicOnce = () => {
+    playYoutubeMusic();
+    for (const evt of ['keydown', 'pointerdown', 'touchstart'] as const) {
+      window.removeEventListener(evt, startMusicOnce);
+    }
+  };
+  for (const evt of ['keydown', 'pointerdown', 'touchstart'] as const) {
+    window.addEventListener(evt, startMusicOnce, { once: false });
+  }
   void startSelectedLevel({ suppressLoadingOverlay: portalSession.arrivedViaPortal });
 }
 
@@ -5101,6 +5573,10 @@ function animate(): void {
   if (consumeProfilerTogglePressed()) profiler?.toggleOverlay();
   if (consumeSpectorCapturePressed() && spectorCaptureControllerPromise) {
     void spectorCaptureControllerPromise.then((controller) => controller?.captureFrame());
+  }
+  if (consumeCameraViewTogglePressed()) {
+    const mode = toggleCameraView();
+    showToast(mode === 'third_person' ? 'Third-person view' : 'Top-down view');
   }
   profiler?.startFrame(delta * 1000, getProfilerFrameMode());
 
@@ -5325,6 +5801,8 @@ function animate(): void {
   profiler?.nextPhase('rpm');
   rpmSystem(delta);
   playerRpmHooks(delta, hasPlayerWallHit(wallHits), circleHits);
+  // Decay duel-hit i-frames so a recently-hit body can take damage again.
+  tickDuelHitCooldowns(delta);
 
   // 7. Death checks
   profiler?.nextPhase('deathChecks');
@@ -5402,6 +5880,10 @@ function animate(): void {
   updateLaserLighting();
   syncSpinnerMotorLoops(buildSpinnerMotorLoops());
   updateTopDownCulling(camera, SCENE_CULL_PADDING);
+  // Cull chunks against the camera frustum (slightly inflated for a safety
+  // margin). Three's projectObject early-returns on invisible subtrees, so
+  // hidden chunks pay zero per-frame traversal + render cost.
+  updateChunkVisibility(camera);
   updateGlobalLighting(delta);
   profiler?.nextPhase('render');
   renderScene(scene, camera);

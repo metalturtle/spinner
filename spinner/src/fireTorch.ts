@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { lvPos, type LevelEntity } from './levelLoader';
 import { registerTopDownCullable } from './sceneCulling';
+import { getLightsDisabled } from './settings';
 import {
   registerEmberPointEmitter,
   unregisterEmberPointEmitter,
@@ -97,9 +98,13 @@ export function createFireTorch(scene: THREE.Scene, entity: LevelEntity): FireTo
   innerFlame.scale.set(0.78, 1.2, 0.78);
   flameRoot.add(innerFlame);
 
+  // Parent the PointLight to the scene (not to `root`) so the camera-frustum
+  // cull on `root` doesn't toggle light.visible. Toggling light visibility
+  // changes Three's NUM_POINT_LIGHTS define and forces every lit material to
+  // recompile its shader — that was the source of the traversal stutter.
   const light = new THREE.PointLight(color, intensity, range, decay);
-  light.position.y = flameHeight;
-  root.add(light);
+  light.position.set(pos.x, flameHeight, pos.z);
+  scene.add(light);
 
   scene.add(root);
   const unregisterCull = registerTopDownCullable(root, range);
@@ -146,8 +151,15 @@ export function updateFireTorch(torch: FireTorch, time: number): void {
   );
   torch.innerFlame.position.y = 0.03 + flicker * 0.06;
 
-  torch.light.intensity = torch.baseIntensity * (0.82 + flicker * 0.38);
-  torch.light.distance = torch.baseRange * (0.9 + flicker * 0.16);
+  // The light stays in the scene (parented to scene, not torch.root) so its
+  // visibility — and therefore Three's NUM_POINT_LIGHTS define — never changes.
+  // When the torch's visual is culled, drive intensity to 0 instead.
+  if (torch.root.visible && !getLightsDisabled()) {
+    torch.light.intensity = torch.baseIntensity * (0.82 + flicker * 0.38);
+    torch.light.distance = torch.baseRange * (0.9 + flicker * 0.16);
+  } else {
+    torch.light.intensity = 0;
+  }
 
   const worldPos = new THREE.Vector3();
   torch.flameRoot.getWorldPosition(worldPos);
@@ -168,4 +180,6 @@ export function destroyFireTorch(scene: THREE.Scene, torch: FireTorch): void {
     }
   });
   scene.remove(torch.root);
+  // Light is parented directly to the scene now, so remove it explicitly.
+  scene.remove(torch.light);
 }

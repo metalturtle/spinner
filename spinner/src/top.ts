@@ -1,9 +1,17 @@
 import * as THREE from 'three';
+import { acquireAuraLight } from './auraLightPool';
 
 export interface SpinnerMotionVisuals {
   speedHalo: THREE.Mesh;
   speedHaloMat: THREE.MeshBasicMaterial;
-  auraLight: THREE.PointLight;
+  /** Pooled PointLight — lives at scene root, not parented to spinGroup.
+   *  Null when the user has set the light-pool size to 0 (or smaller than
+   *  the simultaneous spinner count) — visuals must guard before writing. */
+  auraLight: THREE.PointLight | null;
+  /** Empty Object3D parented at the light's original local position. Each
+   *  frame the spinner-visuals update copies its world position to auraLight
+   *  so the pooled scene-level light tracks the spinner. */
+  auraLightAnchor: THREE.Object3D;
 }
 
 export interface TopResult {
@@ -86,13 +94,17 @@ export function createTop(color: number = 0xe94560): TopResult {
     side: THREE.DoubleSide,
     depthWrite: false,
   });
-  const auraLight = new THREE.PointLight(
-    color,
-    15.25,
-    10,
-    1.8,
-  );
-  auraLight.castShadow = false;
+  // Aura light comes from a scene-level pool so spinner deaths don't
+  // change NUM_POINT_LIGHTS and trigger material recompiles. spinnerVisuals
+  // updates its position from auraLightAnchor each frame. Returns null when
+  // the user has shrunk the pool (or this spinner overflowed it).
+  const auraLight = acquireAuraLight(color);
+  if (auraLight) {
+    auraLight.intensity = 15.25;
+    auraLight.distance = 10;
+    auraLight.decay = 1.8;
+  }
+  const auraLightAnchor = new THREE.Object3D();
 
   const root = new THREE.Group();
   root.position.y = 0.48;
@@ -190,8 +202,8 @@ export function createTop(color: number = 0xe94560): TopResult {
   speedHalo.rotation.x = -Math.PI / 2;
   speedHalo.position.y = 0.22;
   root.add(speedHalo);
-  auraLight.position.y = 0.86;
-  root.add(auraLight);
+  auraLightAnchor.position.y = 0.86;
+  root.add(auraLightAnchor);
 
   const syncColor = new THREE.Color();
   const glowColor = new THREE.Color();
@@ -216,6 +228,6 @@ export function createTop(color: number = 0xe94560): TopResult {
     tiltGroup,
     spinGroup,
     bodyMat,
-    motionVisuals: { speedHalo, speedHaloMat, auraLight },
+    motionVisuals: { speedHalo, speedHaloMat, auraLight, auraLightAnchor },
   };
 }

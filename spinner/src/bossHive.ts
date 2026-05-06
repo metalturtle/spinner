@@ -3,6 +3,7 @@ import { scene } from './renderer';
 import { ARENA_SIZE, RPM_SOFT_CAP_RATIO } from './constants';
 import { collidables, type Collidable, type Vec2 } from './physics';
 import { createTop, type TopResult } from './top';
+import { releaseAuraLight } from './auraLightPool';
 import { updateSpinnerVisuals, type SpinnerTiltState } from './spinnerVisuals';
 import { createHpBar, updateHpBar } from './hpBar';
 import {
@@ -633,6 +634,9 @@ export function destroyFlockSpinner(boss: HiveBossState, spinner: FlockSpinner):
   spinner.alive = false;
   deregisterEntity(spinner.id);
   untagCollidable(spinner.collidable);
+  if (spinner.topResult.motionVisuals) {
+    releaseAuraLight(spinner.topResult.motionVisuals.auraLight);
+  }
   scene.remove(spinner.topResult.tiltGroup);
   const idx = collidables.indexOf(spinner.collidable);
   if (idx !== -1) collidables.splice(idx, 1);
@@ -674,6 +678,9 @@ export function destroyHiveBoss(boss: HiveBossState): void {
       spinner.alive = false;
       deregisterEntity(spinner.id);
       untagCollidable(spinner.collidable);
+      if (spinner.topResult.motionVisuals) {
+        releaseAuraLight(spinner.topResult.motionVisuals.auraLight);
+      }
       scene.remove(spinner.topResult.tiltGroup);
       const idx = collidables.indexOf(spinner.collidable);
       if (idx !== -1) collidables.splice(idx, 1);

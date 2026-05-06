@@ -9,6 +9,7 @@ export const CUSTOM_ENTITY_TYPE_VALUE = '__custom__';
 export const ENTITY_TYPE_OPTIONS: EntityTypeOption[] = [
   { value: 'player_spawn', label: 'Player Spawn', color: 0x44ff44 },
   { value: 'checkpoint', label: 'Checkpoint', color: 0x66f0ff },
+  { value: 'level_complete', label: 'Level Complete Beacon', color: 0xffe066 },
   { value: 'pickup', label: 'Pickup', color: 0x4dd0e1 },
   { value: 'pickup_hyper', label: 'Hyper Pickup', color: 0x80ffff },
   { value: 'pickup_combo', label: 'Combo Unlock', color: 0x7ff9ff },

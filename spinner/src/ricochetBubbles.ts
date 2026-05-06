@@ -193,3 +193,26 @@ export function resetRicochetBubbles(): void {
     removeBubble(i);
   }
 }
+
+/**
+ * Add a dummy ricochet-bubble mesh so its ShaderMaterial program compiles
+ * during the level-load compileAsync sweep. Without this, the first wall
+ * ricochet of the run compiles the shader on the render thread. Returns a
+ * disposer that removes the dummy after compilation finishes.
+ */
+export function prewarmRicochetBubbleMaterial(): () => void {
+  const material = makeMaterial();
+  const mesh = new THREE.Mesh(sharedGeo, material);
+  mesh.position.set(0, -200, 0);
+  mesh.frustumCulled = false;
+  scene.add(mesh);
+  return () => {
+    // Remove the mesh from the scene but keep the material alive — see
+    // explosion.ts for the rationale (calling material.dispose() evicts the
+    // shader stage from WebGLShaderCache, defeating the prewarm).
+    scene.remove(mesh);
+    keepAlive.push(material);
+  };
+}
+
+const keepAlive: THREE.Material[] = [];

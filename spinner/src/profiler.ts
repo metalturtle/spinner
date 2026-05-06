@@ -20,6 +20,7 @@ export class GameProfiler {
   private phaseStartMs = 0;
   private overlayVisible: boolean;
   private enabled = true;
+  private lastOverlayText = '';
 
   constructor(private readonly config: ProfilerConfig) {
     this.overlayVisible = config.overlayEnabled;
@@ -155,7 +156,7 @@ export class GameProfiler {
     if (!this.overlayVisible) return;
 
     const collectorLabel = summary.collectorConnected ? 'collector on' : 'collector off';
-    this.overlayEl.textContent = [
+    const next = [
       `Profiler ${collectorLabel} ${summary.dominantMode}`,
       `FPS ${summary.fps.toFixed(1)}`,
       `Frame ${summary.frameAvgMs.toFixed(2)} / ${summary.frameMaxMs.toFixed(2)} ms`,
@@ -168,6 +169,9 @@ export class GameProfiler {
       `Pickups ${summary.pickupsAvg.toFixed(1)}`,
       'P toggle overlay',
     ].join('\n');
+    if (next === this.lastOverlayText) return;
+    this.lastOverlayText = next;
+    this.overlayEl.textContent = next;
   }
 }
 

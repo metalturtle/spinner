@@ -19,6 +19,11 @@ export interface Collidable {
   rpmCapacity: number; // spinner's power level — effective mass uses rpm / rpmCapacity
   heatFactor: number;  // damage multiplier (1.0 = normal, >1 = dangerous enemy)
   owner?: unknown;     // back-reference to gameplay state for fast collision dispatch
+  protectionFactor?: number;
+  // Seconds remaining of immunity to duel damage after a recent ram. Stops
+  // sustained pushing from causing rapid microhits while the impulse keeps
+  // separating-and-reconnecting the bodies. Decays in player.ts each frame.
+  duelHitCooldown?: number;
 }
 
 export interface Segment {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getRefractionDisabled, getShadowsDisabled } from './settings';
 
 export const scene = new THREE.Scene();
 scene.background = null;
@@ -29,14 +30,145 @@ export const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }
 renderer.setPixelRatio(getRenderPixelRatio());
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x000000, 0);
+// shadowMap.enabled stays on so materials keep compiling shadow code
+// paths; we control whether the shadow pass actually runs by toggling
+// dirLight.castShadow in applyShadowsDisabledState below. Disabling
+// shadowMap.enabled directly leaves materials sampling a never-rendered
+// shadow texture, which on Mac/Chrome shows up as a black floor.
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+/** Apply the current shadowsDisabled setting. Toggles `dirLight.castShadow`
+ *  — when false, Three.js skips the shadow render pass for that light and
+ *  rebuilds material shaders without shadow code. */
+export function applyShadowsDisabledState(): void {
+  const disabled = getShadowsDisabled();
+  dirLight.castShadow = !disabled;
+  // Material shaders embed shadow-related defines based on the lights
+  // present at compile time. After flipping castShadow we have to mark
+  // affected materials dirty so they recompile without (or with) shadow
+  // code on the next render.
+  scene.traverse((obj) => {
+    const mat = (obj as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+    if (!mat) return;
+    if (Array.isArray(mat)) {
+      for (const m of mat) m.needsUpdate = true;
+    } else {
+      mat.needsUpdate = true;
+    }
+  });
+}
+// Skip per-frame getProgramInfoLog calls — those force a GPU pipeline sync
+// and showed up as 2.3s on a 1.8min trace. Re-enable when debugging shaders.
+renderer.debug.checkShaderErrors = false;
+
+// ─── Shader compile diagnostic ───────────────────────────────────────────────
+// Logs each new shader compile + the program's cacheKey, which identifies the
+// material+lights combination that triggered it. The cacheKey looks like:
+//   "MeshStandardMaterial,...,numPointLights:2,numDirLights:1,..."
+// so we can tell whether it's a new material or just a light-count variant.
+if (import.meta.env.DEV) {
+  const gl = renderer.getContext() as WebGL2RenderingContext;
+  const origLink = gl.linkProgram.bind(gl);
+  let compileCount = 0;
+  let loadPhaseEndedAt = 0;
+  let lastSeenProgramCount = 0;
+  gl.linkProgram = function (program: WebGLProgram): void {
+    compileCount += 1;
+    const now = performance.now();
+    const duringGameplay = loadPhaseEndedAt > 0 && (now - loadPhaseEndedAt) > 500;
+
+    // Capture the attached shader sources BEFORE linkProgram — sources are
+    // available pre-link via getAttachedShaders + getShaderSource. We surface
+    // them only for stutter compiles so we can match them against the
+    // codebase and find the lazy material.
+    let stutterShaderSources: { vertex: string; fragment: string } | null = null;
+    if (duringGameplay) {
+      const shaders = gl.getAttachedShaders(program);
+      if (shaders) {
+        let vertexSrc = '';
+        let fragmentSrc = '';
+        for (const s of shaders) {
+          const src = gl.getShaderSource(s) ?? '';
+          const type = gl.getShaderParameter(s, gl.SHADER_TYPE);
+          if (type === gl.VERTEX_SHADER) vertexSrc = src;
+          else if (type === gl.FRAGMENT_SHADER) fragmentSrc = src;
+        }
+        stutterShaderSources = { vertex: vertexSrc, fragment: fragmentSrc };
+      }
+    }
+
+    origLink(program);
+
+    // The new program is added to renderer.info.programs *after* this call
+    // returns, so peek on a microtask.
+    queueMicrotask(() => {
+      const programs = renderer.info.programs ?? [];
+      // Pull every program added since the last log so we don't miss any.
+      for (let i = lastSeenProgramCount; i < programs.length; i++) {
+        const p = programs[i] as { cacheKey?: string };
+        const key = p.cacheKey ?? '<unknown>';
+        // Trim — cacheKey can be very long. Keep the material name + the bits
+        // that change between variants.
+        const summary = key
+          .split(',')
+          .filter((part) => /^(numPointLights|numDirLights|numSpotLights|numHemiLights|MeshStandardMaterial|MeshBasicMaterial|ShaderMaterial|MeshPhysicalMaterial|MeshLambertMaterial|MeshPhongMaterial|map|envMap|skinning|morphTargets|fog|toneMapping)/.test(part))
+          .join(',');
+        const tag = duringGameplay ? '⚠ STUTTER COMPILE' : '[startup compile]';
+        console.log(`${tag} #${compileCount} ${summary || key.slice(0, 200)}`);
+        if (stutterShaderSources) {
+          // The first ~1KB of each shader is three.js's standard prelude
+          // (precision qualifiers, #define USE_*, etc.) — the user-defined
+          // body is at the END. Print the tail so we can grep-match it
+          // against the codebase.
+          const vertTail = stutterShaderSources.vertex.slice(-600).replace(/\s+/g, ' ').trim();
+          const fragTail = stutterShaderSources.fragment.slice(-600).replace(/\s+/g, ' ').trim();
+          console.log(`  └─ vert tail: ${vertTail}`);
+          console.log(`  └─ frag tail: ${fragTail}`);
+        }
+      }
+      lastSeenProgramCount = programs.length;
+    });
+  };
+  // Mark the end of the load phase so post-load compiles get the warning tag.
+  (window as unknown as { __markGameplayStart: () => void }).__markGameplayStart = () => {
+    loadPhaseEndedAt = performance.now();
+    console.log(`[diag] gameplay started — compiles after this point are stutters. Total at load: ${compileCount}`);
+  };
+}
+
 const refractionCaptureTarget = new THREE.WebGLRenderTarget(1, 1, {
   minFilter: THREE.LinearFilter,
   magFilter: THREE.LinearFilter,
   depthBuffer: true,
   stencilBuffer: false,
 });
+
+/**
+ * Run a callback while the refraction render target is bound. Used at
+ * level-load to pre-compile shaders for the linear-output variant. Three's
+ * WebGLRenderer hardcodes LinearSRGBColorSpace for non-XR render targets, so
+ * any material rendered through this target gets a srgb-linear shader variant
+ * in addition to the canvas's srgb one. Without warming both, every visible
+ * material compiles its second variant on the first frame the mirror is on
+ * screen — a multi-program stall.
+ */
+export async function compileForRefractionTarget(
+  scene: THREE.Scene,
+  cam: THREE.Camera,
+): Promise<void> {
+  // Skip the second compile pass entirely when refraction is off — its
+  // sole purpose is to prewarm the srgb-linear shader variants used while
+  // rendering to the refraction target, which we never enter in that mode.
+  if (getRefractionDisabled()) return;
+  const previous = renderer.getRenderTarget();
+  renderer.setRenderTarget(refractionCaptureTarget);
+  try {
+    await renderer.compileAsync(scene, cam);
+  } finally {
+    renderer.setRenderTarget(previous);
+  }
+}
 const refractionMeshes = new Set<THREE.Mesh>();
 const refractionMaterials = new Set<THREE.ShaderMaterial>();
 
@@ -56,6 +188,10 @@ function ensureRefractionTargetSize(): void {
 
 export function registerRefractionMesh(mesh: THREE.Mesh): void {
   refractionMeshes.add(mesh);
+  // If refraction is disabled at the time the mesh registers (level start),
+  // hide it. This makes the renderScene short-circuit kick in (no second
+  // render pass when no mirror is visible).
+  if (getRefractionDisabled()) mesh.visible = false;
   const material = mesh.material;
   if (Array.isArray(material)) {
     for (const entry of material) {
@@ -64,6 +200,18 @@ export function registerRefractionMesh(mesh: THREE.Mesh): void {
     return;
   }
   if (isRefractionMaterial(material)) refractionMaterials.add(material);
+}
+
+/**
+ * Apply the current refractionDisabled setting to every registered mirror
+ * mesh. Called from the menu toggle so the change takes effect immediately
+ * without a level reload.
+ */
+export function applyRefractionDisabledState(): void {
+  const disabled = getRefractionDisabled();
+  for (const mesh of refractionMeshes) {
+    mesh.visible = !disabled;
+  }
 }
 
 export function unregisterRefractionMesh(root: THREE.Object3D): void {
@@ -83,6 +231,18 @@ export function unregisterRefractionMesh(root: THREE.Object3D): void {
 
 export function renderScene(activeScene: THREE.Scene, activeCamera: THREE.Camera): void {
   if (refractionMeshes.size === 0) {
+    renderer.render(activeScene, activeCamera);
+    return;
+  }
+
+  // Even when meshes are registered, skip the second scene render if none of
+  // them is currently visible — the refraction room is far cheaper to enter
+  // than to keep paying for every frame of the level.
+  let anyVisible = false;
+  for (const mesh of refractionMeshes) {
+    if (mesh.visible) { anyVisible = true; break; }
+  }
+  if (!anyVisible) {
     renderer.render(activeScene, activeCamera);
     return;
   }
@@ -122,7 +282,9 @@ scene.add(ambientLight);
 //0x111111
 const dirLight = new THREE.DirectionalLight(0xcccccc, 1.2);
 dirLight.position.set(10, 20, 10);
-dirLight.castShadow = true;
+// Honor the persisted shadows-disabled setting at module load. Materials
+// inspecting the light during their first compile will see this state.
+dirLight.castShadow = !getShadowsDisabled();
 dirLight.shadow.mapSize.width = SHADOW_MAP_SIZE;
 dirLight.shadow.mapSize.height = SHADOW_MAP_SIZE;
 dirLight.shadow.camera.near = 0.5;

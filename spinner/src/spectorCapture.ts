@@ -11,8 +11,9 @@ export interface SpectorCaptureController {
 export async function createSpectorCaptureController(
   canvas: HTMLCanvasElement,
 ): Promise<SpectorCaptureController | null> {
-  if (!import.meta.env.DEV) return null;
-
+  // No build-environment gate here. The caller (game.ts) decides via the
+  // ?spector=1 URL flag, so this can be triggered from production builds
+  // when intentionally debugging GPU work.
   try {
     const mod = await import('spectorjs') as unknown as SpectorModule;
     const spector = new mod.Spector();

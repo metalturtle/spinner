@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createTop, TOP_BASE_RADIUS, type TopResult } from './top';
+import { releaseAuraLight } from './auraLightPool';
 import { updateSpinnerVisuals, type SpinnerTiltState } from './spinnerVisuals';
 import { registerRefractionMesh, scene, unregisterRefractionMesh } from './renderer';
 import { getArenaBounds } from './arena';
@@ -592,6 +593,9 @@ export function destroyLaserSpinner(enemy: LaserSpinnerState): void {
   enemy.alive = false;
   deregisterEntity(enemy.id);
   untagCollidable(enemy.collidable);
+  if (enemy.topResult.motionVisuals) {
+    releaseAuraLight(enemy.topResult.motionVisuals.auraLight);
+  }
   scene.remove(enemy.topResult.tiltGroup);
   scene.remove(enemy.beamGroup);
   unregisterRefractionMesh(enemy.beamGroup);

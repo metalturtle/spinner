@@ -4,8 +4,9 @@ import { playSpiderLegPlantSound } from './sound';
 import { collidables, type Collidable, type Vec2 } from './physics';
 import { createHpBar, updateHpBar } from './hpBar';
 import { getArenaBounds, isPointInLava } from './arena';
-import { type Projectile } from './projectile';
+import { releaseProjectileResources, type Projectile } from './projectile';
 import { createTop, TOP_BASE_RADIUS, type TopResult } from './top';
+import { releaseAuraLight } from './auraLightPool';
 import { updateSpinnerVisuals } from './spinnerVisuals';
 import { ENEMY_SPINNER_TIER_1 } from './enemySpinner';
 import {
@@ -82,13 +83,13 @@ export interface SpiderReliquaryConfig {
 }
 
 export const SPIDER_RELIQUARY_TIER_1: SpiderReliquaryConfig = {
-  coreRpmCapacity: 620,
+  coreRpmCapacity: 200,
   coreRadius: 0.98,
   coreMass: 5.4,
   coreMaxSpeed: [11.2, 15.2, 19.2],
   coreAcceleration: [26.0, 32.0, 39.0],
   legCount: 4,
-  legHp: 100,
+  legHp: 10,
   legRadius: 0.95,
   hipOrbitRadius: 1.35,
   footOrbitRadius: 5.4,
@@ -128,7 +129,7 @@ export const SPIDER_RELIQUARY_TIER_1: SpiderReliquaryConfig = {
   webSpeed: [7.4, 8.2, 9.2],
   acidDamage: [9, 12, 16],
   acidCooldown: [3.8, 3.0, 2.4],
-  acidSpeed: [8.6, 9.4, 10.2],
+  acidSpeed: [25.6, 25.4, 25.2],
   heatFactor: 1.05,
   color: 0x8b7351,
 };
@@ -147,12 +148,15 @@ const FINAL_CORE_ORBIT_FLIP_INTERVAL = 0.84;
 const FINAL_CORE_DASH_WINDUP = 0.11;
 const FINAL_CORE_DASH_SPEED_MULT = 2.85;
 const FINAL_CORE_TRANSITION_STUN = 0.46;
-const FINAL_CORE_MIN_RPM = ENEMY_SPINNER_TIER_1.rpmCapacity / 4;
-const FINAL_CORE_DAMAGE_TAKEN_MULT = 0.68;
+const FINAL_CORE_MIN_RPM = ENEMY_SPINNER_TIER_1.rpmCapacity / 7;
+const FINAL_CORE_DAMAGE_TAKEN_MULT = 1.0;
 const FINAL_CORE_WEB_COOLDOWN = 5.2;
 const FINAL_CORE_COMBO_LOCK = 0.1;
 const FINAL_CORE_DASH_COMBO_LOCK = 0.16;
 const FINAL_CORE_SPIN_SPEED = 38;
+// Visual scale of the spinner top in final core mode. Also drives the
+// collidable radius so the physics footprint matches what the player sees.
+const FINAL_CORE_TOP_SCALE = 0.86;
 
 type SpiderAttackKind = 'stomp' | 'pulse' | 'leg_slam' | 'web' | 'acid';
 
@@ -164,6 +168,11 @@ export interface SpiderReliquaryAttackEvent {
   hitPlayer: boolean;
   knockback?: number;
   webDuration?: number;
+  // For 'acid' kind only: present when the event represents firing an acid
+  // projectile (rather than a hit). game.ts spawns the projectile from these.
+  firePos?: Vec2;
+  fireDir?: Vec2;
+  speed?: number;
 }
 
 interface SpiderAttack {
@@ -830,8 +839,7 @@ export function createSpiderReliquary(pos: Vec2, config: SpiderReliquaryConfig):
   bodyRoot.add(haloMesh);
 
   const coreTop = createTop(0xff8f32);
-  const topScale = 0.86;
-  coreTop.tiltGroup.scale.setScalar(topScale);
+  coreTop.tiltGroup.scale.setScalar(FINAL_CORE_TOP_SCALE);
   coreTop.tiltGroup.position.set(0, 0.18, 0);
   coreTop.tiltGroup.visible = false;
   bodyGroup.add(coreTop.tiltGroup);
@@ -1179,6 +1187,15 @@ function destroySpiderLeg(leg: SpiderLeg): void {
 function activateFinalCoreMode(boss: SpiderReliquaryState): void {
   resetSpiderTransientState(boss);
   boss.collidable.rpm = Math.max(boss.collidable.rpm, FINAL_CORE_MIN_RPM);
+  // The legged phase used a small footprint and lived outside the physics
+  // collidable list (manual `updateSpiderCorePassThroughHits` did the hit
+  // detection so the player could run between legs). In spinner mode the
+  // body must physically block the player, so register it with physics now
+  // and grow the radius to match the visible spinner top.
+  boss.collidable.radius = TOP_BASE_RADIUS * FINAL_CORE_TOP_SCALE;
+  if (collidables.indexOf(boss.collidable) === -1) {
+    collidables.push(boss.collidable);
+  }
   boss.finalCoreGraceTimer = FINAL_CORE_TRANSITION_STUN;
   boss.aiState = 'recover';
   boss.recoveryTimer = FINAL_CORE_TRANSITION_STUN;
@@ -1516,6 +1533,36 @@ export function updateSpiderReliquaryAI(
       boss.pulseCooldown = Math.max(boss.pulseCooldown, 0.55);
     }
   }
+
+  // // Acid ball — direct-fire flying projectile. Distinct from web (ground AOE)
+  // // and from laser-style turret bolts. Fires from above the body toward the
+  // // player when off cooldown and the player is in range.
+  // if (
+  //   boss.acidCooldown <= 0
+  //   && !isRamming
+  //   && (finalCoreMode || boss.collapseTimer <= 0.15)
+  //   && dist >= 3.0
+  //   && dist <= 24
+  // ) {
+  //   const launchHeight = finalCoreMode ? 0.95 : 1.85;
+  //   const inv = 1 / Math.max(dist, 0.0001);
+  //   const fireDir: Vec2 = { x: dx * inv, z: dz * inv };
+  //   const firePos: Vec2 = {
+  //     x: boss.collidable.pos.x + fireDir.x * 0.7,
+  //     z: boss.collidable.pos.z + fireDir.z * 0.7,
+  //   };
+  //   events.push({
+  //     kind: 'acid',
+  //     point: { x: firePos.x, y: launchHeight, z: firePos.z },
+  //     radius: 0,
+  //     damage: boss.config.acidDamage[phase],
+  //     hitPlayer: false,
+  //     firePos,
+  //     fireDir,
+  //     speed: boss.config.acidSpeed[phase],
+  //   });
+  //   boss.acidCooldown = boss.config.acidCooldown[phase];
+  // }
   for (let i = boss.attacks.length - 1; i >= 0; i--) {
     const attack = boss.attacks[i];
     attack.elapsed += delta;
@@ -1840,15 +1887,20 @@ export function destroySpiderReliquary(boss: SpiderReliquaryState): void {
   boss.alive = false;
   deregisterEntity(boss.id);
   untagCollidable(boss.collidable);
+  if (boss.coreTop.motionVisuals) {
+    releaseAuraLight(boss.coreTop.motionVisuals.auraLight);
+  }
   const coreIdx = collidables.indexOf(boss.collidable);
   if (coreIdx !== -1) collidables.splice(coreIdx, 1);
   for (const projectile of boss.webProjectiles) {
     projectile.alive = false;
     scene.remove(projectile.mesh);
+    releaseProjectileResources(projectile);
   }
   for (const projectile of boss.acidProjectiles) {
     projectile.alive = false;
     scene.remove(projectile.mesh);
+    releaseProjectileResources(projectile);
   }
 
   scene.remove(boss.bodyGroup);

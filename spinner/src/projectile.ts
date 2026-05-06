@@ -5,6 +5,7 @@ import { walls } from './physics';
 import { emitSparks, RED_SPARK_STYLE } from './sparks';
 import { emitRicochetBubbles } from './ricochetBubbles';
 import { playProjectileLaserSound } from './sound';
+import { getLightPoolSize, getLightsDisabled } from './settings';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -180,7 +181,10 @@ void main() {
   float glow = exp(-d * 3.0) * 0.3;
   float alpha = (core + glow) * edgeFade;
 
-  vec3 col = mix(vec3(1.0, 1.0, 0.95), vec3(1.0, 0.2, 0.0), d * 0.7);
+  // Both endpoints are red-dominant. With additive blending the bolt sums
+  // into the scene; if the core is anywhere near white the eye reads it as
+  // peach/brown when the surrounding scene is dim (lights = 0).
+  vec3 col = mix(vec3(1.0, 0.32, 0.28), vec3(0.9, 0.0, 0.0), d * 0.7);
   gl_FragColor = vec4(col, alpha);
 }
 `;
@@ -198,7 +202,7 @@ void main() {
   float streakX  = exp(-uv.x * uv.x * 8.0);  // gradual horizontal fade
   float alpha    = streakY * streakX * 0.45 * edgeFade;
 
-  vec3 col = vec3(1.0, 0.65, 0.35);
+  vec3 col = vec3(1.0, 0.05, 0.05);
   gl_FragColor = vec4(col, alpha);
 }
 `;
@@ -244,6 +248,102 @@ export interface Projectile {
   mesh:     THREE.Object3D;
   alive:    boolean;
   damage:   number;
+  light?:   THREE.PointLight;
+}
+
+// ─── Projectile light pool ──────────────────────────────────────────────────
+//
+// Each projectile used to create its own PointLight + scene.add it. Adding
+// or removing a light from the scene changes Three's NUM_POINT_LIGHTS define,
+// forcing every lit material in view to recompile its shader — a 100ms+ stall
+// per shot in a busy fight. The pool keeps a fixed number of PointLights
+// permanently parented to the scene; activating/deactivating is just a
+// color/intensity write.
+
+// Each pool entry is a PointLight permanently in the scene — every pixel of
+// lit geometry pays for one iteration of the shader light loop per entry,
+// regardless of intensity. Pool size is driven by the user-facing
+// "Light pool size" setting; 0 disables projectile lighting entirely.
+const projectileLightPool: THREE.PointLight[] = [];
+const projectileLightInUse = new Set<THREE.PointLight>();
+let projectileLightPoolInitialized = false;
+
+function ensureProjectileLightPool(): void {
+  if (projectileLightPoolInitialized) return;
+  projectileLightPoolInitialized = true;
+  const size = getLightPoolSize();
+  for (let i = 0; i < size; i++) {
+    const light = new THREE.PointLight(0xffffff, 0, 5, 1.5);
+    light.position.set(0, -200, 0);
+    scene.add(light);
+    projectileLightPool.push(light);
+  }
+}
+
+function acquireProjectileLight(
+  color: number,
+  intensity: number,
+  distance: number,
+  decay: number,
+  pos: Vec2,
+): THREE.PointLight | null {
+  if (getLightsDisabled()) return null;
+  ensureProjectileLightPool();
+  for (const light of projectileLightPool) {
+    if (!projectileLightInUse.has(light)) {
+      projectileLightInUse.add(light);
+      light.color.setHex(color);
+      light.intensity = intensity;
+      light.distance = distance;
+      light.decay = decay;
+      light.position.set(pos.x, 0.5, pos.z);
+      return light;
+    }
+  }
+  return null;
+}
+
+function releaseProjectileLight(light: THREE.PointLight): void {
+  projectileLightInUse.delete(light);
+  light.intensity = 0;
+  light.position.set(0, -200, 0);
+}
+
+/** Zero all in-use projectile lights immediately. Called when lights-disabled toggle switches on. */
+export function zeroAllProjectileLights(): void {
+  for (const light of projectileLightPool) {
+    light.intensity = 0;
+  }
+}
+
+/** Release a projectile's pooled light. Safe to call when no light is held. */
+export function releaseProjectileResources(projectile: Projectile): void {
+  if (projectile.light) {
+    releaseProjectileLight(projectile.light);
+    projectile.light = undefined;
+  }
+}
+
+/**
+ * Resize the projectile light pool to match the user-facing setting. Called
+ * at level-start so the slider's value takes effect on the next play.
+ */
+export function syncProjectileLightPoolToSetting(): void {
+  const target = getLightPoolSize();
+  while (projectileLightPool.length < target) {
+    const light = new THREE.PointLight(0xffffff, 0, 5, 1.5);
+    light.position.set(0, -200, 0);
+    scene.add(light);
+    projectileLightPool.push(light);
+  }
+  for (let i = projectileLightPool.length - 1; i >= 0 && projectileLightPool.length > target; i -= 1) {
+    const light = projectileLightPool[i];
+    if (projectileLightInUse.has(light)) continue;
+    scene.remove(light);
+    light.dispose();
+    projectileLightPool.splice(i, 1);
+  }
+  projectileLightPoolInitialized = true;
 }
 
 export interface ProjectileResult {
@@ -353,6 +453,29 @@ const webGlareMat = new THREE.ShaderMaterial({
   blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
 });
 
+/**
+ * Add dummy meshes for every projectile ShaderMaterial so their programs
+ * compile during the level-load compileAsync sweep. Without this, the first
+ * shot of each projectile type compiles its shader on the render thread —
+ * a multi-frame stall the player sees as a hitch when an enemy first fires.
+ * Returns a disposer that removes the dummies once compilation completes.
+ */
+export function prewarmProjectileMaterials(): () => void {
+  const farY = -200;
+  const mats = [boltMat, glareMat, poisonBoltMat, poisonGlareMat, webBoltMat, webGlareMat];
+  const meshes: THREE.Mesh[] = [];
+  for (const mat of mats) {
+    const mesh = new THREE.Mesh(sharedGeo, mat);
+    mesh.position.set(0, farY, 0);
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+    meshes.push(mesh);
+  }
+  return () => {
+    for (const mesh of meshes) scene.remove(mesh);
+  };
+}
+
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createProjectile(
@@ -376,8 +499,7 @@ export function createProjectile(
   bolt.onBeforeRender  = () => { boltMat.uniforms.uVelDir.value.set(dx, dz); };
   glare.onBeforeRender = () => { glareMat.uniforms.uVelDir.value.set(dx, dz); };
 
-  const light = new THREE.PointLight(0xff3300, 3.0, 5, 1.5);
-  group.add(light);
+  const light = acquireProjectileLight(0xff3300, 3.0, 5, 1.5, pos) ?? undefined;
 
   group.position.set(pos.x, 0.5, pos.z);
   scene.add(group);
@@ -391,6 +513,7 @@ export function createProjectile(
     mesh:     group,
     alive:    true,
     damage,
+    light,
   };
 }
 
@@ -413,8 +536,7 @@ export function createPoisonProjectile(
   bolt.onBeforeRender  = () => { poisonBoltMat.uniforms.uVelDir.value.set(dx, dz); };
   glare.onBeforeRender = () => { poisonGlareMat.uniforms.uVelDir.value.set(dx, dz); };
 
-  const light = new THREE.PointLight(0x33ff00, 3.0, 5, 1.5);
-  group.add(light);
+  const light = acquireProjectileLight(0x33ff00, 3.0, 5, 1.5, pos) ?? undefined;
 
   group.position.set(pos.x, 0.5, pos.z);
   scene.add(group);
@@ -426,6 +548,57 @@ export function createPoisonProjectile(
     mesh:     group,
     alive:    true,
     damage,
+    light,
+  };
+}
+
+/**
+ * Acid ball — used by the spider reliquary. Visually distinct from the
+ * laser-style bolts: a glowing acid-green sphere with a soft additive halo.
+ */
+export function createAcidBallProjectile(
+  pos:    Vec2,
+  dir:    Vec2,
+  speed:  number,
+  damage: number,
+): Projectile {
+  const group = new THREE.Group();
+
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 16, 12),
+    new THREE.MeshBasicMaterial({
+      color: 0xa6ff45,
+      transparent: true,
+      opacity: 0.95,
+    }),
+  );
+  group.add(core);
+
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(0.42, 14, 10),
+    new THREE.MeshBasicMaterial({
+      color: 0x66ff20,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  group.add(halo);
+
+  const light = acquireProjectileLight(0xa6ff45, 2.6, 5.5, 1.5, pos) ?? undefined;
+
+  group.position.set(pos.x, 0.7, pos.z);
+  scene.add(group);
+
+  return {
+    pos:      { x: pos.x, z: pos.z },
+    vel:      { x: dir.x * speed, z: dir.z * speed },
+    lifetime: PROJECTILE_LIFETIME,
+    mesh:     group,
+    alive:    true,
+    damage,
+    light,
   };
 }
 
@@ -447,8 +620,7 @@ export function createWebProjectile(
   bolt.onBeforeRender  = () => { webBoltMat.uniforms.uVelDir.value.set(dx, dz); };
   glare.onBeforeRender = () => { webGlareMat.uniforms.uVelDir.value.set(dx, dz); };
 
-  const light = new THREE.PointLight(0xbfd8ff, 2.2, 4.5, 1.5);
-  group.add(light);
+  const light = acquireProjectileLight(0xbfd8ff, 2.2, 4.5, 1.5, pos) ?? undefined;
 
   group.position.set(pos.x, 0.5, pos.z);
   scene.add(group);
@@ -460,6 +632,7 @@ export function createWebProjectile(
     mesh:     group,
     alive:    true,
     damage,
+    light,
   };
 }
 
@@ -483,6 +656,7 @@ export function updateProjectiles(
     p.pos.x    += p.vel.x * delta;
     p.pos.z    += p.vel.z * delta;
     p.mesh.position.set(p.pos.x, 0.5, p.pos.z);
+    if (p.light) p.light.position.set(p.pos.x, 0.5, p.pos.z);
 
     // Despawn on actual wall collision or lifetime expiry
     let wallHit: { point: Vec2; normal: Vec2 } | null = null;
@@ -508,6 +682,7 @@ export function updateProjectiles(
       }
       p.alive = false;
       scene.remove(p.mesh);
+      if (p.light) { releaseProjectileLight(p.light); p.light = undefined; }
       continue;
     }
 
@@ -523,6 +698,7 @@ export function updateProjectiles(
       hitFlash   = true;
       p.alive    = false;
       scene.remove(p.mesh);
+      if (p.light) { releaseProjectileLight(p.light); p.light = undefined; }
     }
   }
 

@@ -43,10 +43,12 @@ export interface SpinnerConfig {
 
   // Spinner duel tuning
   duelImpactCap: number;          // maximum impact contribution in spinner-vs-spinner clashes
+  duelMinImpactForce: number;     // contacts below this closing velocity are scrapes — no duel damage
   duelSpeedReference: number;     // speed at which a spinner is considered fully committed to a clash
   duelSharedDamageScale: number;  // low baseline scrape damage both sides take on contact
   duelVelocityDamageScale: number; // main damage scale from committed collision speed
   duelRpmInfluenceScale: number;  // small RPM/stability modifier layered on top of velocity
+  duelHitCooldown: number;        // seconds an entity is immune to repeat duel damage after a hit
 
   // Combo attack (X key)
   comboMinRpmRatio:     number;               // minimum rpm/capacity needed to cast
@@ -104,10 +106,12 @@ const DEFAULT_SPINNER_CONFIG: SpinnerConfig = {
   growthPickupRpmGain: 14,
 
   duelImpactCap: 7.5,
+  duelMinImpactForce: 5.0,
   duelSpeedReference: 11.5,
   duelSharedDamageScale: 0.05,
   duelVelocityDamageScale: 0.16,
   duelRpmInfluenceScale: 0.22,
+  duelHitCooldown: 0.4,
 
   comboMinRpmRatio:      0.35,
   comboCostRatio:        0.12,
@@ -126,7 +130,7 @@ const DEFAULT_SPINNER_CONFIG: SpinnerConfig = {
   heatCooldown:             5.4,
   heatDuration:             4.0,
   heatRpmDrainRatioPerSecond: 0,
-  heatDamageMultiplier:     3,
+  heatDamageMultiplier:     2,
   heatAuraScale:            1.22,
 
   spinningLaserMinRpmRatio:         0.28,

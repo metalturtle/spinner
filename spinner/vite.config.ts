@@ -1,11 +1,30 @@
 import { defineConfig } from 'vite';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
 import type { PerfWindowRecord } from './src/profilerTypes';
+
+const requireFromConfig = createRequire(import.meta.url);
+
+type SqliteModule = typeof import('node:sqlite');
+
+function loadSqliteModule(): SqliteModule | null {
+  try {
+    return requireFromConfig('node:sqlite') as SqliteModule;
+  } catch {
+    return null;
+  }
+}
+
+interface PerfStore {
+  startSession(sessionId: string, fileName: string, filePath: string): void;
+  appendWindow(sessionId: string, record: PerfWindowRecord): void;
+  syncExistingJsonl(): void;
+  getWindowCount(sessionId: string): number;
+}
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const sharedTextureDir = path.resolve(rootDir, '..', 'textures');
@@ -133,10 +152,33 @@ function activeLevelSyncPlugin(): Plugin {
   };
 }
 
-function createPerfStore() {
+let warnedSqliteUnavailable = false;
+
+function createNoopPerfStore(): PerfStore {
+  if (!warnedSqliteUnavailable) {
+    warnedSqliteUnavailable = true;
+    console.warn(
+      '[perf-log] node:sqlite unavailable — perf telemetry will continue writing JSONL to perf-logs/. ' +
+      'Run Node with --experimental-sqlite (or upgrade to Node 24+) to rebuild the SQLite index from JSONL on next start.',
+    );
+  }
+  return {
+    startSession() {},
+    appendWindow() {},
+    syncExistingJsonl() {},
+    getWindowCount() { return 0; },
+  };
+}
+
+function createPerfStore(): PerfStore {
   fs.mkdirSync(perfLogDir, { recursive: true });
 
-  const db = new DatabaseSync(perfDbPath);
+  const sqlite = loadSqliteModule();
+  if (!sqlite) {
+    return createNoopPerfStore();
+  }
+
+  const db = new sqlite.DatabaseSync(perfDbPath);
   db.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS sessions (
@@ -366,6 +408,7 @@ export default defineConfig({
   cacheDir: process.env.VITE_CACHE_DIR ?? 'node_modules/.vite',
   build: {
     outDir: process.env.VITE_OUT_DIR ?? 'dist',
+    sourcemap: true,
   },
   server: {
     fs: {

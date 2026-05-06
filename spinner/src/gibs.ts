@@ -153,3 +153,52 @@ export function resetGibs(): void {
   }
   gibs.length = 0;
 }
+
+/**
+ * Add dummy gib meshes to the scene so renderer.compileAsync at level load
+ * picks up their MeshStandardMaterial shader programs. Without this, the
+ * first gib spawn at gameplay-time triggers a multi-second compile stall.
+ * Returns a disposer that removes the dummies once compilation is done.
+ */
+export function prewarmGibMaterials(): () => void {
+  const meshes: THREE.Mesh[] = [];
+  const farY = -200;
+
+  // Skin (head sphere)
+  const skinMat = new THREE.MeshStandardMaterial({ color: 0xb79c86, roughness: 0.9, metalness: 0.0 });
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 12), skinMat);
+  head.position.set(0, farY, 0);
+  head.castShadow = true;
+  scene.add(head);
+  meshes.push(head);
+
+  // Cloth (arm/leg capsule — both use clothMat.clone() in spawnZombieBodyParts)
+  const clothMat = new THREE.MeshStandardMaterial({ color: 0x4e4237, roughness: 0.86, metalness: 0.03 });
+  const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.74, 6, 12), clothMat);
+  arm.position.set(0, farY, 0);
+  arm.castShadow = true;
+  scene.add(arm);
+  meshes.push(arm);
+
+  // Generic gib chunk (icosahedron, makeGibMaterial-style)
+  const chunkMat = new THREE.MeshStandardMaterial({ color: 0xaa3322, roughness: 0.88, metalness: 0.02 });
+  const chunk = new THREE.Mesh(new THREE.IcosahedronGeometry(0.12, 0), chunkMat);
+  chunk.position.set(0, farY, 0);
+  chunk.castShadow = true;
+  scene.add(chunk);
+  meshes.push(chunk);
+
+  return () => {
+    // Keep the materials alive (push to keepAlive) so their shader stages
+    // stay in WebGLShaderCache and the compiled programs in WebGLPrograms.
+    // Calling material.dispose() here would evict the shader stage and the
+    // next gib spawn would compile its program from scratch.
+    for (const m of meshes) {
+      scene.remove(m);
+      m.geometry.dispose();
+      keepAlive.push(m.material as THREE.Material);
+    }
+  };
+}
+
+const keepAlive: THREE.Material[] = [];

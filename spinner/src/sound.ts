@@ -1,28 +1,29 @@
-const CLASH_SOUND_URL = '/sounds/clash.wav';
-const CLASH_SOUND_URL_2 = '/sounds/clash2.mp3';
+const SOUNDS_BASE = `${import.meta.env.BASE_URL}sounds`;
+const CLASH_SOUND_URL = `${SOUNDS_BASE}/clash.wav`;
+const CLASH_SOUND_URL_2 = `${SOUNDS_BASE}/clash2.mp3`;
 const CLASH_SOUND_KEY = 'clash';
 const CLASH_SOUND_KEY_2 = 'clash-2';
 const CLASH_MIN_IMPACT = 0.85;
-const EXPLOSION_SOUND_URL = '/sounds/explode.ogg';
-const EXPLOSION_SOUND_URL_2 = '/sounds/explode2.wav';
+const EXPLOSION_SOUND_URL = `${SOUNDS_BASE}/explode.ogg`;
+const EXPLOSION_SOUND_URL_2 = `${SOUNDS_BASE}/explode2.wav`;
 const EXPLOSION_SOUND_KEY = 'explode';
 const EXPLOSION_SOUND_KEY_2 = 'explode-2';
-const LASER_SOUND_URL = '/sounds/laserbeam.wav';
+const LASER_SOUND_URL = `${SOUNDS_BASE}/laserbeam.wav`;
 const LASER_SOUND_KEY = 'laser';
-const LASER_PROJECTILE_SOUND_URL = '/sounds/laser.wav';
+const LASER_PROJECTILE_SOUND_URL = `${SOUNDS_BASE}/laser.wav`;
 const LASER_PROJECTILE_SOUND_KEY = 'laser-projectile';
-const DEFAULT_AMBIENT_SOUND_URL = '/sounds/saturnambient.mp3';
-const SCRAPE_SOUND_URL = '/sounds/scrape.wav';
+const DEFAULT_AMBIENT_SOUND_URL = `${SOUNDS_BASE}/saturnambient.mp3`;
+const SCRAPE_SOUND_URL = `${SOUNDS_BASE}/scrape.wav`;
 const SCRAPE_SOUND_KEY = 'wall-scrape';
-const PICKUP_SOUND_URL = '/sounds/pickup.wav';
+const PICKUP_SOUND_URL = `${SOUNDS_BASE}/pickup.wav`;
 const PICKUP_SOUND_KEY = 'pickup';
-const ZOMBIE_SLASH_SOUND_URL = '/sounds/zombieslash.wav';
+const ZOMBIE_SLASH_SOUND_URL = `${SOUNDS_BASE}/zombieslash.wav`;
 const ZOMBIE_SLASH_SOUND_KEY = 'zombie-slash';
-const ZOMBIE_ROAR_SOUND_URL = '/sounds/zombieroar.wav';
+const ZOMBIE_ROAR_SOUND_URL = `${SOUNDS_BASE}/zombieroar.wav`;
 const ZOMBIE_ROAR_SOUND_KEY = 'zombie-roar';
-const SPIDERLEG_SOUND_URL = '/sounds/spiderleg.wav';
+const SPIDERLEG_SOUND_URL = `${SOUNDS_BASE}/spiderleg.wav`;
 const SPIDERLEG_SOUND_KEY = 'spiderleg';
-const SPINNER_MOTOR_SOUND_URL = '/sounds/spinner-motor.mp3';
+const SPINNER_MOTOR_SOUND_URL = `${SOUNDS_BASE}/spinner-motor.mp3`;
 const SPINNER_MOTOR_PREFIX = 'spinner-motor:';
 const SPATIAL_MAX_DISTANCE = 64;
 const ONE_SHOT_SOUND_DEFINITIONS = [
@@ -48,8 +49,6 @@ let listenersInstalled = false;
 const lastPlayTimes = new Map<string, number>();
 const preloadedAudio = new Map<string, HTMLAudioElement>();
 const loopingAudio = new Map<string, HTMLAudioElement>();
-const oneShotVoicePools = new Map<string, HTMLAudioElement[]>();
-const oneShotPoolIndices = new Map<string, number>();
 const pendingAudioLoads = new WeakMap<HTMLAudioElement, Promise<void>>();
 const listenerPosition = { x: 0, z: 0 };
 let ambientTrackUrl = DEFAULT_AMBIENT_SOUND_URL;
@@ -57,14 +56,70 @@ let ambientTrackVolume = 0.18;
 let ambientTrackPlaybackRate = 1;
 let activeAmbientLoopKey: string | null = null;
 
+// Web Audio path: one-shot SFX are decoded once into AudioBuffers and played
+// from cheap source nodes so polyphony is essentially free and there is no
+// per-play decode latency competing with other audio sources (e.g. iframes).
+let audioContext: AudioContext | null = null;
+let masterGain: GainNode | null = null;
+const oneShotBuffers = new Map<string, AudioBuffer>();
+const pendingOneShotLoads = new Map<string, Promise<AudioBuffer | null>>();
+
 export interface SpinnerMotorLoop {
   key: string;
   volume: number;
   playbackRate: number;
 }
 
+function getAudioContext(): AudioContext | null {
+  if (audioContext) return audioContext;
+  const Ctx = (window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext);
+  if (!Ctx) return null;
+  try {
+    const ctx = new Ctx();
+    audioContext = ctx;
+    masterGain = ctx.createGain();
+    masterGain.gain.value = 1;
+    masterGain.connect(ctx.destination);
+  } catch {
+    return null;
+  }
+  return audioContext;
+}
+
 function unlockAudio(): void {
   audioEnabled = true;
+  const ctx = getAudioContext();
+  if (ctx && ctx.state === 'suspended') {
+    void ctx.resume().catch(() => {});
+  }
+}
+
+async function loadOneShotBuffer(key: string, url: string): Promise<AudioBuffer | null> {
+  const cached = oneShotBuffers.get(key);
+  if (cached) return cached;
+  const inflight = pendingOneShotLoads.get(key);
+  if (inflight) return inflight;
+  const ctx = getAudioContext();
+  if (!ctx) return null;
+
+  const promise = (async (): Promise<AudioBuffer | null> => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Failed to fetch audio ${url}: ${response.status}`);
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = await ctx.decodeAudioData(arrayBuffer);
+      oneShotBuffers.set(key, buffer);
+      return buffer;
+    } catch (error) {
+      console.warn('Failed to decode one-shot audio:', url, error);
+      return null;
+    } finally {
+      pendingOneShotLoads.delete(key);
+    }
+  })();
+
+  pendingOneShotLoads.set(key, promise);
+  return promise;
 }
 
 function getNowMs(): number {
@@ -93,8 +148,9 @@ function getAmbientLoopKey(url: string): string {
 }
 
 function resolveAmbientTrackUrl(track: string): string {
-  if (track.startsWith('/')) return track;
-  return `/sounds/${track}`;
+  if (/^https?:\/\//i.test(track)) return track;
+  const stripped = track.replace(/^\/+/, '').replace(/^sounds\//, '');
+  return `${SOUNDS_BASE}/${stripped}`;
 }
 
 function waitForAudioReady(audio: HTMLAudioElement): Promise<void> {
@@ -143,96 +199,40 @@ function getPreloadedAudio(key: string, url: string): HTMLAudioElement {
   return audio;
 }
 
-function getOneShotPoolSize(key: string): number {
-  switch (key) {
-    case LASER_SOUND_KEY:
-    case LASER_PROJECTILE_SOUND_KEY:
-      return 14;
-    case CLASH_SOUND_KEY:
-    case CLASH_SOUND_KEY_2:
-    case EXPLOSION_SOUND_KEY:
-    case EXPLOSION_SOUND_KEY_2:
-      return 10;
-    case PICKUP_SOUND_KEY:
-    case ZOMBIE_SLASH_SOUND_KEY:
-    case SPIDERLEG_SOUND_KEY:
-      return 6;
-    case ZOMBIE_ROAR_SOUND_KEY:
-      return 10;
-    default:
-      return 8;
-  }
-}
-
-function getOneShotPoolMaxSize(key: string): number {
-  switch (key) {
-    case LASER_SOUND_KEY:
-    case LASER_PROJECTILE_SOUND_KEY:
-      return 20;
-    case ZOMBIE_ROAR_SOUND_KEY:
-      return 18;
-    case CLASH_SOUND_KEY:
-    case CLASH_SOUND_KEY_2:
-    case EXPLOSION_SOUND_KEY:
-    case EXPLOSION_SOUND_KEY_2:
-      return 14;
-    default:
-      return getOneShotPoolSize(key);
-  }
-}
-
-function getOneShotPool(key: string, url: string): HTMLAudioElement[] {
-  let pool = oneShotVoicePools.get(key);
-  if (pool) return pool;
-
-  const size = getOneShotPoolSize(key);
-  pool = [];
-  for (let i = 0; i < size; i += 1) {
-    const audio = new Audio(url);
-    audio.preload = 'auto';
-    audio.load();
-    pool.push(audio);
-  }
-  oneShotVoicePools.set(key, pool);
-  oneShotPoolIndices.set(key, 0);
-  return pool;
-}
-
-function createOneShotVoice(url: string): HTMLAudioElement {
-  const audio = new Audio(url);
-  audio.preload = 'auto';
-  audio.load();
-  return audio;
-}
-
-function pickOneShotVoice(key: string, url: string): HTMLAudioElement {
-  const pool = getOneShotPool(key, url);
-  for (const voice of pool) {
-    if (voice.paused || voice.ended) return voice;
-  }
-
-  const maxSize = getOneShotPoolMaxSize(key);
-  if (pool.length < maxSize) {
-    const voice = createOneShotVoice(url);
-    pool.push(voice);
-    return voice;
-  }
-
-  const nextIndex = oneShotPoolIndices.get(key) ?? 0;
-  oneShotPoolIndices.set(key, (nextIndex + 1) % pool.length);
-  return pool[nextIndex];
-}
-
 function playOneShot(key: string, url: string, volume: number, playbackRate: number): void {
   if (!audioEnabled) return;
+  const ctx = getAudioContext();
+  if (!ctx || !masterGain) return;
 
-  getPreloadedAudio(key, url);
-  const voice = pickOneShotVoice(key, url);
-  if (!voice.paused) voice.pause();
-  voice.currentTime = 0;
-  voice.volume = volume;
-  voice.playbackRate = playbackRate;
-  void voice.play().catch(() => {});
+  // The unlock listener resumes the context, but a play call may race that
+  // (e.g. play triggered from a frame timer immediately after the click).
+  if (ctx.state === 'suspended') {
+    void ctx.resume().catch(() => {});
+  }
+
+  const buffer = oneShotBuffers.get(key);
+  if (!buffer) {
+    // Buffer hasn't decoded yet — kick off the load so the next call works.
+    void loadOneShotBuffer(key, url);
+    return;
+  }
+
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.playbackRate.value = Math.max(0.5, Math.min(2.0, playbackRate));
+
+  const voiceGain = ctx.createGain();
+  voiceGain.gain.value = Math.max(0, Math.min(1, volume));
+
+  source.connect(voiceGain);
+  voiceGain.connect(masterGain);
+
+  source.onended = (): void => {
+    source.disconnect();
+    voiceGain.disconnect();
+  };
+
+  source.start(0);
 }
 
 function getLoopingAudio(key: string, url: string): HTMLAudioElement {
@@ -251,8 +251,21 @@ function getLoopingAudio(key: string, url: string): HTMLAudioElement {
 function setLoopState(audio: HTMLAudioElement, volume: number, playbackRate: number): void {
   const clampedVolume = Math.max(0, Math.min(1, volume));
   const clampedRate = Math.max(0.5, Math.min(2, playbackRate));
-  audio.volume = clampedVolume;
-  audio.playbackRate = clampedRate;
+  // Audio property writes trigger native work even when the value is unchanged;
+  // skip when within a small epsilon of what's already set.
+  // Same DSP-reconfig story as playbackRate below — volume changes under
+  // ~1% are inaudible, so a generous 0.02 epsilon keeps the per-frame cost
+  // low without any audible loss of fidelity.
+  if (Math.abs(audio.volume - clampedVolume) > 0.02) {
+    audio.volume = clampedVolume;
+  }
+  // 0.02 epsilon: pitch differences below ~2% are imperceptible, but on Mac
+  // Chrome each `audio.playbackRate` write costs several hundred microseconds
+  // because it reconfigures the underlying DSP. With per-frame RPM updates,
+  // a 0.001 epsilon used to fire nearly every frame and dominate CPU time.
+  if (Math.abs(audio.playbackRate - clampedRate) > 0.02) {
+    audio.playbackRate = clampedRate;
+  }
 
   if (!audioEnabled || clampedVolume <= 0.001) {
     if (!audio.paused) audio.pause();
@@ -268,9 +281,10 @@ export function initSound(): void {
   if (listenersInstalled) return;
   listenersInstalled = true;
 
-  for (const sound of ONE_SHOT_SOUND_DEFINITIONS) {
-    getOneShotPool(sound.key, sound.url);
-  }
+  // Create the AudioContext eagerly so decodes can start before the first
+  // user gesture; it stays in the 'suspended' state until unlockAudio resumes.
+  getAudioContext();
+
   for (const sound of LOOP_SOUND_DEFINITIONS) {
     if (sound.key.startsWith(SPINNER_MOTOR_PREFIX)) getPreloadedAudio(sound.key, sound.url);
     else getLoopingAudio(sound.key, sound.url);
@@ -282,11 +296,10 @@ export function initSound(): void {
 export async function preloadSoundAssets(extraAmbientTracks: readonly string[] = []): Promise<void> {
   initSound();
 
-  const pending: Promise<void>[] = [];
+  const pending: Promise<unknown>[] = [];
 
   for (const sound of ONE_SHOT_SOUND_DEFINITIONS) {
-    const pool = getOneShotPool(sound.key, sound.url);
-    if (pool.length > 0) pending.push(waitForAudioReady(pool[0]));
+    pending.push(loadOneShotBuffer(sound.key, sound.url));
   }
 
   pending.push(waitForAudioReady(getPreloadedAudio(SCRAPE_SOUND_KEY, SCRAPE_SOUND_URL)));

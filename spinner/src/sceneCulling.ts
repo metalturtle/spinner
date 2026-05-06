@@ -11,6 +11,11 @@ interface CullEntry {
   object: THREE.Object3D;
   radius: number;
   anchor: THREE.Object3D | THREE.Vector3;
+  // When provided, called with the active state instead of toggling
+  // object.visible. Useful for PointLights — toggling visibility changes
+  // Three's NUM_POINT_LIGHTS define and forces every lit material to
+  // recompile. Drive intensity to 0 from this callback instead.
+  onCullChange?: (active: boolean) => void;
 }
 
 const cullEntries = new Set<CullEntry>();
@@ -54,15 +59,18 @@ export function registerTopDownCullable(
   object: THREE.Object3D,
   radius: number,
   anchor: THREE.Object3D | THREE.Vector3 = object,
+  onCullChange?: (active: boolean) => void,
 ): () => void {
   const entry: CullEntry = {
     object,
     radius: Math.max(0, radius),
     anchor,
+    onCullChange,
   };
   cullEntries.add(entry);
   return () => {
-    entry.object.visible = true;
+    if (entry.onCullChange) entry.onCullChange(true);
+    else entry.object.visible = true;
     cullEntries.delete(entry);
   };
 }
@@ -83,11 +91,16 @@ export function updateTopDownCulling(camera: THREE.PerspectiveCamera, padding = 
       entry.anchor.getWorldPosition(worldPos);
     }
     const radius = entry.radius;
-    entry.object.visible = !(
+    const active = !(
       worldPos.x + radius < paddedMinX
       || worldPos.x - radius > paddedMaxX
       || worldPos.z + radius < paddedMinZ
       || worldPos.z - radius > paddedMaxZ
     );
+    if (entry.onCullChange) {
+      entry.onCullChange(active);
+    } else {
+      entry.object.visible = active;
+    }
   }
 }

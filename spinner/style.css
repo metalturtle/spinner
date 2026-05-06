@@ -70,6 +70,19 @@ canvas {
   background: rgba(0, 0, 0, 0.68);
 }
 
+.level-complete-overlay {
+  background:
+    radial-gradient(circle at top, rgba(255, 224, 102, 0.22), transparent 42%),
+    linear-gradient(180deg, rgba(2, 8, 14, 0.62), rgba(2, 8, 14, 0.86));
+}
+
+.level-complete-overlay h2 {
+  color: #ffe9a8;
+  text-shadow:
+    0 0 18px rgba(255, 224, 130, 0.42),
+    0 0 36px rgba(255, 188, 96, 0.22);
+}
+
 .loading-overlay {
   background:
     radial-gradient(circle at top, rgba(255, 141, 43, 0.14), transparent 42%),
@@ -182,6 +195,20 @@ canvas {
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+
+.overlay-field input[type="range"] {
+  width: 100%;
+  cursor: pointer;
+  accent-color: var(--ui-accent);
+}
+
+.overlay-field span span {
+  display: inline;
+  margin: 0;
+  color: var(--ui-accent);
+  letter-spacing: 0;
+  font-weight: 700;
 }
 
 .overlay-select,
@@ -304,6 +331,188 @@ canvas {
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+
+/* ─── Music attribution ─────────────────────────────────────────────────── */
+
+.music-credit {
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  pointer-events: none;
+  z-index: 6;
+  color: rgba(220, 235, 245, 0.62);
+  font: 600 0.74rem 'Trebuchet MS', sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
+}
+
+.music-credit-label {
+  display: block;
+  opacity: 0.62;
+  font-size: 0.62rem;
+  letter-spacing: 0.22em;
+}
+
+.music-credit-track {
+  display: block;
+  color: rgba(247, 252, 255, 0.86);
+  font-size: 0.84rem;
+}
+
+/* ─── Toasts ────────────────────────────────────────────────────────────── */
+
+.toast-stack {
+  position: fixed;
+  top: 14vh;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 18;
+}
+
+.toast {
+  padding: 10px 22px;
+  border: 1px solid rgba(127, 249, 255, 0.32);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(12, 22, 32, 0.92), rgba(7, 14, 20, 0.94)),
+    var(--ui-panel);
+  color: var(--ui-text);
+  font: 700 0.92rem 'Trebuchet MS', sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  opacity: 0;
+  transform: translateY(-12px) scale(0.96);
+  transition: opacity 0.24s ease, transform 0.24s ease;
+  white-space: nowrap;
+}
+
+.toast.toast-enter {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.toast.toast-exit {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.97);
+  transition: opacity 0.36s ease, transform 0.36s ease;
+}
+
+.toast-checkpoint {
+  border-color: rgba(127, 249, 255, 0.52);
+  color: #d6f9ff;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.42),
+    0 0 22px rgba(39, 214, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.toast-unlock {
+  border-color: rgba(255, 220, 130, 0.55);
+  color: #fff5d6;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.42),
+    0 0 22px rgba(255, 200, 90, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* ─── Touch controls (mobile) ───────────────────────────────────────────── */
+
+.touch-controls {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  display: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.touch-mode .touch-controls {
+  display: block;
+}
+
+.touch-stick {
+  position: absolute;
+  bottom: max(4vh, 18px);
+  left: max(4vh, 18px);
+  width: clamp(150px, 24vh, 240px);
+  height: clamp(150px, 24vh, 240px);
+  border-radius: 50%;
+  background: rgba(8, 16, 24, 0.46);
+  border: 2px solid rgba(127, 249, 255, 0.22);
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.touch-stick-knob {
+  width: 42%;
+  height: 42%;
+  border-radius: 50%;
+  background: rgba(127, 249, 255, 0.32);
+  border: 2px solid rgba(127, 249, 255, 0.7);
+  box-shadow: 0 0 18px rgba(39, 214, 255, 0.32);
+  pointer-events: none;
+  transition: transform 0.05s linear;
+}
+
+.touch-buttons {
+  position: absolute;
+  bottom: max(4vh, 18px);
+  right: max(4vh, 18px);
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  grid-auto-rows: auto;
+  gap: 14px;
+}
+
+.touch-btn {
+  width: clamp(64px, 11vh, 100px);
+  height: clamp(64px, 11vh, 100px);
+  border-radius: 50%;
+  color: var(--ui-text);
+  background: rgba(11, 22, 32, 0.7);
+  border: 2px solid rgba(127, 249, 255, 0.32);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.1em;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+
+.touch-btn.pressed {
+  background: rgba(127, 249, 255, 0.32);
+  border-color: rgba(127, 249, 255, 0.7);
+  color: #031018;
+}
+
+.touch-btn-sprint { grid-column: 1; grid-row: 1; }
+.touch-btn-combo  { grid-column: 2; grid-row: 1; }
+.touch-btn-heat   { grid-column: 1; grid-row: 2; }
+.touch-btn-laser  { grid-column: 2; grid-row: 2; }
+
+@media (orientation: portrait) and (max-width: 900px) {
+  body.touch-mode .menu-instructions {
+    display: none;
+  }
 }
 
 @media (max-width: 640px) {

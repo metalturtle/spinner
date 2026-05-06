@@ -24,3 +24,9 @@ export function loadActiveLevelFromBrowser(): LevelData | null {
     return null;
   }
 }
+
+export function hasActiveLevelInBrowser(): boolean {
+  const storage = getBrowserStorage();
+  if (!storage) return false;
+  return storage.getItem(ACTIVE_LEVEL_STORAGE_KEY) !== null;
+}
