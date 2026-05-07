@@ -3,6 +3,10 @@ import vertexShader from './water.vert.glsl?raw';
 import fragmentShader from './water.frag.glsl?raw';
 
 type RipplePoint = { x: number; z: number };
+const WATER_RIPPLE_CLICK_COUNT = 64;
+const AMBIENT_RIPPLE_RATE_PER_WORLD_UNIT = 0.035;
+const AMBIENT_RIPPLE_RATE_MIN = 0.65;
+const AMBIENT_RIPPLE_BURST_CAP = 2;
 
 const waterRippleMaterials = new Set<THREE.ShaderMaterial>();
 const disposedWaterRippleMaterials = new WeakSet<THREE.Material>();
@@ -15,13 +19,15 @@ let currentWaterRippleTime = 0;
 interface WaterRippleRegion {
   material: THREE.ShaderMaterial;
   contains: (point: RipplePoint) => boolean;
+  sampleRandomPoint: () => RipplePoint;
+  area: number;
+  ambientCarry: number;
   uvScale: number;
 }
 
 const waterRippleRegions: WaterRippleRegion[] = [];
 
 const reflectionTextureUrl = new URL('../../water/public/goldensky.jpg', import.meta.url).href;
-const noiseTextureUrl = new URL('../../water/public/noise.jpg', import.meta.url).href;
 
 const whiteTexture = new THREE.DataTexture(
   new Uint8Array([255, 255, 255, 255]),
@@ -182,10 +188,7 @@ async function preloadWaterTexture(url: string, isColor: boolean): Promise<THREE
 // `;
 
 export async function preloadWaterRippleAssets(): Promise<void> {
-  await Promise.all([
-    preloadWaterTexture(reflectionTextureUrl, true),
-    preloadWaterTexture(noiseTextureUrl, false),
-  ]);
+  await preloadWaterTexture(reflectionTextureUrl, true);
 }
 
 function pushRippleToMaterial(
@@ -230,13 +233,12 @@ export function createWaterRippleMaterial(
     ? new THREE.Color(0xffffff).lerp(tint, 0.18)
     : tint;
   const clicks: THREE.Vector3[] = Array.from(
-    { length: 8 },
+    { length: WATER_RIPPLE_CLICK_COUNT },
     () => new THREE.Vector3(0, 0, -1000),
   );
   const uniforms = {
     iTime: { value: 0 },
     iChannel0: { value: baseMap ?? whiteTexture },
-    iChannel1: { value: getWaterTexture(noiseTextureUrl, false) },
     iChannel2: { value: getWaterTexture(reflectionTextureUrl, true) },
     uClicks: { value: clicks },
     uAspect: { value: 1 },
@@ -258,12 +260,29 @@ export function createWaterRippleMaterial(
   return material;
 }
 
-export function updateWaterRippleSurfaces(time: number, cameraPos: THREE.Vector3): void {
+function emitAmbientWaterRipples(delta: number): void {
+  if (delta <= 0 || waterRippleRegions.length === 0) return;
+
+  for (const region of waterRippleRegions) {
+    const rate = Math.max(AMBIENT_RIPPLE_RATE_MIN, region.area * AMBIENT_RIPPLE_RATE_PER_WORLD_UNIT);
+    region.ambientCarry += rate * delta;
+    let count = Math.floor(region.ambientCarry);
+    region.ambientCarry -= count;
+    count = Math.min(count, AMBIENT_RIPPLE_BURST_CAP);
+
+    for (let i = 0; i < count; i += 1) {
+      emitWorldRipple(region.sampleRandomPoint(), 0.85 + Math.random() * 0.5);
+    }
+  }
+}
+
+export function updateWaterRippleSurfaces(time: number, cameraPos: THREE.Vector3, delta = 0): void {
   currentWaterRippleTime = time;
   for (const material of waterRippleMaterials) {
     material.uniforms.iTime.value = time;
     material.uniforms.uCameraPos.value.copy(cameraPos);
   }
+  emitAmbientWaterRipples(delta);
 }
 
 export function clearWaterRippleSurfaceRegions(): void {

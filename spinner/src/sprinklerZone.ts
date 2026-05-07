@@ -7,7 +7,8 @@ const TAU = Math.PI * 2;
 const DROP_COLOR_FALLBACK = '#00dcff00';
 const SPLASH_COLOR_FALLBACK = '#dff6ff';
 const FLOOR_Y = 0.03;
-const DROP_BASE_THICKNESS = 0.055;
+const DROP_BASE_THICKNESS = 0.04;
+const DROP_STREAK_LENGTH = 0.24;
 const SPLASH_THICKNESS = 0.012;
 const MIN_DROPS = 18;
 const MAX_DROPS = 120;
@@ -32,16 +33,20 @@ interface SprinklerDrop {
   phaseOffset: number;
   speed: number;
   size: number;
+  streakLength: number;
   splashSize: number;
   brightness: number;
   wobblePhase: number;
+  driftPhase: number;
+  driftAmount: number;
   radialRatio: number;
+  currentCycle: number;
 }
 
 export interface SprinklerZoneVisual {
   root: THREE.Group;
   dropsMesh: THREE.InstancedMesh;
-  // splashesMesh: THREE.InstancedMesh;
+  splashesMesh: THREE.InstancedMesh;
   drops: SprinklerDrop[];
   ceilingHeight: number;
   density: number;
@@ -51,6 +56,7 @@ export interface SprinklerZoneVisual {
   splashColor: THREE.Color;
   contains: (point: { x: number; z: number }) => boolean;
   influenceAt: (point: { x: number; z: number }) => number;
+  respawnDrop: (drop: SprinklerDrop) => void;
 }
 
 type SprinklerMode = 'uniform' | 'center_falloff';
@@ -221,11 +227,36 @@ function createZoneVisual(
   const dropSpeed = parseNumber(props?.sprinklerDropSpeed, 1.9, 0.2);
   // const dropColor = parseColor(props?.sprinklerColor, DROP_COLOR_FALLBACK);
   const dropColor = parseColor(DROP_COLOR_FALLBACK, DROP_COLOR_FALLBACK);
-  // const splashColor = dropColor.clone().lerp(parseColor(undefined, SPLASH_COLOR_FALLBACK), 0.5);
-const splashColor = dropColor.clone()
+  const splashColor = dropColor.clone().lerp(parseColor(undefined, SPLASH_COLOR_FALLBACK), 0.5);
+// const splashColor = dropColor.clone()
 
   const root = new THREE.Group();
   root.position.set(shape.center.x, 0, shape.center.z);
+
+  const respawnDrop = (drop: SprinklerDrop): void => {
+    const radialRatio = mode === 'center_falloff'
+      ? Math.pow(Math.random(), falloffStrength)
+      : Math.sqrt(Math.random());
+    const sampled = shape.samplePoint(radialRatio);
+    const centerDistance = Math.hypot(sampled.x - shape.center.x, sampled.z - shape.center.z);
+    const distanceRatio = shape.radius > 0.0001
+      ? THREE.MathUtils.clamp(centerDistance / shape.radius, 0, 1)
+      : 0;
+    const falloffWeight = mode === 'center_falloff'
+      ? Math.pow(1 - distanceRatio, Math.max(0.35, falloffStrength * 0.65))
+      : 1;
+
+    drop.x = sampled.x - shape.center.x;
+    drop.z = sampled.z - shape.center.z;
+    drop.radialRatio = distanceRatio;
+    drop.size = (0.04 + Math.random() * 0.035) * (0.8 + falloffWeight * 0.24);
+    drop.streakLength = (DROP_STREAK_LENGTH + Math.random() * 0.16) * (0.84 + falloffWeight * 0.2);
+    drop.splashSize = (0.11 + Math.random() * 0.08) * (0.8 + falloffWeight * 0.35);
+    drop.brightness = (0.72 + Math.random() * 0.28) * (0.68 + falloffWeight * 0.42);
+    drop.wobblePhase = Math.random() * TAU;
+    drop.driftPhase = Math.random() * TAU;
+    drop.driftAmount = 0.012 + Math.random() * 0.045;
+  };
 
   const dropGeometry = new THREE.BoxGeometry(1, 1, 1);
   const dropMaterial = new THREE.MeshBasicMaterial({
@@ -248,43 +279,37 @@ const splashColor = dropColor.clone()
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
-  // const splashesMesh = new THREE.InstancedMesh(splashGeometry, splashMaterial, count);
-  // splashesMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  // splashesMesh.frustumCulled = false;
-  // root.add(splashesMesh);
+  const splashesMesh = new THREE.InstancedMesh(splashGeometry, splashMaterial, count);
+  splashesMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  splashesMesh.frustumCulled = false;
+  root.add(splashesMesh);
 
   const drops: SprinklerDrop[] = [];
   for (let i = 0; i < count; i += 1) {
-    const radialRatio = mode === 'center_falloff'
-      ? Math.pow(Math.random(), falloffStrength)
-      : Math.sqrt(Math.random());
-    const sampled = shape.samplePoint(radialRatio);
-    const centerDistance = Math.hypot(sampled.x - shape.center.x, sampled.z - shape.center.z);
-    const distanceRatio = shape.radius > 0.0001
-      ? THREE.MathUtils.clamp(centerDistance / shape.radius, 0, 1)
-      : 0;
-    const falloffWeight = mode === 'center_falloff'
-      ? Math.pow(1 - distanceRatio, Math.max(0.35, falloffStrength * 0.65))
-      : 1;
     const drop: SprinklerDrop = {
-      x: sampled.x - shape.center.x,
-      z: sampled.z - shape.center.z,
+      x: 0,
+      z: 0,
       phaseOffset: Math.random(),
       speed: dropSpeed * (0.78 + Math.random() * 0.46),
-      size: (0.05 + Math.random() * 0.05) * (0.84 + falloffWeight * 0.26),
-      splashSize: (0.11 + Math.random() * 0.08) * (0.8 + falloffWeight * 0.35),
-      brightness: (0.72 + Math.random() * 0.28) * (0.68 + falloffWeight * 0.42),
-      wobblePhase: Math.random() * TAU,
-      radialRatio: distanceRatio,
+      size: 0.05,
+      streakLength: DROP_STREAK_LENGTH,
+      splashSize: 0.12,
+      brightness: 1,
+      wobblePhase: 0,
+      driftPhase: 0,
+      driftAmount: 0.02,
+      radialRatio: 0,
+      currentCycle: -1,
     };
+    respawnDrop(drop);
     drops.push(drop);
 
     tempColor.copy(dropColor).multiplyScalar(0.82 + drop.brightness * 0.3);
     dropsMesh.setColorAt(i, tempColor);
-    // splashesMesh.setColorAt(i, new THREE.Color(0x000000));
+    splashesMesh.setColorAt(i, new THREE.Color(0x000000));
   }
   dropsMesh.instanceColor!.needsUpdate = true;
-  // splashesMesh.instanceColor!.needsUpdate = true;
+  splashesMesh.instanceColor!.needsUpdate = true;
 
   scene.add(root);
   const unregisterCull = registerTopDownCullable(root, shape.radius + 1.2);
@@ -292,7 +317,7 @@ const splashColor = dropColor.clone()
   return {
     root,
     dropsMesh,
-    // splashesMesh,
+    splashesMesh,
     drops,
     ceilingHeight,
     density,
@@ -301,6 +326,7 @@ const splashColor = dropColor.clone()
     dropColor,
     splashColor,
     contains: shape.contains,
+    respawnDrop,
     influenceAt(point) {
       if (!shape.contains(point)) return 0;
       if (mode === 'uniform' || shape.radius <= 0.0001) return 1;
@@ -333,15 +359,24 @@ export function createSprinklerZoneVisuals(scene: THREE.Scene, level: LevelData)
 export function updateSprinklerZoneVisual(zone: SprinklerZoneVisual, time: number): void {
   for (let i = 0; i < zone.drops.length; i += 1) {
     const drop = zone.drops[i];
-    const phase = (drop.phaseOffset + time * drop.speed) % 1;
-    const wobbleAmount = Math.sin(time * 6.5 + drop.wobblePhase + phase * TAU) * 0.025;
+    const phaseValue = drop.phaseOffset + time * drop.speed;
+    const cycle = Math.floor(phaseValue);
+    if (cycle !== drop.currentCycle) {
+      drop.currentCycle = cycle;
+      zone.respawnDrop(drop);
+      tempColor.copy(zone.dropColor).multiplyScalar(0.82 + drop.brightness * 0.3);
+      zone.dropsMesh.setColorAt(i, tempColor);
+    }
+    const phase = phaseValue - cycle;
+    const wobbleAmount = Math.sin(time * 6.5 + drop.wobblePhase + phase * TAU) * 0.012;
+    const driftAmount = Math.sin(time * 1.4 + drop.driftPhase + phase * TAU * 0.45) * drop.driftAmount;
     const edgeDamping = 1 - drop.radialRatio * 0.55;
-    const x = drop.x + Math.cos(drop.wobblePhase) * wobbleAmount * edgeDamping;
-    const z = drop.z + Math.sin(drop.wobblePhase) * wobbleAmount * edgeDamping;
+    const x = drop.x + Math.cos(drop.wobblePhase) * wobbleAmount * edgeDamping + Math.cos(drop.driftPhase) * driftAmount;
+    const z = drop.z + Math.sin(drop.wobblePhase) * wobbleAmount * edgeDamping + Math.sin(drop.driftPhase) * driftAmount;
     const y = THREE.MathUtils.lerp(zone.ceilingHeight, FLOOR_Y + 0.05, phase);
 
     tempPosition.set(x, y, z);
-    tempScale.set(drop.size, DROP_BASE_THICKNESS, drop.size);
+    tempScale.set(drop.size, drop.streakLength, drop.size);
     tempMatrix.compose(tempPosition, identityRotation, tempScale);
     zone.dropsMesh.setMatrixAt(i, tempMatrix);
 
@@ -352,22 +387,23 @@ export function updateSprinklerZoneVisual(zone: SprinklerZoneVisual, time: numbe
     tempPosition.set(drop.x, FLOOR_Y, drop.z);
     tempScale.set(splashScale, SPLASH_THICKNESS, splashScale);
     tempMatrix.compose(tempPosition, identityRotation, tempScale);
-    // zone.splashesMesh.setMatrixAt(i, tempMatrix);
+    zone.splashesMesh.setMatrixAt(i, tempMatrix);
 
     tempColor.copy(zone.splashColor).multiplyScalar(impact * drop.brightness * zone.splashOpacity);
-    // zone.splashesMesh.setColorAt(i, tempColor);
+    zone.splashesMesh.setColorAt(i, tempColor);
   }
 
   zone.dropsMesh.instanceMatrix.needsUpdate = true;
-  // zone.splashesMesh.instanceMatrix.needsUpdate = true;
-  // zone.splashesMesh.instanceColor!.needsUpdate = true;
+  zone.dropsMesh.instanceColor!.needsUpdate = true;
+  zone.splashesMesh.instanceMatrix.needsUpdate = true;
+  zone.splashesMesh.instanceColor!.needsUpdate = true;
 }
 
 export function destroySprinklerZoneVisual(scene: THREE.Scene, zone: SprinklerZoneVisual): void {
   zone.unregisterCull();
   scene.remove(zone.root);
   zone.dropsMesh.geometry.dispose();
-  // zone.splashesMesh.geometry.dispose();
+  zone.splashesMesh.geometry.dispose();
   disposeMaterial(zone.dropsMesh.material);
-  // disposeMaterial(zone.splashesMesh.material);
+  disposeMaterial(zone.splashesMesh.material);
 }

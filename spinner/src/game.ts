@@ -306,7 +306,7 @@ initGooDecals(scene);
 initLavaEmbers(scene);
 initClashFlashes(scene);
 initSpinnerRainSplash(scene);
-// initSpaceBackground();
+initSpaceBackground();
 
 const profiler = createProfiler({
   // Enable in any build (dev or prod) when the URL has `?profile=1`. The
@@ -5995,8 +5995,8 @@ function animate(): void {
   updateRicochetBubbles(delta);
   updateTrails(playerBody.pos, playerBody.vel);
   updateLavaSurfaces(time);
-  updateWaterRippleSurfaces(time, camera.position);
-  // updateSpaceBackground(time);
+  updateWaterRippleSurfaces(time, camera.position, delta);
+  updateSpaceBackground(time);
   for (const torch of fireTorches) updateFireTorch(torch, time);
   updateLavaEmbers(delta, time, {
     position: playerBody.pos,

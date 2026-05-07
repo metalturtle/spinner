@@ -987,7 +987,7 @@
       },
       "radius": 25.90724809414742,
       "properties": {
-        "waterRippleEnabled": "true"
+        "waterRippleEnabled": "false"
       },
       "color": "#2a3a4a",
       "textureId": "sci-fi",
@@ -1003,7 +1003,7 @@
       },
       "radius": 26.80287754891569,
       "properties": {
-        "waterRippleEnabled": "true"
+        "waterRippleEnabled": "false"
       },
       "color": "#2a3a4a",
       "textureId": "sci-fi",
@@ -1014,13 +1014,14 @@
       "name": "Circle 4",
       "layer": "trigger",
       "center": {
-        "x": -17,
-        "y": 11
+        "x": -18,
+        "y": 10
       },
       "radius": 35,
       "properties": {
         "sprinklerEnabled": "true",
-        "sprinklerCeilingHeight": "10"
+        "sprinklerCeilingHeight": "10",
+        "sprinklerDensity": "0"
       },
       "color": "#3388ff"
     },
@@ -1029,8 +1030,8 @@
       "name": "Circle 5",
       "layer": "trigger",
       "center": {
-        "x": 14,
-        "y": 45
+        "x": 16,
+        "y": 43
       },
       "radius": 35,
       "properties": {

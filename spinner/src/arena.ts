@@ -199,9 +199,45 @@ function registerWaterRipplePolygonRegion(
   if (!(material instanceof THREE.ShaderMaterial) || poly.vertices.length < 3) return;
   const outer = poly.vertices.map((vertex) => ({ x: vertex.x, z: lvZ(vertex.y) }));
   const holes = (poly.holes ?? []).map((hole) => hole.map((vertex) => ({ x: vertex.x, z: lvZ(vertex.y) })));
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  let centerX = 0;
+  let centerZ = 0;
+  for (const vertex of outer) {
+    minX = Math.min(minX, vertex.x);
+    maxX = Math.max(maxX, vertex.x);
+    minZ = Math.min(minZ, vertex.z);
+    maxZ = Math.max(maxZ, vertex.z);
+    centerX += vertex.x;
+    centerZ += vertex.z;
+  }
+  centerX /= outer.length;
+  centerZ /= outer.length;
+  const outerArea = polygonAreaAbs(outer.map((vertex) => ({ x: vertex.x, y: vertex.z })));
+  const holeArea = holes.reduce(
+    (sum, hole) => sum + polygonAreaAbs(hole.map((vertex) => ({ x: vertex.x, y: vertex.z }))),
+    0,
+  );
+  const sampleRandomPoint = (): { x: number; z: number } => {
+    for (let i = 0; i < 24; i += 1) {
+      const point = {
+        x: THREE.MathUtils.lerp(minX, maxX, Math.random()),
+        z: THREE.MathUtils.lerp(minZ, maxZ, Math.random()),
+      };
+      if (isPointInPolygon(point, outer) && !holes.some((hole) => hole.length >= 3 && isPointInPolygon(point, hole))) {
+        return point;
+      }
+    }
+    return { x: centerX, z: centerZ };
+  };
   registerWaterRippleSurfaceRegion({
     material,
     uvScale,
+    area: Math.max(1, outerArea - holeArea),
+    ambientCarry: 0,
+    sampleRandomPoint,
     contains(point) {
       if (!isPointInPolygon(point, outer)) return false;
       return !holes.some((hole) => hole.length >= 3 && isPointInPolygon(point, hole));
@@ -220,6 +256,16 @@ function registerWaterRippleCircleRegion(
   registerWaterRippleSurfaceRegion({
     material,
     uvScale,
+    area: Math.PI * radiusSq,
+    ambientCarry: 0,
+    sampleRandomPoint() {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = Math.sqrt(Math.random()) * circle.radius;
+      return {
+        x: circle.center.x + Math.cos(angle) * radius,
+        z: centerZ + Math.sin(angle) * radius,
+      };
+    },
     contains(point) {
       const dx = point.x - circle.center.x;
       const dz = point.z - centerZ;

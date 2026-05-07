@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Vec2 } from './physics';
 
-const MAX_DROPLETS = 1020;
+const MAX_DROPLETS = 2020;
 const TAU = Math.PI * 2;
 // const GRAVITY = 11.5;
 const GRAVITY = 0;
@@ -28,11 +28,15 @@ const velZ = new Float32Array(MAX_DROPLETS);
 const age = new Float32Array(MAX_DROPLETS);
 const lifetime = new Float32Array(MAX_DROPLETS);
 const size = new Float32Array(MAX_DROPLETS);
+const stretch = new Float32Array(MAX_DROPLETS);
 const brightness = new Float32Array(MAX_DROPLETS);
-const spin = new Float32Array(MAX_DROPLETS);
 const active = new Uint8Array(MAX_DROPLETS);
 const carries = new Map<number, number>();
 const colors = Array.from({ length: MAX_DROPLETS }, () => new THREE.Color(0x8fdcff));
+
+function randRange(min: number, max: number): number {
+  return min + Math.random() * (max - min);
+}
 
 function hideDroplet(index: number): void {
   if (!mesh) return;
@@ -49,27 +53,46 @@ function spawnDroplet(
   radius: number,
   strength: number,
   color: THREE.Color,
+  spinSign: number,
 ): void {
   const index = spawnCursor;
   spawnCursor = (spawnCursor + 1) % MAX_DROPLETS;
+  const moveSpeed = Math.hypot(vel.x, vel.z);
 
+  const handedness = spinSign >= 0 ? 1 : -1;
   const angle = Math.random() * TAU;
-  const outwardSpeed = 1 + (2.3 + Math.random() * 3.4) * (0.75 + strength * 0.35);
-  const vx = Math.cos(angle) * outwardSpeed + vel.x * 0.22;
-  const vz = Math.sin(angle) * outwardSpeed + vel.z * 0.22;
-  const radialOffset = radius * (0.15 + Math.random() * 0.28);
+  const radialX = Math.cos(angle);
+  const radialZ = Math.sin(angle);
+  let tangentX = -radialZ * handedness;
+  let tangentZ = radialX * handedness;
 
-  posX[index] = origin.x + Math.cos(angle) * radialOffset;
-  posY[index] = origin.y + (Math.random() - 0.5) * 0.08;
-  posZ[index] = origin.z + Math.sin(angle) * radialOffset;
-  velX[index] = vx;
-  velY[index] = 0.7 + Math.random() * 1.2 + strength * 0.18;
-  velZ[index] = vz;
+  // Keep the spray tangential, with only a tiny angular wobble so it reads
+  // like many water streaks peeling off the rim rather than a perfect wheel.
+  const tangentWobble = randRange(-0.08, 0.08);
+  const wobbleX = tangentX + radialX * tangentWobble;
+  const wobbleZ = tangentZ + radialZ * tangentWobble;
+  const tangentLen = Math.hypot(wobbleX, wobbleZ) || 1;
+  tangentX = wobbleX / tangentLen;
+  tangentZ = wobbleZ / tangentLen;
+
+  const tangentialSpeed = randRange(2.8, 5.2)
+    * (0.82 + strength * 0.3)
+    * (1 + Math.min(1.35, moveSpeed * 0.28));
+  velX[index] = tangentX * tangentialSpeed + vel.x;
+  velZ[index] = tangentZ * tangentialSpeed + vel.z;
+
+  const rimOffset = radius * randRange(0.88, 0.98);
+  const tangentOffset = radius * randRange(-0.015, 0.015);
+
+  posX[index] = origin.x + radialX * rimOffset + tangentX * tangentOffset;
+  posY[index] = origin.y + randRange(-0.03, 0.03);
+  posZ[index] = origin.z + radialZ * rimOffset + tangentZ * tangentOffset;
+  velY[index] = randRange(0.85, 1.45) + strength * 0.16;
   age[index] = 0;
-  lifetime[index] = 0.5 + 0.18 + Math.random() * 0.18;
-  size[index] = 0.04 + (0.035 + Math.random() * 0.045) * (0.9 + strength * 0.12);
-  brightness[index] = 0.72 + Math.random() * 0.38;
-  spin[index] = (Math.random() - 0.5) * 4.2;
+  lifetime[index] = randRange(0.68, 0.92);
+  size[index] = randRange(0.03, 0.045) * (0.9 + strength * 0.08);
+  stretch[index] = randRange(0.14, 0.22) * (0.92 + strength * 0.16);
+  brightness[index] = randRange(0.95, 1.28);
   active[index] = 1;
   colors[index].copy(color);
 }
@@ -79,7 +102,7 @@ export function initSpinnerRainSplash(scene: THREE.Scene): void {
   material = new THREE.MeshBasicMaterial({
     color: 0x8fdcff,
     transparent: true,
-    opacity: 0.82,
+    opacity: 0.92,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
@@ -103,6 +126,7 @@ export function emitSpinnerRainSplash(
   strength: number,
   color: THREE.Color,
   delta: number,
+  spinSign = 1,
 ): void {
   if (!mesh || strength <= 0.01 || delta <= 0) return;
 
@@ -113,7 +137,7 @@ export function emitSpinnerRainSplash(
   count = Math.min(count, 7);
 
   for (let i = 0; i < count; i += 1) {
-    spawnDroplet(origin, vel, radius, strength, color);
+    spawnDroplet(origin, vel, radius, strength, color, spinSign);
   }
 }
 
@@ -136,10 +160,12 @@ export function updateSpinnerRainSplash(delta: number): void {
     posZ[i] += velZ[i] * delta;
 
     const life = 1 - age[i] / lifetime[i];
-    const currentSize = size[i] * (0.75 + life * 0.55);
+    const currentWidth = size[i] * (0.72 + life * 0.32);
+    const currentLength = stretch[i] * (0.9 + life * 0.38);
     tempPosition.set(posX[i], posY[i], posZ[i]);
-    identityRotation.setFromAxisAngle(upAxis, spin[i] * age[i]);
-    tempScale.set(currentSize, currentSize * 0.9, currentSize);
+    const yaw = Math.atan2(velX[i], velZ[i]);
+    identityRotation.setFromAxisAngle(upAxis, yaw);
+    tempScale.set(currentWidth, currentWidth * 0.55, currentLength);
     tempMatrix.compose(tempPosition, identityRotation, tempScale);
     mesh.setMatrixAt(i, tempMatrix);
 
