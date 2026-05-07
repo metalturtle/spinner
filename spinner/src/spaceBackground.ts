@@ -15,8 +15,8 @@ function ensureStyles(): void {
       pointer-events: none;
       z-index: 0;
       background:
-        radial-gradient(120% 82% at 50% 108%, rgba(255, 195, 120, 0.94) 0%, rgba(236, 121, 62, 0.74) 26%, rgba(164, 58, 46, 0.42) 47%, rgba(44, 12, 25, 0.08) 72%, rgba(8, 6, 12, 0) 88%),
-        linear-gradient(180deg, #0b0710 0%, #1d0c18 22%, #45202a 48%, #7f3a2d 73%, #d77d4f 100%);
+        radial-gradient(122% 84% at 50% 110%, rgba(255, 179, 88, 0.96) 0%, rgba(244, 115, 18, 0.82) 24%, rgba(82, 22, 10, 0.12) 66%, rgba(0, 0, 0, 0) 86%),
+        linear-gradient(180deg, #020202 0%, #090403 18%, #1a0804 38%, #4a180c 66%, #c66023 100%);
     }
 
     .sunset-background__glow,
@@ -32,16 +32,16 @@ function ensureStyles(): void {
 
     .sunset-background__glow {
       background:
-        radial-gradient(52% 34% at 72% 78%, rgba(255, 133, 78, 0.42) 0%, rgba(255, 133, 78, 0) 72%),
-        radial-gradient(42% 28% at 24% 74%, rgba(255, 177, 97, 0.24) 0%, rgba(255, 177, 97, 0) 74%);
+        radial-gradient(56% 36% at 74% 80%, rgba(255, 124, 48, 0.46) 0%, rgba(255, 124, 48, 0) 72%),
+        radial-gradient(44% 30% at 24% 76%, rgba(255, 171, 74, 0.28) 0%, rgba(255, 171, 74, 0) 74%);
       animation: sunsetGlowDrift 28s ease-in-out infinite alternate;
     }
 
     .sunset-background__veil {
       inset: -12%;
       background:
-        radial-gradient(66% 40% at 70% 30%, rgba(214, 70, 44, 0.2) 0%, rgba(214, 70, 44, 0) 72%),
-        radial-gradient(54% 26% at 18% 26%, rgba(155, 39, 57, 0.18) 0%, rgba(155, 39, 57, 0) 76%);
+        radial-gradient(66% 40% at 70% 30%, rgba(218, 84, 30, 0.22) 0%, rgba(218, 84, 30, 0) 72%),
+        radial-gradient(54% 26% at 18% 26%, rgba(108, 26, 12, 0.16) 0%, rgba(108, 26, 12, 0) 76%);
       animation: sunsetVeilDrift 36s ease-in-out infinite alternate;
       opacity: 0.78;
     }
@@ -49,7 +49,7 @@ function ensureStyles(): void {
     .sunset-background__mist {
       inset: 22% -8% -10% -8%;
       background:
-        linear-gradient(180deg, rgba(255, 185, 126, 0) 0%, rgba(255, 160, 92, 0.09) 30%, rgba(239, 112, 67, 0.2) 56%, rgba(170, 54, 47, 0.18) 100%);
+        linear-gradient(180deg, rgba(255, 185, 126, 0) 0%, rgba(255, 162, 88, 0.08) 30%, rgba(232, 104, 32, 0.22) 56%, rgba(125, 36, 12, 0.18) 100%);
       filter: blur(34px);
       animation: sunsetMistBreath 18s ease-in-out infinite alternate;
       opacity: 0.9;

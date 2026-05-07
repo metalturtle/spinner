@@ -64,7 +64,7 @@ export interface EnemySpinnerConfig {
 }
 
 export const ENEMY_SPINNER_TIER_1: EnemySpinnerConfig = {
-  rpmCapacity:   1,
+  rpmCapacity:   120,
   rpmDecayRate:  0.0,
   rpmSpeedDrain: 0.0,      // enemy spinners only lose RPM from combat, not movement
   radius:        1.425 * SPINNER_SIZE_SCALE,
@@ -116,7 +116,7 @@ export const ENEMY_SPINNER_TIER_2: EnemySpinnerConfig = {
   comboPauseDuration: 0.1,
   comboCooldown: 3.8,
   comboLockDuration: 0.12,
-  color:         0x6f63ff,
+  color:         0x33cc66,
 };
 
 export const ENEMY_SPINNER_TIER_3: EnemySpinnerConfig = {
@@ -140,7 +140,7 @@ export const ENEMY_SPINNER_TIER_3: EnemySpinnerConfig = {
   comboPauseDuration: 0.075,
   comboCooldown: 2.8,
   comboLockDuration: 0.15,
-  color:         0xa052ff,
+  color:         0xff8b2c,
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────

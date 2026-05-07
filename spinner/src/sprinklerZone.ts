@@ -11,7 +11,7 @@ const DROP_BASE_THICKNESS = 0.04;
 const DROP_STREAK_LENGTH = 0.24;
 const SPLASH_THICKNESS = 0.012;
 const MIN_DROPS = 18;
-const MAX_DROPS = 120;
+const MAX_DROPS = 60;
 
 const tempPosition = new THREE.Vector3();
 const tempScale = new THREE.Vector3();

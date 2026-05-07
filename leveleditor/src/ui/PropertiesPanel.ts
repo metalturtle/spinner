@@ -424,6 +424,7 @@ export class PropertiesPanel {
     const surfaceType = rawSurfaceType === 'water' ? 'lava' : rawSurfaceType;
     const drainRate = properties.drainRate ?? '8';
     const waterRippleEnabled = properties.waterRippleEnabled === 'true';
+    const waterRippleShader = properties.waterRippleShader === 'water2' ? 'water2' : 'water1';
     return `
       <div class="prop-section">
         <h4>Surface</h4>
@@ -441,6 +442,13 @@ export class PropertiesPanel {
         <div class="prop-row">
           <label>Water Ripple</label>
           <input type="checkbox" data-field="waterRippleEnabled"${waterRippleEnabled ? ' checked' : ''} />
+        </div>
+        <div class="prop-row">
+          <label>Water Shader</label>
+          <select data-field="waterRippleShader">
+            <option value="water1"${waterRippleShader === 'water1' ? ' selected' : ''}>Water 1</option>
+            <option value="water2"${waterRippleShader === 'water2' ? ' selected' : ''}>Water 2</option>
+          </select>
         </div>
       </div>
     `;

@@ -132,6 +132,11 @@ import {
   preloadWaterRippleAssets,
   updateWaterRippleSurfaces,
 } from './waterRippleSurface';
+import {
+  emitMovementWater2Ripples,
+  preloadWater2Assets,
+  updateWater2Surfaces,
+} from './water2Surface';
 import { createFireTorch, destroyFireTorch, type FireTorch, updateFireTorch } from './fireTorch';
 import { addLaserLightPoint, addLaserLightSegment, beginLaserLightFrame, endLaserLightFrame } from './laserLightBuffer';
 import { createLaserGlowMaterial, createLaserRefractionMaterial } from './laserBeamMaterials';
@@ -273,7 +278,10 @@ function buildLevelLoadTasks(level: LevelData): LoadTask[] {
     tasks.push({
       label: 'Loading water ripple textures',
       weight: 1.5,
-      run: () => preloadWaterRippleAssets(),
+      run: () => Promise.all([
+        preloadWaterRippleAssets(),
+        preloadWater2Assets(),
+      ]).then(() => undefined),
     });
   }
 
@@ -2263,7 +2271,10 @@ function spawnLevelEntity(ent: LevelEntity): void {
       registerEncounterMember(ent, turret.id);
       break;
     }
-    case 'enemy_spinner':
+    case 'enemy_spinner': {
+      spawnEnemySpinnerEntity(ENEMY_SPINNER_TIER_1);
+      break;
+    }
     case 'enemy_spinner_tier_2': {
       spawnEnemySpinnerEntity(ENEMY_SPINNER_TIER_2);
       break;
@@ -5927,6 +5938,13 @@ function animate(): void {
     delta,
     time,
   );
+  emitMovementWater2Ripples(
+    playerId,
+    playerBody.pos,
+    Math.hypot(playerBody.vel.x, playerBody.vel.z),
+    playerBody.radius,
+    delta,
+  );
   updatePlayerHeatAuraVisuals(time);
   updatePlayerLaserVisuals(time);
   for (const e of EnemyEntities.getAll()) {
@@ -5948,6 +5966,13 @@ function animate(): void {
       delta,
       time,
     );
+    emitMovementWater2Ripples(
+      e.id,
+      e.collidable.pos,
+      Math.hypot(e.collidable.vel.x, e.collidable.vel.z),
+      e.collidable.radius,
+      delta,
+    );
   }
   for (const e of LaserSpinnerEntities.getAll()) {
     updateLaserSpinnerVisuals(e, time, delta);
@@ -5967,6 +5992,13 @@ function animate(): void {
       e.collidable.radius,
       delta,
       time,
+    );
+    emitMovementWater2Ripples(
+      e.id,
+      e.collidable.pos,
+      Math.hypot(e.collidable.vel.x, e.collidable.vel.z),
+      e.collidable.radius,
+      delta,
     );
   }
   for (const z of ZombieEntities.getAll()) updateZombieVisuals(z, playerBody.pos, delta, time);
@@ -5996,6 +6028,7 @@ function animate(): void {
   updateTrails(playerBody.pos, playerBody.vel);
   updateLavaSurfaces(time);
   updateWaterRippleSurfaces(time, camera.position, delta);
+  updateWater2Surfaces(time, camera.position, delta);
   updateSpaceBackground(time);
   for (const torch of fireTorches) updateFireTorch(torch, time);
   updateLavaEmbers(delta, time, {

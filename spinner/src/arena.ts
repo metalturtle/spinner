@@ -16,6 +16,13 @@ import {
   disposeWaterRippleMaterial,
   registerWaterRippleSurfaceRegion,
 } from './waterRippleSurface';
+import {
+  clearWater2SurfaceRegions,
+  createWater2Material,
+  disposeWater2Material,
+  registerWater2SurfaceRegion,
+  setWater2WorldBounds,
+} from './water2Surface';
 import { addToChunk, getChunksOverlappingBbox, setupChunks, type Chunk } from './chunkManager';
 import {
   circleToPolygon,
@@ -45,6 +52,7 @@ const defaultRefractionNormalTexture = new THREE.DataTexture(
 );
 defaultRefractionNormalTexture.needsUpdate = true;
 type LavaRegion = { contains(point: { x: number; z: number }): boolean };
+type WaterRippleShaderKind = 'water1' | 'water2';
 const lavaRegions: LavaRegion[] = [];
 type ArenaBounds = { minX: number; maxX: number; minZ: number; maxZ: number };
 const currentArenaBounds: ArenaBounds = { minX: -20, maxX: 20, minZ: -20, maxZ: 20 };
@@ -274,6 +282,75 @@ function registerWaterRippleCircleRegion(
   });
 }
 
+function registerWater2PolygonRegion(poly: LevelPolygon): void {
+  if (poly.vertices.length < 3) return;
+  const outer = poly.vertices.map((vertex) => ({ x: vertex.x, z: lvZ(vertex.y) }));
+  const holes = (poly.holes ?? []).map((hole) => hole.map((vertex) => ({ x: vertex.x, z: lvZ(vertex.y) })));
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  let centerX = 0;
+  let centerZ = 0;
+  for (const vertex of outer) {
+    minX = Math.min(minX, vertex.x);
+    maxX = Math.max(maxX, vertex.x);
+    minZ = Math.min(minZ, vertex.z);
+    maxZ = Math.max(maxZ, vertex.z);
+    centerX += vertex.x;
+    centerZ += vertex.z;
+  }
+  centerX /= outer.length;
+  centerZ /= outer.length;
+  const outerArea = polygonAreaAbs(outer.map((vertex) => ({ x: vertex.x, y: vertex.z })));
+  const holeArea = holes.reduce(
+    (sum, hole) => sum + polygonAreaAbs(hole.map((vertex) => ({ x: vertex.x, y: vertex.z }))),
+    0,
+  );
+  registerWater2SurfaceRegion({
+    area: Math.max(1, outerArea - holeArea),
+    ambientCarry: 0,
+    sampleRandomPoint() {
+      for (let i = 0; i < 24; i += 1) {
+        const point = {
+          x: THREE.MathUtils.lerp(minX, maxX, Math.random()),
+          z: THREE.MathUtils.lerp(minZ, maxZ, Math.random()),
+        };
+        if (isPointInPolygon(point, outer) && !holes.some((hole) => hole.length >= 3 && isPointInPolygon(point, hole))) {
+          return point;
+        }
+      }
+      return { x: centerX, z: centerZ };
+    },
+    contains(point) {
+      if (!isPointInPolygon(point, outer)) return false;
+      return !holes.some((hole) => hole.length >= 3 && isPointInPolygon(point, hole));
+    },
+  });
+}
+
+function registerWater2CircleRegion(circle: LevelCircle): void {
+  const centerZ = lvZ(circle.center.y);
+  const radiusSq = circle.radius * circle.radius;
+  registerWater2SurfaceRegion({
+    area: Math.PI * radiusSq,
+    ambientCarry: 0,
+    sampleRandomPoint() {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = Math.sqrt(Math.random()) * circle.radius;
+      return {
+        x: circle.center.x + Math.cos(angle) * radius,
+        z: centerZ + Math.sin(angle) * radius,
+      };
+    },
+    contains(point) {
+      const dx = point.x - circle.center.x;
+      const dz = point.z - centerZ;
+      return dx * dx + dz * dz <= radiusSq;
+    },
+  });
+}
+
 function clearLavaRegions(): void {
   lavaRegions.length = 0;
 }
@@ -294,6 +371,10 @@ function isLavaSurface(poly: LevelPolygon): boolean {
 function hasWaterRippleSurface(props: Record<string, unknown> | undefined): boolean {
   const raw = props?.waterRippleEnabled;
   return raw === true || raw === 'true' || raw === '1';
+}
+
+function readWaterRippleShader(props: Record<string, unknown> | undefined): WaterRippleShaderKind {
+  return props?.waterRippleShader === 'water2' ? 'water2' : 'water1';
 }
 
 function getDrainRate(poly: LevelPolygon): number {
@@ -381,12 +462,14 @@ function clearArenaRoots(scene: THREE.Scene): void {
       if (Array.isArray(material)) {
         for (const entry of material) {
           if ((entry as THREE.ShaderMaterial).userData?.isWaterRippleMaterial) disposeWaterRippleMaterial(entry);
+          if ((entry as THREE.ShaderMaterial).userData?.isWater2Material) disposeWater2Material(entry);
           if ((entry as THREE.ShaderMaterial).userData?.isLavaMaterial) disposeLavaMaterial(entry);
         }
         return;
       }
       if (!material) return;
       if ((material as THREE.ShaderMaterial).userData?.isWaterRippleMaterial) disposeWaterRippleMaterial(material);
+      if ((material as THREE.ShaderMaterial).userData?.isWater2Material) disposeWater2Material(material);
       if ((material as THREE.ShaderMaterial).userData?.isLavaMaterial) disposeLavaMaterial(material);
     });
     scene.remove(root);
@@ -458,10 +541,12 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
   clearLavaLights(scene);
   clearLavaRegions();
   clearWaterRippleSurfaceRegions();
+  clearWater2SurfaceRegions();
   walls.length = 0;
   zones.length = 0;
   setArenaBoundsFromLevel(level);
   setLaserLightBounds(currentArenaBounds);
+  setWater2WorldBounds(currentArenaBounds);
   // Build the spatial-chunk grid for this level. Walls, floors, and other
   // static visuals are bucketed into chunks; chunks far from the player are
   // hidden each frame so projectObject and rendering skip those subtrees
@@ -525,20 +610,25 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
     color: string | undefined,
     textureId: string | undefined,
     useReliefMap: boolean,
-    waterRippleEnabled = false,
-  ): string => `${color ?? ''}|${textureId ?? ''}|${useReliefMap ? 1 : 0}|${waterRippleEnabled ? 1 : 0}`;
+    waterRippleShader: WaterRippleShaderKind | null = null,
+  ): string => `${color ?? ''}|${textureId ?? ''}|${useReliefMap ? 1 : 0}|${waterRippleShader ?? ''}`;
 
   const getFloorMaterial = (
     color: string | undefined,
     textureId: string | undefined,
     useReliefMap: boolean,
-    waterRippleEnabled: boolean,
+    waterRippleShader: WaterRippleShaderKind | null,
   ): THREE.Material => {
-    const key = matKey(color, textureId, useReliefMap, waterRippleEnabled);
+    const key = matKey(color, textureId, useReliefMap, waterRippleShader);
     const cached = floorMaterialCache.get(key);
     if (cached) return cached;
-    if (waterRippleEnabled) {
+    if (waterRippleShader === 'water1') {
       const rippleMat = createWaterRippleMaterial(color, TextureManager.get(textureId));
+      floorMaterialCache.set(key, rippleMat);
+      return rippleMat;
+    }
+    if (waterRippleShader === 'water2') {
+      const rippleMat = createWater2Material(color, TextureManager.get(textureId));
       floorMaterialCache.set(key, rippleMat);
       return rippleMat;
     }
@@ -670,12 +760,16 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
       if (chunks.length === 0) continue;
 
       const useRelief = !!poly.useReliefMap;
-      const waterRippleEnabled = hasWaterRippleSurface(poly.properties);
-      const mat = getFloorMaterial(poly.color, poly.textureId, useRelief, waterRippleEnabled);
-      const matKeyStr = matKey(poly.color, poly.textureId, useRelief, waterRippleEnabled);
+      const waterRippleShader = hasWaterRippleSurface(poly.properties)
+        ? readWaterRippleShader(poly.properties)
+        : null;
+      const mat = getFloorMaterial(poly.color, poly.textureId, useRelief, waterRippleShader);
+      const matKeyStr = matKey(poly.color, poly.textureId, useRelief, waterRippleShader);
       const textureScale = getTextureScale(poly.textureId, poly.textureScale);
-      if (waterRippleEnabled) {
+      if (waterRippleShader === 'water1') {
         registerWaterRipplePolygonRegion(poly, mat, textureScale ?? 1);
+      } else if (waterRippleShader === 'water2') {
+        registerWater2PolygonRegion(poly);
       }
 
       if (chunks.length === 1) {
@@ -712,12 +806,16 @@ export function createArena(scene: THREE.Scene, level: LevelData): void {
       if (chunks.length === 0) continue;
 
       const useRelief = !!c.useReliefMap;
-      const waterRippleEnabled = hasWaterRippleSurface(c.properties);
-      const mat = getFloorMaterial(c.color, c.textureId, useRelief, waterRippleEnabled);
-      const matKeyStr = matKey(c.color, c.textureId, useRelief, waterRippleEnabled);
+      const waterRippleShader = hasWaterRippleSurface(c.properties)
+        ? readWaterRippleShader(c.properties)
+        : null;
+      const mat = getFloorMaterial(c.color, c.textureId, useRelief, waterRippleShader);
+      const matKeyStr = matKey(c.color, c.textureId, useRelief, waterRippleShader);
       const textureScale = getTextureScale(c.textureId, c.textureScale);
-      if (waterRippleEnabled) {
+      if (waterRippleShader === 'water1') {
         registerWaterRippleCircleRegion(c, mat, textureScale ?? 1);
+      } else if (waterRippleShader === 'water2') {
+        registerWater2CircleRegion(c);
       }
 
       if (chunks.length === 1) {

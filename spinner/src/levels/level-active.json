@@ -971,7 +971,8 @@
       },
       "radius": 27.635642126552707,
       "properties": {
-        "waterRippleEnabled": "true"
+        "waterRippleEnabled": "true",
+        "waterRippleShader": "water2"
       },
       "color": "#2a3a4a",
       "textureId": "sci-fi",
@@ -987,7 +988,8 @@
       },
       "radius": 25.90724809414742,
       "properties": {
-        "waterRippleEnabled": "false"
+        "waterRippleEnabled": "true",
+        "waterRippleShader": "water2"
       },
       "color": "#2a3a4a",
       "textureId": "sci-fi",
@@ -1003,7 +1005,8 @@
       },
       "radius": 26.80287754891569,
       "properties": {
-        "waterRippleEnabled": "false"
+        "waterRippleEnabled": "true",
+        "waterRippleShader": "water2"
       },
       "color": "#2a3a4a",
       "textureId": "sci-fi",
@@ -1014,8 +1017,8 @@
       "name": "Circle 4",
       "layer": "trigger",
       "center": {
-        "x": -18,
-        "y": 10
+        "x": -19,
+        "y": 9
       },
       "radius": 35,
       "properties": {
@@ -1030,8 +1033,8 @@
       "name": "Circle 5",
       "layer": "trigger",
       "center": {
-        "x": 16,
-        "y": 43
+        "x": 13,
+        "y": 46
       },
       "radius": 35,
       "properties": {
@@ -1039,6 +1042,21 @@
         "sprinklerCeilingHeight": "10"
       },
       "color": "#ff5533"
+    },
+    {
+      "id": "circ_movuzlwmlex84s",
+      "name": "Circle 6",
+      "layer": "trigger",
+      "center": {
+        "x": 46,
+        "y": 24
+      },
+      "radius": 29.120439557122072,
+      "properties": {
+        "sprinklerEnabled": "true",
+        "sprinklerCeilingHeight": "10"
+      },
+      "color": "#33cccc"
     }
   ],
   "entities": [
@@ -1060,6 +1078,50 @@
       "position": {
         "x": 2,
         "y": 2
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_movv0g0gi6zuyf",
+      "name": "Enemy Spinner T1 3",
+      "type": "enemy_spinner_tier_2",
+      "position": {
+        "x": 13,
+        "y": 47
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_movv0jpspw0qa0",
+      "name": "Enemy Spinner T2 4",
+      "type": "enemy_spinner_tier_3",
+      "position": {
+        "x": 46,
+        "y": 23
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_movvb6j7v5y8gu",
+      "name": "Enemy Spinner T1 5",
+      "type": "enemy_spinner",
+      "position": {
+        "x": -20,
+        "y": 10
+      },
+      "rotation": 0,
+      "properties": {}
+    },
+    {
+      "id": "ent_movvbkl6rd7ki7",
+      "name": "Combo Unlock 6",
+      "type": "pickup_combo",
+      "position": {
+        "x": 3,
+        "y": 3
       },
       "rotation": 0,
       "properties": {}

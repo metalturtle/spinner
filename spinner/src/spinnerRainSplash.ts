@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Vec2 } from './physics';
 
-const MAX_DROPLETS = 2020;
+const MAX_DROPLETS = 2800;
 const TAU = Math.PI * 2;
 // const GRAVITY = 11.5;
 const GRAVITY = 0;
@@ -130,11 +130,11 @@ export function emitSpinnerRainSplash(
 ): void {
   if (!mesh || strength <= 0.01 || delta <= 0) return;
 
-  const spawnRate = (18 + radius * 5.5) * Math.min(1.75, strength);
-  const carry = Math.min(10, (carries.get(emitterId) ?? 0) + spawnRate * delta);
+  const spawnRate = (28 + radius * 8.5) * Math.min(2.2, strength);
+  const carry = Math.min(16, (carries.get(emitterId) ?? 0) + spawnRate * delta);
   let count = Math.floor(carry);
   carries.set(emitterId, carry - count);
-  count = Math.min(count, 7);
+  count = Math.min(count, 11);
 
   for (let i = 0; i < count; i += 1) {
     spawnDroplet(origin, vel, radius, strength, color, spinSign);
