@@ -11,31 +11,10 @@ const SHAKE_DECAY  = 3.4;   // trauma decay per second
 const SHAKE_FREQ_X = 32.0;
 const SHAKE_FREQ_Z = 47.0;
 const SHAKE_OFFSET = 0.95;  // max world-space offset at full trauma
-const CAMERA_DIR_EPSILON = 0.12;
 
-export type CameraViewMode = 'third_person' | 'top_down';
-
-interface CameraViewConfig {
-  height: number;
-  backOffset: number;
-  lookAhead: number;
-  lookHeight: number;
-}
-
-const CAMERA_VIEWS: Record<CameraViewMode, CameraViewConfig> = {
-  third_person: {
-    height: 11.5,
-    backOffset: 12.5,
-    lookAhead: 5.5,
-    lookHeight: 1.35,
-  },
-  top_down: {
-    height: 34,
-    backOffset: 0.001,
-    lookAhead: 0,
-    lookHeight: 0,
-  },
-};
+// Camera height and depth offset — mirrors the original fixed position
+const CAM_Y        = 30;
+const CAM_Z_OFFSET = 10;
 
 // ─── Internal State ──────────────────────────────────────────────────────────
 
@@ -43,9 +22,6 @@ let camX = 0;
 let camZ = 0;
 let shakeTrauma = 0;
 let shakeTime = 0;
-let cameraViewMode: CameraViewMode = 'top_down';
-let followDirX = 0;
-let followDirZ = -1;
 
 // ─── Cinematic state ─────────────────────────────────────────────────────────
 
@@ -76,9 +52,8 @@ export function initCamera(): void {
   camZ = 0;
   shakeTrauma = 0;
   shakeTime = 0;
-  followDirX = 0;
-  followDirZ = -1;
-  applyCameraTransform(0, 0);
+  camera.position.set(camX, CAM_Y, camZ + CAM_Z_OFFSET);
+  camera.lookAt(camX, 0, camZ);
 }
 
 export function resetCameraShake(): void {
@@ -119,15 +94,15 @@ export function updateCamera(pos: Vec2, vel: Vec2, delta: number, snapToPlayer =
     }
   }
 
-  updateFollowDirection(vel, delta);
-
   shakeTime += delta;
   shakeTrauma = Math.max(0, shakeTrauma - SHAKE_DECAY * delta);
   const shakePower = shakeTrauma;
   const shakeX = Math.sin(shakeTime * SHAKE_FREQ_X) * SHAKE_OFFSET * shakePower;
   const shakeZ = Math.cos(shakeTime * SHAKE_FREQ_Z) * SHAKE_OFFSET * shakePower;
 
-  applyCameraTransform(shakeX, shakeZ);
+  // 4. Apply to Three.js camera with additive shake offset
+  camera.position.set(camX + shakeX, CAM_Y, camZ + CAM_Z_OFFSET + shakeZ);
+  camera.lookAt(camX + shakeX, 0, camZ + shakeZ);
 }
 
 // ─── Cinematic API ───────────────────────────────────────────────────────────
@@ -172,15 +147,6 @@ export function cancelCameraCinematic(): void {
   cinematic = null;
   pending.onPanArrive?.();
   pending.onComplete?.();
-}
-
-export function toggleCameraView(): CameraViewMode {
-  cameraViewMode = cameraViewMode === 'top_down' ? 'third_person' : 'top_down';
-  return cameraViewMode;
-}
-
-export function getCameraViewMode(): CameraViewMode {
-  return cameraViewMode;
 }
 
 export function isWorldPointOnScreen(x: number, z: number, marginNDC = 0.85): boolean {
@@ -250,46 +216,4 @@ function advanceCinematic(playerPos: Vec2, delta: number): void {
 
 function easeInOutCubic(u: number): number {
   return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
-}
-
-function updateFollowDirection(vel: Vec2, delta: number): void {
-  const speed = Math.hypot(vel.x, vel.z);
-  if (speed <= CAMERA_DIR_EPSILON) return;
-
-  const targetDirX = vel.x / speed;
-  const targetDirZ = vel.z / speed;
-  const alignT = 1 - Math.exp(-10 * delta);
-  followDirX += (targetDirX - followDirX) * alignT;
-  followDirZ += (targetDirZ - followDirZ) * alignT;
-
-  const followLen = Math.hypot(followDirX, followDirZ);
-  if (followLen <= 0.0001) {
-    followDirX = targetDirX;
-    followDirZ = targetDirZ;
-    return;
-  }
-
-  followDirX /= followLen;
-  followDirZ /= followLen;
-}
-
-function applyCameraTransform(shakeX: number, shakeZ: number): void {
-  const view = CAMERA_VIEWS[cameraViewMode];
-  const cameraPosX = cameraViewMode === 'third_person'
-    ? camX - followDirX * view.backOffset + shakeX
-    : camX + shakeX;
-  const cameraPosY = view.height;
-  const cameraPosZ = cameraViewMode === 'third_person'
-    ? camZ - followDirZ * view.backOffset + shakeZ
-    : camZ + view.backOffset + shakeZ;
-  const lookX = cameraViewMode === 'third_person'
-    ? camX + followDirX * view.lookAhead + shakeX * 0.2
-    : camX + shakeX * 0.2;
-  const lookY = view.lookHeight;
-  const lookZ = cameraViewMode === 'third_person'
-    ? camZ + followDirZ * view.lookAhead + shakeZ * 0.2
-    : camZ + shakeZ * 0.2;
-
-  camera.position.set(cameraPosX, cameraPosY, cameraPosZ);
-  camera.lookAt(lookX, lookY, lookZ);
 }

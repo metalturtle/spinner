@@ -9,7 +9,6 @@ let comboPressed = false;
 let heatPressed = false;
 let profilerTogglePressed = false;
 let spectorCapturePressed = false;
-let cameraViewTogglePressed = false;
 
 window.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
@@ -20,7 +19,6 @@ window.addEventListener('keydown', (e) => {
   if (key === 'v') spinningLaserHeld = true;
   if (key === 'p' && !e.repeat) profilerTogglePressed = true;
   if (key === 'o' && !e.repeat) spectorCapturePressed = true;
-  if (key === 'i' && !e.repeat) cameraViewTogglePressed = true;
 });
 
 window.addEventListener('keyup', (e) => {
@@ -51,12 +49,6 @@ export function consumeProfilerTogglePressed(): boolean {
 export function consumeSpectorCapturePressed(): boolean {
   if (!spectorCapturePressed) return false;
   spectorCapturePressed = false;
-  return true;
-}
-
-export function consumeCameraViewTogglePressed(): boolean {
-  if (!cameraViewTogglePressed) return false;
-  cameraViewTogglePressed = false;
   return true;
 }
 

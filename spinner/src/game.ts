@@ -25,7 +25,6 @@ import { initYoutubeMusic, playYoutubeMusic } from './youtubeMusic';
 const BACKGROUND_MUSIC_VIDEO_ID = 'sXVCF6y0-7s';
 import {
   initCamera, resetCameraShake, triggerCameraShake, updateCamera,
-  toggleCameraView,
   startDoorCinematic, isCameraInCinematic, cancelCameraCinematic, isWorldPointOnScreen,
 } from './camera';
 import { emitClashFlash, initClashFlashes, resetClashFlashes, updateClashFlashes } from './clashFlash';
@@ -139,7 +138,6 @@ import {
 } from './slidingDoor';
 import type { LevelCircle, LevelEntity, LevelPolygon } from './levelLoader';
 import {
-  consumeCameraViewTogglePressed,
   consumeComboPressed,
   consumeHeatPressed,
   consumeProfilerTogglePressed,
@@ -172,6 +170,12 @@ import { TextureManager } from './textureUtils';
 import { collectLevelAssetManifest } from './levelAssets';
 import { hideLoadingOverlay, showLoadingOverlay, updateLoadingOverlay } from './loadingOverlay';
 import { runLoadTasks, type LoadTask } from './assetLoader';
+import {
+  createSprinklerZoneVisuals,
+  destroySprinklerZoneVisual,
+  updateSprinklerZoneVisual,
+  type SprinklerZoneVisual,
+} from './sprinklerZone';
 
 
 // ─── Level-driven state ──────────────────────────────────────────────────────
@@ -765,6 +769,7 @@ const OCTOBOSS_PARASITE_CAP = [4, 4, 5];
 const OCTOBOSS_DRONE_CHANCE = [0.28, 0.44, 0.58];
 const fireTorches: FireTorch[]  = [];
 const dynamicLevelLightRoots: THREE.Object3D[] = [];
+const sprinklerZones: SprinklerZoneVisual[] = [];
 const pendingTriggeredEntities = new Map<string, LevelEntity[]>();
 const SPIDER_MOTION_DEBUG = false;
 const PLAYER_WEB_SPEED_MULT = 0.16;
@@ -1755,6 +1760,12 @@ function rebuildTriggerZones(level: LevelData): void {
 function clearDynamicLevelLights(): void {
   while (dynamicLevelLightRoots.length > 0) {
     scene.remove(dynamicLevelLightRoots.pop()!);
+  }
+}
+
+function clearSprinklerZones(): void {
+  while (sprinklerZones.length > 0) {
+    destroySprinklerZoneVisual(scene, sprinklerZones.pop()!);
   }
 }
 
@@ -2849,6 +2860,7 @@ function resetGame(): void {
   resetCameraShake();
   resetClashFlashes();
   clearPortalVisuals();
+  clearSprinklerZones();
   playerLaserHitFxTimer = 0;
   fallingVictims.length = 0;
   fallableActors.length = 0;
@@ -2859,6 +2871,7 @@ function resetGame(): void {
   clearDynamicLevelLights();
   clearCheckpoints();
   clearLevelLights(scene);
+  sprinklerZones.push(...createSprinklerZoneVisuals(scene, currentLevel));
   setupLevelLights(scene, currentLevel);
   spawnAll(currentLevel);
   configurePortalsForCurrentLevel();
@@ -5574,10 +5587,6 @@ function animate(): void {
   if (consumeSpectorCapturePressed() && spectorCaptureControllerPromise) {
     void spectorCaptureControllerPromise.then((controller) => controller?.captureFrame());
   }
-  if (consumeCameraViewTogglePressed()) {
-    const mode = toggleCameraView();
-    showToast(mode === 'third_person' ? 'Third-person view' : 'Top-down view');
-  }
   profiler?.startFrame(delta * 1000, getProfilerFrameMode());
 
   if (respawnInvulnerabilityTimer > 0) {
@@ -5587,6 +5596,10 @@ function animate(): void {
 
   if (!menuVisible) {
     syncLightingZones();
+  }
+
+  for (const sprinkler of sprinklerZones) {
+    updateSprinklerZoneVisual(sprinkler, time);
   }
 
   if (menuVisible) {

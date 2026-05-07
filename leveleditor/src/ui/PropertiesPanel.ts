@@ -273,6 +273,7 @@ export class PropertiesPanel {
   private triggerSection(properties: Record<string, string>): string {
     const triggerKind = properties.triggerKind ?? (properties.triggerAction === 'kill_fall' ? 'kill_fall' : 'awaken');
     const lightEnabled = properties.lightEnabled === 'true';
+    const sprinklerEnabled = properties.sprinklerEnabled === 'true';
     return `
       <div class="prop-section">
         <h4>Trigger</h4>
@@ -315,6 +316,37 @@ export class PropertiesPanel {
         <div class="prop-row">
           <label>Priority</label>
           <input type="number" data-field="lightPriority" value="${this.esc(properties.lightPriority ?? '0')}" step="1" />
+        </div>
+        <div class="prop-row">
+          <label>Sprinkler Zone</label>
+          <input type="checkbox" data-field="sprinklerEnabled"${sprinklerEnabled ? ' checked' : ''} />
+        </div>
+        <div class="prop-row">
+          <label>Water Color</label>
+          <input type="color" data-field="sprinklerColor" value="${this.esc(properties.sprinklerColor ?? '#8fdcff')}" />
+        </div>
+        <div class="prop-row">
+          <label>Mode</label>
+          <select data-field="sprinklerMode">
+            <option value="uniform"${(properties.sprinklerMode ?? 'uniform') === 'uniform' ? ' selected' : ''}>Uniform</option>
+            <option value="center_falloff"${properties.sprinklerMode === 'center_falloff' ? ' selected' : ''}>Center Falloff</option>
+          </select>
+        </div>
+        <div class="prop-row">
+          <label>Density</label>
+          <input type="number" data-field="sprinklerDensity" value="${this.esc(properties.sprinklerDensity ?? '2.4')}" step="0.1" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Center Falloff</label>
+          <input type="number" data-field="sprinklerFalloff" value="${this.esc(properties.sprinklerFalloff ?? '1.6')}" step="0.1" min="0.2" />
+        </div>
+        <div class="prop-row">
+          <label>Ceiling Height</label>
+          <input type="number" data-field="sprinklerCeilingHeight" value="${this.esc(properties.sprinklerCeilingHeight ?? '3.4')}" step="0.1" min="0.5" />
+        </div>
+        <div class="prop-row">
+          <label>Drop Speed</label>
+          <input type="number" data-field="sprinklerDropSpeed" value="${this.esc(properties.sprinklerDropSpeed ?? '1.9')}" step="0.1" min="0.1" />
         </div>
       </div>
     `;
