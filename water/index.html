@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rain Ripples</title>
+    <style>
+      html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+      #app { width: 100vw; height: 100vh; }
+      #overlay {
+        position: fixed; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(0,0,0,0.55); color: #fff;
+        font: 14px/1.5 system-ui, sans-serif; text-align: center;
+        cursor: pointer; user-select: none;
+      }
+      #overlay .panel {
+        padding: 22px 28px; border: 1px solid rgba(255,255,255,0.18);
+        border-radius: 8px; backdrop-filter: blur(4px);
+      }
+      #overlay h1 { margin: 0 0 10px; font-weight: 500; font-size: 18px; }
+      #overlay p { margin: 4px 0; opacity: 0.85; }
+      #crosshair {
+        display: none; position: fixed; left: 50%; top: 50%;
+        width: 6px; height: 6px; margin: -3px 0 0 -3px;
+        border-radius: 50%; background: rgba(255,255,255,0.85);
+        pointer-events: none; mix-blend-mode: difference;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="crosshair"></div>
+    <div id="overlay">
+      <div class="panel">
+        <h1>Click to play</h1>
+        <p>WASD to move · mouse to look · space / ctrl to fly up/down · shift to sprint</p>
+        <p>click to splash a ripple at the crosshair · esc to release</p>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

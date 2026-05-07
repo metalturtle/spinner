@@ -10,6 +10,7 @@ export interface LevelAssetManifest {
   ambientTracks: string[];
   includesRobotAssets: boolean;
   includesZombieAssets: boolean;
+  includesWaterRippleAssets: boolean;
 }
 
 function readAmbientTrack(properties: Record<string, unknown> | undefined): string | null {
@@ -45,17 +46,24 @@ export function collectLevelAssetManifest(level: LevelData): LevelAssetManifest 
   const ambientTracks = new Set<string>();
   let includesRobotAssets = false;
   let includesZombieAssets = false;
+  let includesWaterRippleAssets = false;
 
   for (const poly of level.polygons ?? []) {
     collectTextureRequest(textureRequests, poly);
     const ambientTrack = readAmbientTrack(poly.properties);
     if (ambientTrack) ambientTracks.add(ambientTrack);
+    if (poly.properties?.waterRippleEnabled === true || poly.properties?.waterRippleEnabled === 'true' || poly.properties?.waterRippleEnabled === '1') {
+      includesWaterRippleAssets = true;
+    }
   }
 
   for (const circle of level.circles ?? []) {
     collectTextureRequest(textureRequests, circle);
     const ambientTrack = readAmbientTrack(circle.properties);
     if (ambientTrack) ambientTracks.add(ambientTrack);
+    if (circle.properties?.waterRippleEnabled === true || circle.properties?.waterRippleEnabled === 'true' || circle.properties?.waterRippleEnabled === '1') {
+      includesWaterRippleAssets = true;
+    }
   }
 
   for (const entity of level.entities) {
@@ -84,5 +92,6 @@ export function collectLevelAssetManifest(level: LevelData): LevelAssetManifest 
     ambientTracks: [...ambientTracks].sort((a, b) => a.localeCompare(b)),
     includesRobotAssets,
     includesZombieAssets,
+    includesWaterRippleAssets,
   };
 }

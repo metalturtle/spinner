@@ -127,6 +127,11 @@ import { updateRicochetBubbles, resetRicochetBubbles, prewarmRicochetBubbleMater
 import { createLevelPointLightRoot, setupLevelLights, clearLevelLights, activateTriggeredLights, refreshLevelLightIntensities } from './levelLights';
 import { updateLavaSurfaces } from './lavaSurface';
 import { initLavaEmbers, resetLavaEmbers, updateLavaEmbers } from './lavaEmbers';
+import {
+  emitMovementWaterRipples,
+  preloadWaterRippleAssets,
+  updateWaterRippleSurfaces,
+} from './waterRippleSurface';
 import { createFireTorch, destroyFireTorch, type FireTorch, updateFireTorch } from './fireTorch';
 import { addLaserLightPoint, addLaserLightSegment, beginLaserLightFrame, endLaserLightFrame } from './laserLightBuffer';
 import { createLaserGlowMaterial, createLaserRefractionMaterial } from './laserBeamMaterials';
@@ -176,6 +181,12 @@ import {
   updateSprinklerZoneVisual,
   type SprinklerZoneVisual,
 } from './sprinklerZone';
+import {
+  emitSpinnerRainSplash,
+  initSpinnerRainSplash,
+  resetSpinnerRainSplash,
+  updateSpinnerRainSplash,
+} from './spinnerRainSplash';
 
 
 // ─── Level-driven state ──────────────────────────────────────────────────────
@@ -258,6 +269,14 @@ function buildLevelLoadTasks(level: LevelData): LoadTask[] {
     });
   }
 
+  if (manifest.includesWaterRippleAssets) {
+    tasks.push({
+      label: 'Loading water ripple textures',
+      weight: 1.5,
+      run: () => preloadWaterRippleAssets(),
+    });
+  }
+
   // Shader precompile should slot in here once we add scene warmup.
   return tasks;
 }
@@ -286,6 +305,7 @@ initTrails(scene);
 initGooDecals(scene);
 initLavaEmbers(scene);
 initClashFlashes(scene);
+initSpinnerRainSplash(scene);
 // initSpaceBackground();
 
 const profiler = createProfiler({
@@ -1769,6 +1789,43 @@ function clearSprinklerZones(): void {
   }
 }
 
+function emitSprinklerFanSpray(
+  emitterId: number,
+  pos: Vec2,
+  vel: Vec2,
+  radius: number,
+  rpmFrac: number,
+  speedFrac: number,
+  delta: number,
+): void {
+  let activeZone: SprinklerZoneVisual | null = null;
+  let bestInfluence = 0;
+  for (const zone of sprinklerZones) {
+    const influence = zone.influenceAt(pos);
+    if (influence > bestInfluence) {
+      bestInfluence = influence;
+      activeZone = zone;
+    }
+  }
+  if (!activeZone || bestInfluence <= 0.01) return;
+
+  const densityBoost = 0.78 + Math.min(0.6, activeZone.density * 0.14);
+  const sprayStrength = bestInfluence
+    * densityBoost
+    * (0.7 + rpmFrac * 0.42)
+    * (0.85 + speedFrac * 0.28) + 3;
+
+  emitSpinnerRainSplash(
+    emitterId,
+    { x: pos.x, y: 0.64 + radius * 0.12, z: pos.z },
+    vel,
+    radius,
+    sprayStrength,
+    activeZone.dropColor,
+    delta,
+  );
+}
+
 function removeCollidableFromGameplay(collidable: Collidable): void {
   untagCollidable(collidable);
   const idx = collidables.indexOf(collidable);
@@ -2859,6 +2916,7 @@ function resetGame(): void {
   resetLavaEmbers();
   resetCameraShake();
   resetClashFlashes();
+  resetSpinnerRainSplash();
   clearPortalVisuals();
   clearSprinklerZones();
   playerLaserHitFxTimer = 0;
@@ -5601,6 +5659,7 @@ function animate(): void {
   for (const sprinkler of sprinklerZones) {
     updateSprinklerZoneVisual(sprinkler, time);
   }
+  updateSpinnerRainSplash(delta);
 
   if (menuVisible) {
     syncWallScrapeLoop(0, 1);
@@ -5851,10 +5910,65 @@ function animate(): void {
   for (const obs of ObstacleEntities.getAll()) syncObstacle(obs);
   updatePickups(pickups, time, delta);
   updatePlayerVisuals(time, delta);
+  emitSprinklerFanSpray(
+    playerId,
+    playerBody.pos,
+    playerBody.vel,
+    playerBody.radius,
+    Math.min(1, playerBody.rpm / Math.max(playerBody.rpmCapacity, 1)),
+    Math.min(1.35, Math.hypot(playerBody.vel.x, playerBody.vel.z) / Math.max(spinnerConfig.maxSpeed, 0.001)),
+    delta,
+  );
+  emitMovementWaterRipples(
+    playerId,
+    playerBody.pos,
+    Math.hypot(playerBody.vel.x, playerBody.vel.z),
+    playerBody.radius,
+    delta,
+    time,
+  );
   updatePlayerHeatAuraVisuals(time);
   updatePlayerLaserVisuals(time);
-  for (const e of EnemyEntities.getAll()) updateEnemyVisuals(e, time, delta);
-  for (const e of LaserSpinnerEntities.getAll()) updateLaserSpinnerVisuals(e, time, delta);
+  for (const e of EnemyEntities.getAll()) {
+    updateEnemyVisuals(e, time, delta);
+    emitSprinklerFanSpray(
+      e.id,
+      e.collidable.pos,
+      e.collidable.vel,
+      e.collidable.radius,
+      Math.min(1, e.collidable.rpm / Math.max(e.collidable.rpmCapacity, 1)),
+      Math.min(1.35, Math.hypot(e.collidable.vel.x, e.collidable.vel.z) / Math.max(e.config.maxSpeed, 0.001)),
+      delta,
+    );
+    emitMovementWaterRipples(
+      e.id,
+      e.collidable.pos,
+      Math.hypot(e.collidable.vel.x, e.collidable.vel.z),
+      e.collidable.radius,
+      delta,
+      time,
+    );
+  }
+  for (const e of LaserSpinnerEntities.getAll()) {
+    updateLaserSpinnerVisuals(e, time, delta);
+    emitSprinklerFanSpray(
+      e.id,
+      e.collidable.pos,
+      e.collidable.vel,
+      e.collidable.radius,
+      Math.min(1, e.collidable.rpm / Math.max(e.collidable.rpmCapacity, 1)),
+      Math.min(1.35, Math.hypot(e.collidable.vel.x, e.collidable.vel.z) / Math.max(e.config.maxSpeed, 0.001)),
+      delta,
+    );
+    emitMovementWaterRipples(
+      e.id,
+      e.collidable.pos,
+      Math.hypot(e.collidable.vel.x, e.collidable.vel.z),
+      e.collidable.radius,
+      delta,
+      time,
+    );
+  }
   for (const z of ZombieEntities.getAll()) updateZombieVisuals(z, playerBody.pos, delta, time);
   for (const b of DreadnoughtEntities.getAll()) updateDreadnoughtVisuals(b, time, delta);
   for (const s of SiegeEntities.getAll()) updateSiegeEngineVisuals(s, time, delta);
@@ -5881,6 +5995,7 @@ function animate(): void {
   updateRicochetBubbles(delta);
   updateTrails(playerBody.pos, playerBody.vel);
   updateLavaSurfaces(time);
+  updateWaterRippleSurfaces(time, camera.position);
   // updateSpaceBackground(time);
   for (const torch of fireTorches) updateFireTorch(torch, time);
   updateLavaEmbers(delta, time, {

@@ -3,13 +3,14 @@ import { lvZ, type LevelCircle, type LevelData, type LevelPolygon } from './leve
 import { registerTopDownCullable } from './sceneCulling';
 
 const TAU = Math.PI * 2;
-const DROP_COLOR_FALLBACK = '#8fdcff';
+// const DROP_COLOR_FALLBACK = '#8fdcff';
+const DROP_COLOR_FALLBACK = '#00dcff00';
 const SPLASH_COLOR_FALLBACK = '#dff6ff';
 const FLOOR_Y = 0.03;
 const DROP_BASE_THICKNESS = 0.055;
 const SPLASH_THICKNESS = 0.012;
 const MIN_DROPS = 18;
-const MAX_DROPS = 220;
+const MAX_DROPS = 120;
 
 const tempPosition = new THREE.Vector3();
 const tempScale = new THREE.Vector3();
@@ -21,6 +22,7 @@ interface ZoneShape {
   center: { x: number; z: number };
   area: number;
   radius: number;
+  contains: (point: { x: number; z: number }) => boolean;
   samplePoint: (maxDistanceRatio?: number) => { x: number; z: number };
 }
 
@@ -39,12 +41,16 @@ interface SprinklerDrop {
 export interface SprinklerZoneVisual {
   root: THREE.Group;
   dropsMesh: THREE.InstancedMesh;
-  splashesMesh: THREE.InstancedMesh;
+  // splashesMesh: THREE.InstancedMesh;
   drops: SprinklerDrop[];
   ceilingHeight: number;
+  density: number;
   splashOpacity: number;
   unregisterCull: () => void;
+  dropColor: THREE.Color;
   splashColor: THREE.Color;
+  contains: (point: { x: number; z: number }) => boolean;
+  influenceAt: (point: { x: number; z: number }) => number;
 }
 
 type SprinklerMode = 'uniform' | 'center_falloff';
@@ -143,10 +149,16 @@ function buildPolygonShape(poly: LevelPolygon): ZoneShape | null {
     }
   }
 
+  const contains = (point: { x: number; z: number }): boolean => {
+    if (!isPointInPolygon(point, outer)) return false;
+    return !holes.some((hole) => hole.length >= 3 && isPointInPolygon(point, hole));
+  };
+
   return {
     center,
     area,
     radius,
+    contains,
     samplePoint(maxDistanceRatio = 1) {
       const clampedRatio = THREE.MathUtils.clamp(maxDistanceRatio, 0.05, 1);
       for (let attempt = 0; attempt < 48; attempt += 1) {
@@ -154,8 +166,7 @@ function buildPolygonShape(poly: LevelPolygon): ZoneShape | null {
           x: center.x + (Math.random() * 2 - 1) * (maxX - minX) * 0.5 * clampedRatio,
           z: center.z + (Math.random() * 2 - 1) * (maxZ - minZ) * 0.5 * clampedRatio,
         };
-        if (!isPointInPolygon(point, outer)) continue;
-        if (holes.some((hole) => hole.length >= 3 && isPointInPolygon(point, hole))) continue;
+        if (!contains(point)) continue;
         return point;
       }
       return center;
@@ -172,6 +183,11 @@ function buildCircleShape(circle: LevelCircle): ZoneShape | null {
     center,
     area: Math.PI * circle.radius * circle.radius,
     radius: circle.radius,
+    contains(point) {
+      const dx = point.x - center.x;
+      const dz = point.z - center.z;
+      return dx * dx + dz * dz <= circle.radius * circle.radius;
+    },
     samplePoint(maxDistanceRatio = 1) {
       const clampedRatio = THREE.MathUtils.clamp(maxDistanceRatio, 0.05, 1);
       const angle = Math.random() * TAU;
@@ -203,8 +219,10 @@ function createZoneVisual(
   const falloffStrength = parseNumber(props?.sprinklerFalloff, 1.6, 0.2);
   const ceilingHeight = parseNumber(props?.sprinklerCeilingHeight, 3.4, 0.75);
   const dropSpeed = parseNumber(props?.sprinklerDropSpeed, 1.9, 0.2);
-  const dropColor = parseColor(props?.sprinklerColor, DROP_COLOR_FALLBACK);
-  const splashColor = dropColor.clone().lerp(parseColor(undefined, SPLASH_COLOR_FALLBACK), 0.5);
+  // const dropColor = parseColor(props?.sprinklerColor, DROP_COLOR_FALLBACK);
+  const dropColor = parseColor(DROP_COLOR_FALLBACK, DROP_COLOR_FALLBACK);
+  // const splashColor = dropColor.clone().lerp(parseColor(undefined, SPLASH_COLOR_FALLBACK), 0.5);
+const splashColor = dropColor.clone()
 
   const root = new THREE.Group();
   root.position.set(shape.center.x, 0, shape.center.z);
@@ -213,7 +231,7 @@ function createZoneVisual(
   const dropMaterial = new THREE.MeshBasicMaterial({
     color: dropColor,
     transparent: true,
-    opacity: 0.72,
+    opacity: 0.5,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
@@ -230,10 +248,10 @@ function createZoneVisual(
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
-  const splashesMesh = new THREE.InstancedMesh(splashGeometry, splashMaterial, count);
-  splashesMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  splashesMesh.frustumCulled = false;
-  root.add(splashesMesh);
+  // const splashesMesh = new THREE.InstancedMesh(splashGeometry, splashMaterial, count);
+  // splashesMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  // splashesMesh.frustumCulled = false;
+  // root.add(splashesMesh);
 
   const drops: SprinklerDrop[] = [];
   for (let i = 0; i < count; i += 1) {
@@ -263,10 +281,10 @@ function createZoneVisual(
 
     tempColor.copy(dropColor).multiplyScalar(0.82 + drop.brightness * 0.3);
     dropsMesh.setColorAt(i, tempColor);
-    splashesMesh.setColorAt(i, new THREE.Color(0x000000));
+    // splashesMesh.setColorAt(i, new THREE.Color(0x000000));
   }
   dropsMesh.instanceColor!.needsUpdate = true;
-  splashesMesh.instanceColor!.needsUpdate = true;
+  // splashesMesh.instanceColor!.needsUpdate = true;
 
   scene.add(root);
   const unregisterCull = registerTopDownCullable(root, shape.radius + 1.2);
@@ -274,12 +292,23 @@ function createZoneVisual(
   return {
     root,
     dropsMesh,
-    splashesMesh,
+    // splashesMesh,
     drops,
     ceilingHeight,
+    density,
     splashOpacity: 1,
     unregisterCull,
+    dropColor,
     splashColor,
+    contains: shape.contains,
+    influenceAt(point) {
+      if (!shape.contains(point)) return 0;
+      if (mode === 'uniform' || shape.radius <= 0.0001) return 1;
+      const dx = point.x - shape.center.x;
+      const dz = point.z - shape.center.z;
+      const distanceRatio = THREE.MathUtils.clamp(Math.hypot(dx, dz) / shape.radius, 0, 1);
+      return Math.pow(1 - distanceRatio, Math.max(0.35, falloffStrength * 0.65));
+    },
   };
 }
 
@@ -323,22 +352,22 @@ export function updateSprinklerZoneVisual(zone: SprinklerZoneVisual, time: numbe
     tempPosition.set(drop.x, FLOOR_Y, drop.z);
     tempScale.set(splashScale, SPLASH_THICKNESS, splashScale);
     tempMatrix.compose(tempPosition, identityRotation, tempScale);
-    zone.splashesMesh.setMatrixAt(i, tempMatrix);
+    // zone.splashesMesh.setMatrixAt(i, tempMatrix);
 
     tempColor.copy(zone.splashColor).multiplyScalar(impact * drop.brightness * zone.splashOpacity);
-    zone.splashesMesh.setColorAt(i, tempColor);
+    // zone.splashesMesh.setColorAt(i, tempColor);
   }
 
   zone.dropsMesh.instanceMatrix.needsUpdate = true;
-  zone.splashesMesh.instanceMatrix.needsUpdate = true;
-  zone.splashesMesh.instanceColor!.needsUpdate = true;
+  // zone.splashesMesh.instanceMatrix.needsUpdate = true;
+  // zone.splashesMesh.instanceColor!.needsUpdate = true;
 }
 
 export function destroySprinklerZoneVisual(scene: THREE.Scene, zone: SprinklerZoneVisual): void {
   zone.unregisterCull();
   scene.remove(zone.root);
   zone.dropsMesh.geometry.dispose();
-  zone.splashesMesh.geometry.dispose();
+  // zone.splashesMesh.geometry.dispose();
   disposeMaterial(zone.dropsMesh.material);
-  disposeMaterial(zone.splashesMesh.material);
+  // disposeMaterial(zone.splashesMesh.material);
 }

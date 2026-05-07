@@ -52,6 +52,7 @@ export function createLavaMaterial(): THREE.ShaderMaterial {
     toneMapped: false,
   });
 
+  material.userData.isLavaMaterial = true;
   lavaMaterials.add(material);
   return material;
 }

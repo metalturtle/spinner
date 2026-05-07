@@ -134,6 +134,7 @@ export class PropertiesPanel {
           <label>Radius</label>
           <input type="number" data-field="radius" value="${circle.radius.toFixed(2)}" step="0.5" min="0.1" />
         </div>
+        ${circle.layer === 'floor' ? this.surfaceSection(circle.properties) : ''}
         ${circle.layer === 'trigger' ? this.triggerSection(circle.properties) : ''}
         ${this.kvSection(circle.properties)}
       `;
@@ -422,6 +423,7 @@ export class PropertiesPanel {
     const rawSurfaceType = properties.surfaceType ?? 'normal';
     const surfaceType = rawSurfaceType === 'water' ? 'lava' : rawSurfaceType;
     const drainRate = properties.drainRate ?? '8';
+    const waterRippleEnabled = properties.waterRippleEnabled === 'true';
     return `
       <div class="prop-section">
         <h4>Surface</h4>
@@ -435,6 +437,10 @@ export class PropertiesPanel {
         <div class="prop-row">
           <label>Drain</label>
           <input type="number" data-field="drainRate" value="${this.esc(drainRate)}" step="0.5" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Water Ripple</label>
+          <input type="checkbox" data-field="waterRippleEnabled"${waterRippleEnabled ? ' checked' : ''} />
         </div>
       </div>
     `;
