@@ -13,7 +13,6 @@ import {
   tagCollidable, registerProximityBody, getCollidableType, type ProximityBody,
 } from './systems';
 import { keys, shiftHeld } from './input';
-import { getCameraMovementBasis } from './camera';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -179,17 +178,11 @@ export function setupPlayer(): void {
     const sprinting = shiftHeld && playerBody.rpm > 0;
     const accel = spinnerConfig.acceleration * (sprinting ? spinnerConfig.sprintAccelMult : 1.0);
     const maxSpd = spinnerConfig.maxSpeed    * (sprinting ? spinnerConfig.sprintSpeedMult : 1.0);
-    const moveForward = Number(keys.w) - Number(keys.s);
-    const moveStrafe = Number(keys.d) - Number(keys.a);
 
-    if (moveForward !== 0 || moveStrafe !== 0) {
-      const moveLen = Math.hypot(moveStrafe, moveForward);
-      const inputStrafe = moveStrafe / moveLen;
-      const inputForward = moveForward / moveLen;
-      const basis = getCameraMovementBasis();
-      playerBody.vel.x += (basis.rightX * inputStrafe + basis.forwardX * inputForward) * accel * delta;
-      playerBody.vel.z += (basis.rightZ * inputStrafe + basis.forwardZ * inputForward) * accel * delta;
-    }
+    if (keys.w) playerBody.vel.z -= accel * delta;
+    if (keys.s) playerBody.vel.z += accel * delta;
+    if (keys.a) playerBody.vel.x -= accel * delta;
+    if (keys.d) playerBody.vel.x += accel * delta;
 
     setMovementMaxSpeed(playerId, maxSpd);
   });

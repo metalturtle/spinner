@@ -1,12 +1,10 @@
 import * as THREE from 'three';
 import { camera } from './renderer';
 import type { Vec2 } from './physics';
-import { shiftHeld } from './input';
-import { spinnerConfig } from './spinnerConfig';
 
 // ─── Camera Constants ────────────────────────────────────────────────────────
 
-const FOLLOW_SPEED = 0;     // 0 = snap to target with no positional follow lag
+const FOLLOW_SPEED = 3.0;   // lerp speed — lower = heavier lag
 const LOOK_AHEAD   = 0.35;  // velocity offset fraction (anticipation)
 const MAX_LAG      = 7.0;   // max distance camera can fall behind spinner
 const SHAKE_DECAY  = 3.4;   // trauma decay per second
@@ -14,13 +12,6 @@ const SHAKE_FREQ_X = 32.0;
 const SHAKE_FREQ_Z = 47.0;
 const SHAKE_OFFSET = 0.95;  // max world-space offset at full trauma
 const CAMERA_DIR_EPSILON = 0.12;
-const BASE_FOV = 60;
-const THIRD_PERSON_SPRINT_FOV_BOOST = 12;
-const THIRD_PERSON_SPRINT_BACK_OFFSET_BOOST = 5.5;
-const THIRD_PERSON_SPRINT_LOOK_AHEAD_BOOST = 1.5;
-const THIRD_PERSON_SPRINT_LAG_MULT = 0.0;
-const THIRD_PERSON_SPRINT_BOOST_IN_SPEED = 6.5;
-const THIRD_PERSON_SPRINT_BOOST_OUT_SPEED = 4.2;
 
 export type CameraViewMode = 'third_person' | 'top_down';
 
@@ -55,7 +46,6 @@ let shakeTime = 0;
 let cameraViewMode: CameraViewMode = 'top_down';
 let followDirX = 0;
 let followDirZ = -1;
-let sprintCameraBoost = 0;
 
 // ─── Cinematic state ─────────────────────────────────────────────────────────
 
@@ -76,13 +66,6 @@ interface CinematicState {
   onComplete: (() => void) | undefined;
 }
 
-export interface CameraMovementBasis {
-  forwardX: number;
-  forwardZ: number;
-  rightX: number;
-  rightZ: number;
-}
-
 let cinematic: CinematicState | null = null;
 const ndcScratch = new THREE.Vector3();
 
@@ -95,9 +78,6 @@ export function initCamera(): void {
   shakeTime = 0;
   followDirX = 0;
   followDirZ = -1;
-  sprintCameraBoost = 0;
-  camera.fov = BASE_FOV;
-  camera.updateProjectionMatrix();
   applyCameraTransform(0, 0);
 }
 
@@ -112,9 +92,6 @@ export function triggerCameraShake(intensity: number): void {
 }
 
 export function updateCamera(pos: Vec2, vel: Vec2, delta: number, snapToPlayer = false): void {
-  const speed = Math.hypot(vel.x, vel.z);
-  updateSprintCameraBoost(speed, delta);
-
   if (cinematic) {
     advanceCinematic(pos, delta);
   } else if (snapToPlayer) {
@@ -122,37 +99,27 @@ export function updateCamera(pos: Vec2, vel: Vec2, delta: number, snapToPlayer =
     camZ = pos.z;
   } else {
     // 1. Look-ahead target — offset toward movement direction
-    const followSpeed = cameraViewMode === 'third_person'
-      ? FOLLOW_SPEED * (1 - (1 - THIRD_PERSON_SPRINT_LAG_MULT) * sprintCameraBoost)
-      : FOLLOW_SPEED;
-    const lookAhead = followSpeed <= 0 ? 0 : LOOK_AHEAD;
-    const targetX = pos.x + vel.x * lookAhead;
-    const targetZ = pos.z + vel.z * lookAhead;
+    const targetX = pos.x + vel.x * LOOK_AHEAD;
+    const targetZ = pos.z + vel.z * LOOK_AHEAD;
 
     // 2. Exponential lerp (framerate-independent)
-    if (followSpeed <= 0) {
-      camX = targetX;
-      camZ = targetZ;
-    } else {
-      const t = 1 - Math.exp(-followSpeed * delta);
-      camX += (targetX - camX) * t;
-      camZ += (targetZ - camZ) * t;
+    const t = 1 - Math.exp(-FOLLOW_SPEED * delta);
+    camX += (targetX - camX) * t;
+    camZ += (targetZ - camZ) * t;
 
-      // 3. Max-lag clamp — if spinner outruns the camera, slide to restore limit
-      const dx   = pos.x - camX;
-      const dz   = pos.z - camZ;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist > MAX_LAG) {
-        const over = dist - MAX_LAG;
-        const invDist = 1 / dist;
-        camX += dx * invDist * over;
-        camZ += dz * invDist * over;
-      }
+    // 3. Max-lag clamp — if spinner outruns the camera, slide to restore limit
+    const dx   = pos.x - camX;
+    const dz   = pos.z - camZ;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist > MAX_LAG) {
+      const over = dist - MAX_LAG;
+      const invDist = 1 / dist;
+      camX += dx * invDist * over;
+      camZ += dz * invDist * over;
     }
   }
 
   updateFollowDirection(vel, delta);
-  updateCameraFov(delta);
 
   shakeTime += delta;
   shakeTrauma = Math.max(0, shakeTrauma - SHAKE_DECAY * delta);
@@ -214,24 +181,6 @@ export function toggleCameraView(): CameraViewMode {
 
 export function getCameraViewMode(): CameraViewMode {
   return cameraViewMode;
-}
-
-export function getCameraMovementBasis(): CameraMovementBasis {
-  if (cameraViewMode === 'top_down') {
-    return {
-      forwardX: 0,
-      forwardZ: -1,
-      rightX: 1,
-      rightZ: 0,
-    };
-  }
-
-  return {
-    forwardX: followDirX,
-    forwardZ: followDirZ,
-    rightX: -followDirZ,
-    rightZ: followDirX,
-  };
 }
 
 export function isWorldPointOnScreen(x: number, z: number, marginNDC = 0.85): boolean {
@@ -303,10 +252,6 @@ function easeInOutCubic(u: number): number {
   return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
 function updateFollowDirection(vel: Vec2, delta: number): void {
   const speed = Math.hypot(vel.x, vel.z);
   if (speed <= CAMERA_DIR_EPSILON) return;
@@ -328,51 +273,21 @@ function updateFollowDirection(vel: Vec2, delta: number): void {
   followDirZ /= followLen;
 }
 
-function updateSprintCameraBoost(speed: number, delta: number): void {
-  const sprintTopSpeed = spinnerConfig.maxSpeed * spinnerConfig.sprintSpeedMult;
-  const startSpeed = spinnerConfig.maxSpeed * 0.45;
-  const speedRange = Math.max(0.001, sprintTopSpeed - startSpeed);
-  const speedBoost = clamp((speed - startSpeed) / speedRange, 0, 1);
-  const targetBoost = cameraViewMode === 'third_person' && shiftHeld ? speedBoost : 0;
-  const response = targetBoost > sprintCameraBoost
-    ? THIRD_PERSON_SPRINT_BOOST_IN_SPEED
-    : THIRD_PERSON_SPRINT_BOOST_OUT_SPEED;
-  const t = 1 - Math.exp(-response * delta);
-  sprintCameraBoost += (targetBoost - sprintCameraBoost) * t;
-}
-
-function updateCameraFov(delta: number): void {
-  const targetFov = cameraViewMode === 'third_person'
-    ? BASE_FOV + THIRD_PERSON_SPRINT_FOV_BOOST * sprintCameraBoost
-    : BASE_FOV;
-  const t = 1 - Math.exp(-8 * delta);
-  const nextFov = camera.fov + (targetFov - camera.fov) * t;
-  if (Math.abs(nextFov - camera.fov) <= 0.01) return;
-  camera.fov = nextFov;
-  camera.updateProjectionMatrix();
-}
-
 function applyCameraTransform(shakeX: number, shakeZ: number): void {
   const view = CAMERA_VIEWS[cameraViewMode];
-  const backOffset = cameraViewMode === 'third_person'
-    ? view.backOffset + THIRD_PERSON_SPRINT_BACK_OFFSET_BOOST * sprintCameraBoost
-    : view.backOffset;
-  const lookAhead = cameraViewMode === 'third_person'
-    ? view.lookAhead + THIRD_PERSON_SPRINT_LOOK_AHEAD_BOOST * sprintCameraBoost
-    : view.lookAhead;
   const cameraPosX = cameraViewMode === 'third_person'
-    ? camX - followDirX * backOffset + shakeX
+    ? camX - followDirX * view.backOffset + shakeX
     : camX + shakeX;
   const cameraPosY = view.height;
   const cameraPosZ = cameraViewMode === 'third_person'
-    ? camZ - followDirZ * backOffset + shakeZ
+    ? camZ - followDirZ * view.backOffset + shakeZ
     : camZ + view.backOffset + shakeZ;
   const lookX = cameraViewMode === 'third_person'
-    ? camX + followDirX * lookAhead + shakeX * 0.2
+    ? camX + followDirX * view.lookAhead + shakeX * 0.2
     : camX + shakeX * 0.2;
   const lookY = view.lookHeight;
   const lookZ = cameraViewMode === 'third_person'
-    ? camZ + followDirZ * lookAhead + shakeZ * 0.2
+    ? camZ + followDirZ * view.lookAhead + shakeZ * 0.2
     : camZ + shakeZ * 0.2;
 
   camera.position.set(cameraPosX, cameraPosY, cameraPosZ);
