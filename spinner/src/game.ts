@@ -187,6 +187,12 @@ import {
   type SprinklerZoneVisual,
 } from './sprinklerZone';
 import {
+  createWindowLightZoneVisuals,
+  destroyWindowLightZoneVisual,
+  updateWindowLightZoneVisual,
+  type WindowLightZoneVisual,
+} from './windowLightZone';
+import {
   emitSpinnerRainSplash,
   initSpinnerRainSplash,
   resetSpinnerRainSplash,
@@ -798,6 +804,7 @@ const OCTOBOSS_DRONE_CHANCE = [0.28, 0.44, 0.58];
 const fireTorches: FireTorch[]  = [];
 const dynamicLevelLightRoots: THREE.Object3D[] = [];
 const sprinklerZones: SprinklerZoneVisual[] = [];
+const windowLightZones: WindowLightZoneVisual[] = [];
 const pendingTriggeredEntities = new Map<string, LevelEntity[]>();
 const SPIDER_MOTION_DEBUG = false;
 const PLAYER_WEB_SPEED_MULT = 0.16;
@@ -1794,6 +1801,12 @@ function clearDynamicLevelLights(): void {
 function clearSprinklerZones(): void {
   while (sprinklerZones.length > 0) {
     destroySprinklerZoneVisual(scene, sprinklerZones.pop()!);
+  }
+}
+
+function clearWindowLightZones(): void {
+  while (windowLightZones.length > 0) {
+    destroyWindowLightZoneVisual(scene, windowLightZones.pop()!);
   }
 }
 
@@ -2929,7 +2942,6 @@ function resetGame(): void {
   resetClashFlashes();
   resetSpinnerRainSplash();
   clearPortalVisuals();
-  clearSprinklerZones();
   playerLaserHitFxTimer = 0;
   fallingVictims.length = 0;
   fallableActors.length = 0;
@@ -2940,7 +2952,10 @@ function resetGame(): void {
   clearDynamicLevelLights();
   clearCheckpoints();
   clearLevelLights(scene);
+  clearWindowLightZones();
+  clearSprinklerZones();
   sprinklerZones.push(...createSprinklerZoneVisuals(scene, currentLevel));
+  windowLightZones.push(...createWindowLightZoneVisuals(scene, currentLevel));
   setupLevelLights(scene, currentLevel);
   spawnAll(currentLevel);
   configurePortalsForCurrentLevel();
@@ -5669,6 +5684,9 @@ function animate(): void {
 
   for (const sprinkler of sprinklerZones) {
     updateSprinklerZoneVisual(sprinkler, time);
+  }
+  for (const rays of windowLightZones) {
+    updateWindowLightZoneVisual(rays, time);
   }
   updateSpinnerRainSplash(delta);
 

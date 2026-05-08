@@ -275,6 +275,7 @@ export class PropertiesPanel {
     const triggerKind = properties.triggerKind ?? (properties.triggerAction === 'kill_fall' ? 'kill_fall' : 'awaken');
     const lightEnabled = properties.lightEnabled === 'true';
     const sprinklerEnabled = properties.sprinklerEnabled === 'true';
+    const windowRaysEnabled = properties.windowRaysEnabled === 'true';
     return `
       <div class="prop-section">
         <h4>Trigger</h4>
@@ -317,6 +318,38 @@ export class PropertiesPanel {
         <div class="prop-row">
           <label>Priority</label>
           <input type="number" data-field="lightPriority" value="${this.esc(properties.lightPriority ?? '0')}" step="1" />
+        </div>
+        <div class="prop-row">
+          <label>Window Rays</label>
+          <input type="checkbox" data-field="windowRaysEnabled"${windowRaysEnabled ? ' checked' : ''} />
+        </div>
+        <div class="prop-row">
+          <label>Ray Color</label>
+          <input type="color" data-field="windowRaysColor" value="${this.esc(properties.windowRaysColor ?? '#ffc77a')}" />
+        </div>
+        <div class="prop-row">
+          <label>Ray Intensity</label>
+          <input type="number" data-field="windowRaysIntensity" value="${this.esc(properties.windowRaysIntensity ?? '0.34')}" step="0.01" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Ray Angle</label>
+          <input type="number" data-field="windowRaysAngle" value="${this.esc(properties.windowRaysAngle ?? '-34')}" step="1" />
+        </div>
+        <div class="prop-row">
+          <label>Ray Count</label>
+          <input type="number" data-field="windowRaysCount" value="${this.esc(properties.windowRaysCount ?? '8')}" step="1" min="1" />
+        </div>
+        <div class="prop-row">
+          <label>Ray Width</label>
+          <input type="number" data-field="windowRaysWidth" value="${this.esc(properties.windowRaysWidth ?? '1.6')}" step="0.1" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Ray Length</label>
+          <input type="number" data-field="windowRaysLength" value="${this.esc(properties.windowRaysLength ?? '7.5')}" step="0.1" min="0.5" />
+        </div>
+        <div class="prop-row">
+          <label>Ray Speed</label>
+          <input type="number" data-field="windowRaysSpeed" value="${this.esc(properties.windowRaysSpeed ?? '0.24')}" step="0.01" min="0" />
         </div>
         <div class="prop-row">
           <label>Sprinkler Zone</label>

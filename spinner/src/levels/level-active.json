@@ -958,6 +958,32 @@
       "properties": {},
       "color": "#5577aa",
       "textureId": "sci-fi"
+    },
+    {
+      "id": "poly_mowar9hniuzraf",
+      "name": "Polygon 5",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 50,
+          "y": 101
+        },
+        {
+          "x": -19,
+          "y": 44
+        },
+        {
+          "x": 17,
+          "y": 16
+        }
+      ],
+      "properties": {
+        "windowRaysEnabled": "true",
+        "windowRaysAngle": "180",
+        "windowRaysCount": "10",
+        "windowRaysWidth": ""
+      },
+      "color": "#3388ff"
     }
   ],
   "circles": [
