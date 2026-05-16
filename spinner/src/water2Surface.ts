@@ -31,7 +31,7 @@ const water2Regions: Water2Region[] = [];
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map<string, THREE.Texture>();
 const texturePending = new Map<string, Promise<THREE.Texture>>();
-const reflectionTextureUrl = new URL('../../water/public/goldensky.jpg', import.meta.url).href;
+const reflectionTextureUrl = new URL('../../water/public/cloudy.jpeg', import.meta.url).href;
 
 const whiteTexture = new THREE.DataTexture(
   new Uint8Array([255, 255, 255, 255]),

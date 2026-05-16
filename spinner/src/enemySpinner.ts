@@ -61,6 +61,9 @@ export interface EnemySpinnerConfig {
 
   // Visual
   color:         number;
+  visualStyle?:  'default' | 'excalibur' | 'spinner1_fbx';
+  glowColor?:    number;
+  auraColor?:    number;
 }
 
 export const ENEMY_SPINNER_TIER_1: EnemySpinnerConfig = {
@@ -72,7 +75,7 @@ export const ENEMY_SPINNER_TIER_1: EnemySpinnerConfig = {
   maxSpeed:      12,       // slightly slower than player (15)
   acceleration:  18,       // slightly less than player (25)
   friction:      0.97,
-  spinSpeed:     36,
+  spinSpeed:     12,
 
   heatFactor:    1.0,
 
@@ -93,6 +96,7 @@ export const ENEMY_SPINNER_TIER_1: EnemySpinnerConfig = {
   comboLockDuration: 0.09,
 
   color:         0x4466cc, // blue
+  visualStyle:   'spinner1_fbx',
 };
 
 export const ENEMY_SPINNER_TIER_2: EnemySpinnerConfig = {
@@ -117,6 +121,7 @@ export const ENEMY_SPINNER_TIER_2: EnemySpinnerConfig = {
   comboCooldown: 3.8,
   comboLockDuration: 0.12,
   color:         0x33cc66,
+  visualStyle:   'default',
 };
 
 export const ENEMY_SPINNER_TIER_3: EnemySpinnerConfig = {
@@ -141,6 +146,32 @@ export const ENEMY_SPINNER_TIER_3: EnemySpinnerConfig = {
   comboCooldown: 2.8,
   comboLockDuration: 0.15,
   color:         0xff8b2c,
+  visualStyle:   'default',
+};
+
+export const ENEMY_SPINNER_EXCALIBUR: EnemySpinnerConfig = {
+  ...ENEMY_SPINNER_TIER_3,
+  rpmCapacity:   280,
+  radius:        2.45 * SPINNER_SIZE_SCALE,
+  mass:          2.18,
+  maxSpeed:      12.5,
+  acceleration:  21.8,
+  spinSpeed:     18,
+  chargeBoost:   2.55,
+  recoveryTime:  0.72,
+  heatFactor:    1.2,
+  orbitRange:    8.9,
+  orbitStrafeStrength: 1.16,
+  cutInDuration: 0.9,
+  cutInCooldown: 0.92,
+  dashWindupDuration: 0.12,
+  dashSpeedMult: 2.65,
+  comboCooldown: 2.6,
+  comboLockDuration: 0.16,
+  color:         0xcfd5dd,
+  visualStyle:   'excalibur',
+  glowColor:     0x2fff87,
+  auraColor:     0x38ff95,
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -184,7 +215,11 @@ function resetEnemyCombatState(enemy: EnemySpinnerState): void {
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createEnemySpinner(pos: Vec2, config: EnemySpinnerConfig): EnemySpinnerState {
-  const topResult = createTop(config.color);
+  const topResult = createTop(config.color, {
+    style: config.visualStyle,
+    coreColor: config.glowColor,
+    auraColor: config.auraColor,
+  });
   const scale = config.radius / TOP_BASE_RADIUS;
   topResult.spinGroup.scale.setScalar(scale);
   topResult.tiltGroup.position.set(pos.x, 0, pos.z);
@@ -435,7 +470,7 @@ export function updateEnemyVisuals(enemy: EnemySpinnerState, time: number, delta
 
   // Shared tilt / wobble / spin / desaturation
   updateSpinnerVisuals(enemy, {
-    vel: body.vel, maxSpeed: cfg.maxSpeed, spinSpeed: cfg.spinSpeed,
+    vel: body.vel, maxSpeed: cfg.maxSpeed, spinSpeed: cfg.spinSpeed * (enemy.topResult.getSpinSpeedScale?.() ?? 1),
     rpmFrac, spinFrac: rpmFrac, baseColor: enemy.baseColor,
     tiltGroup, spinGroup: enemy.topResult.spinGroup, bodyMat, motionVisuals: enemy.topResult.motionVisuals,
   }, time, delta);
@@ -497,6 +532,7 @@ export function destroyEnemySpinner(enemy: EnemySpinnerState): void {
   enemy.alive = false;
   deregisterEntity(enemy.id);
   untagCollidable(enemy.collidable);
+  enemy.topResult.dispose?.();
   if (enemy.topResult.motionVisuals) {
     releaseAuraLight(enemy.topResult.motionVisuals.auraLight);
   }

@@ -276,6 +276,7 @@ export class PropertiesPanel {
     const lightEnabled = properties.lightEnabled === 'true';
     const sprinklerEnabled = properties.sprinklerEnabled === 'true';
     const windowRaysEnabled = properties.windowRaysEnabled === 'true';
+    const grassEnabled = properties.grassEnabled === 'true';
     return `
       <div class="prop-section">
         <h4>Trigger</h4>
@@ -350,6 +351,30 @@ export class PropertiesPanel {
         <div class="prop-row">
           <label>Ray Speed</label>
           <input type="number" data-field="windowRaysSpeed" value="${this.esc(properties.windowRaysSpeed ?? '0.24')}" step="0.01" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Tall Grass</label>
+          <input type="checkbox" data-field="grassEnabled"${grassEnabled ? ' checked' : ''} />
+        </div>
+        <div class="prop-row">
+          <label>Grass Color</label>
+          <input type="color" data-field="grassColor" value="${this.esc(properties.grassColor ?? '#587a36')}" />
+        </div>
+        <div class="prop-row">
+          <label>Grass Density</label>
+          <input type="number" data-field="grassDensity" value="${this.esc(properties.grassDensity ?? '1.5')}" step="0.1" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Grass Height</label>
+          <input type="number" data-field="grassHeight" value="${this.esc(properties.grassHeight ?? '2.2')}" step="0.1" min="0.3" />
+        </div>
+        <div class="prop-row">
+          <label>Grass Lean</label>
+          <input type="number" data-field="grassLean" value="${this.esc(properties.grassLean ?? '0.22')}" step="0.01" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Grass Wind</label>
+          <input type="number" data-field="grassWind" value="${this.esc(properties.grassWind ?? '0.85')}" step="0.05" min="0" />
         </div>
         <div class="prop-row">
           <label>Sprinkler Zone</label>

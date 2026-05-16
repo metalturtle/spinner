@@ -62,7 +62,7 @@ import {
 import {
   createEnemySpinner, updateEnemyAI, updateEnemyVisuals, setEnemyAwake,
   onEnemyCollision, getEnemyComboLockDuration, isEnemyDead, destroyEnemySpinner,
-  ENEMY_SPINNER_TIER_1, ENEMY_SPINNER_TIER_2, ENEMY_SPINNER_TIER_3, type EnemySpinnerState,
+  ENEMY_SPINNER_EXCALIBUR, ENEMY_SPINNER_TIER_1, ENEMY_SPINNER_TIER_2, ENEMY_SPINNER_TIER_3, type EnemySpinnerState,
 } from './enemySpinner';
 import {
   createLaserSpinner, updateLaserSpinnerAI, updateLaserSpinnerVisuals,
@@ -181,6 +181,14 @@ import { collectLevelAssetManifest } from './levelAssets';
 import { hideLoadingOverlay, showLoadingOverlay, updateLoadingOverlay } from './loadingOverlay';
 import { runLoadTasks, type LoadTask } from './assetLoader';
 import {
+  createReflectionPreviewSphere,
+  preloadSpinner1Model,
+  updateExcaliburReflectionProbes,
+  type ReflectionPreviewSphere,
+} from './top';
+import { bindReflectionPreviewSphere, initReflectionPreviewControls } from './reflectionPreviewControls';
+import { initSpinner1ModelControls } from './spinner1ModelControls';
+import {
   createSprinklerZoneVisuals,
   destroySprinklerZoneVisual,
   updateSprinklerZoneVisual,
@@ -192,6 +200,13 @@ import {
   updateWindowLightZoneVisual,
   type WindowLightZoneVisual,
 } from './windowLightZone';
+import {
+  createGrassZoneVisuals,
+  destroyGrassZoneVisual,
+  updateGrassZoneVisual,
+  type GrassZoneVisual,
+  type GrassInteractor,
+} from './grassZone';
 import {
   emitSpinnerRainSplash,
   initSpinnerRainSplash,
@@ -291,6 +306,12 @@ function buildLevelLoadTasks(level: LevelData): LoadTask[] {
     });
   }
 
+  tasks.push({
+    label: 'Loading spinner model',
+    weight: 1.1,
+    run: () => preloadSpinner1Model(),
+  });
+
   // Shader precompile should slot in here once we add scene warmup.
   return tasks;
 }
@@ -321,6 +342,8 @@ initLavaEmbers(scene);
 initClashFlashes(scene);
 initSpinnerRainSplash(scene);
 initSpaceBackground();
+initSpinner1ModelControls();
+initReflectionPreviewControls();
 
 const profiler = createProfiler({
   // Enable in any build (dev or prod) when the URL has `?profile=1`. The
@@ -805,6 +828,8 @@ const fireTorches: FireTorch[]  = [];
 const dynamicLevelLightRoots: THREE.Object3D[] = [];
 const sprinklerZones: SprinklerZoneVisual[] = [];
 const windowLightZones: WindowLightZoneVisual[] = [];
+const grassZones: GrassZoneVisual[] = [];
+let reflectionPreviewSphere: ReflectionPreviewSphere | null = null;
 const pendingTriggeredEntities = new Map<string, LevelEntity[]>();
 const SPIDER_MOTION_DEBUG = false;
 const PLAYER_WEB_SPEED_MULT = 0.16;
@@ -1449,6 +1474,7 @@ function isEncounterTargetEntity(ent: LevelEntity): boolean {
     case 'enemy_spinner_tier_1':
     case 'enemy_spinner_tier_2':
     case 'enemy_spinner_tier_3':
+    case 'enemy_spinner_excalibur':
     case 'laser_spinner':
     case 'zombie':
     case 'robot':
@@ -1611,6 +1637,7 @@ function shouldPreloadTriggeredEntity(ent: LevelEntity): boolean {
     case 'enemy_spinner_tier_1':
     case 'enemy_spinner_tier_2':
     case 'enemy_spinner_tier_3':
+    case 'enemy_spinner_excalibur':
     case 'laser_spinner':
     case 'zombie':
     case 'robot':
@@ -1808,6 +1835,62 @@ function clearWindowLightZones(): void {
   while (windowLightZones.length > 0) {
     destroyWindowLightZoneVisual(scene, windowLightZones.pop()!);
   }
+}
+
+function clearGrassZones(): void {
+  while (grassZones.length > 0) {
+    destroyGrassZoneVisual(scene, grassZones.pop()!);
+  }
+}
+
+function clearReflectionPreviewSphere(): void {
+  reflectionPreviewSphere?.dispose();
+  reflectionPreviewSphere = null;
+  bindReflectionPreviewSphere(null);
+}
+
+function collectGrassInteractors(): GrassInteractor[] {
+  const playerSpeed = Math.hypot(playerBody.vel.x, playerBody.vel.z);
+  const interactors: GrassInteractor[] = [{
+    x: playerBody.pos.x,
+    z: playerBody.pos.z,
+    vx: playerBody.vel.x,
+    vz: playerBody.vel.z,
+    radius: playerBody.radius,
+    spin: Math.min(1.4, playerBody.rpm / Math.max(playerBody.rpmCapacity, 1)),
+    dirX: playerSpeed > 0.0001 ? playerBody.vel.x / playerSpeed : 0,
+    dirZ: playerSpeed > 0.0001 ? playerBody.vel.z / playerSpeed : 0,
+  }];
+
+  for (const enemy of EnemyEntities.getAll()) {
+    const speed = Math.hypot(enemy.collidable.vel.x, enemy.collidable.vel.z);
+    interactors.push({
+      x: enemy.collidable.pos.x,
+      z: enemy.collidable.pos.z,
+      vx: enemy.collidable.vel.x,
+      vz: enemy.collidable.vel.z,
+      radius: enemy.collidable.radius,
+      spin: Math.min(1.4, enemy.collidable.rpm / Math.max(enemy.collidable.rpmCapacity, 1)),
+      dirX: speed > 0.0001 ? enemy.collidable.vel.x / speed : 0,
+      dirZ: speed > 0.0001 ? enemy.collidable.vel.z / speed : 0,
+    });
+  }
+
+  for (const enemy of LaserSpinnerEntities.getAll()) {
+    const speed = Math.hypot(enemy.collidable.vel.x, enemy.collidable.vel.z);
+    interactors.push({
+      x: enemy.collidable.pos.x,
+      z: enemy.collidable.pos.z,
+      vx: enemy.collidable.vel.x,
+      vz: enemy.collidable.vel.z,
+      radius: enemy.collidable.radius,
+      spin: Math.min(1.4, enemy.collidable.rpm / Math.max(enemy.collidable.rpmCapacity, 1)),
+      dirX: speed > 0.0001 ? enemy.collidable.vel.x / speed : 0,
+      dirZ: speed > 0.0001 ? enemy.collidable.vel.z / speed : 0,
+    });
+  }
+
+  return interactors;
 }
 
 function emitSprinklerFanSpray(
@@ -2298,6 +2381,10 @@ function spawnLevelEntity(ent: LevelEntity): void {
     }
     case 'enemy_spinner_tier_3': {
       spawnEnemySpinnerEntity(ENEMY_SPINNER_TIER_3);
+      break;
+    }
+    case 'enemy_spinner_excalibur': {
+      spawnEnemySpinnerEntity(ENEMY_SPINNER_EXCALIBUR);
       break;
     }
     case 'laser_spinner': {
@@ -2952,12 +3039,21 @@ function resetGame(): void {
   clearDynamicLevelLights();
   clearCheckpoints();
   clearLevelLights(scene);
+  clearGrassZones();
+  clearReflectionPreviewSphere();
   clearWindowLightZones();
   clearSprinklerZones();
   sprinklerZones.push(...createSprinklerZoneVisuals(scene, currentLevel));
   windowLightZones.push(...createWindowLightZoneVisuals(scene, currentLevel));
+  grassZones.push(...createGrassZoneVisuals(scene, currentLevel));
   setupLevelLights(scene, currentLevel);
   spawnAll(currentLevel);
+  reflectionPreviewSphere = createReflectionPreviewSphere({
+    x: 20,
+    y: 2,
+    z: -30,
+  });
+  bindReflectionPreviewSphere(reflectionPreviewSphere);
   configurePortalsForCurrentLevel();
   resetAmbientTriggerZones();
   syncLightingZones(true);
@@ -5682,11 +5778,15 @@ function animate(): void {
     syncLightingZones();
   }
 
+  const grassInteractors = collectGrassInteractors();
   for (const sprinkler of sprinklerZones) {
     updateSprinklerZoneVisual(sprinkler, time);
   }
   for (const rays of windowLightZones) {
     updateWindowLightZoneVisual(rays, time);
+  }
+  for (const grass of grassZones) {
+    updateGrassZoneVisual(grass, time, delta, grassInteractors);
   }
   updateSpinnerRainSplash(delta);
 
@@ -6048,6 +6148,7 @@ function animate(): void {
   updateWaterRippleSurfaces(time, camera.position, delta);
   updateWater2Surfaces(time, camera.position, delta);
   updateSpaceBackground(time);
+  updateExcaliburReflectionProbes();
   for (const torch of fireTorches) updateFireTorch(torch, time);
   updateLavaEmbers(delta, time, {
     position: playerBody.pos,
