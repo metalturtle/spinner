@@ -324,6 +324,8 @@ const targetGlobalLighting = {
 };
 
 let globalLightingTransitionSeconds = 0.7;
+const directionalLightWorldPos = new THREE.Vector3();
+const directionalLightTargetWorldPos = new THREE.Vector3();
 
 function clampNonNegative(value: number): number {
   return Number.isFinite(value) ? Math.max(0, value) : 0;
@@ -365,6 +367,21 @@ export function getDefaultGlobalLightingState(): GlobalLightingState {
     directionalColor: DEFAULT_GLOBAL_LIGHTING.directionalColor,
     directionalIntensity: DEFAULT_GLOBAL_LIGHTING.directionalIntensity,
   };
+}
+
+export function getCurrentGlobalLightingStateValues(): Readonly<{
+  ambientColor: THREE.Color;
+  ambientIntensity: number;
+  directionalColor: THREE.Color;
+  directionalIntensity: number;
+}> {
+  return currentGlobalLighting;
+}
+
+export function getGlobalDirectionalLightDirection(target = new THREE.Vector3()): THREE.Vector3 {
+  dirLight.getWorldPosition(directionalLightWorldPos);
+  dirLight.target.getWorldPosition(directionalLightTargetWorldPos);
+  return target.copy(directionalLightWorldPos).sub(directionalLightTargetWorldPos).normalize();
 }
 
 export function setGlobalLightingTarget(

@@ -4,33 +4,6 @@
   "gridSize": 1,
   "polygons": [
     {
-      "id": "poly_mp8cgp4ss14an1",
-      "name": "Rect 1",
-      "layer": "trigger",
-      "vertices": [
-        {
-          "x": -44,
-          "y": -10
-        },
-        {
-          "x": 0,
-          "y": -10
-        },
-        {
-          "x": 0,
-          "y": 35
-        },
-        {
-          "x": -44,
-          "y": 35
-        }
-      ],
-      "properties": {
-        "grassEnabled": "true"
-      },
-      "color": "#3388ff"
-    },
-    {
       "id": "poly_mp8cgs96pyt3p7",
       "name": "Rect 2",
       "layer": "trigger",
@@ -87,7 +60,7 @@
     {
       "id": "poly_mp8cgx0t0scqd5",
       "name": "Rect 4",
-      "layer": "trigger",
+      "layer": "floor",
       "vertices": [
         {
           "x": 0,
@@ -109,7 +82,8 @@
       "properties": {
         "grassEnabled": "true"
       },
-      "color": "#cc33ff"
+      "color": "#cc33ff",
+      "textureId": "sci-fi"
     },
     {
       "id": "poly_mp8chp0rsz6idd",
@@ -279,20 +253,20 @@
       "layer": "floor",
       "vertices": [
         {
-          "x": -44,
-          "y": -11
+          "x": -7,
+          "y": -62
         },
         {
-          "x": 0,
-          "y": -11
+          "x": 37,
+          "y": -62
         },
         {
-          "x": 0,
-          "y": 34
+          "x": 37,
+          "y": -17
         },
         {
-          "x": -44,
-          "y": 34
+          "x": -7,
+          "y": -17
         }
       ],
       "properties": {},
@@ -304,25 +278,25 @@
       "layer": "trigger",
       "vertices": [
         {
-          "x": -35,
-          "y": 60
+          "x": -39,
+          "y": 0
         },
         {
-          "x": 52,
-          "y": 60
+          "x": 48,
+          "y": 0
         },
         {
-          "x": 52,
-          "y": 136
+          "x": 48,
+          "y": 76
         },
         {
-          "x": -35,
-          "y": 136
+          "x": -39,
+          "y": 76
         }
       ],
       "properties": {
         "lightEnabled": "true",
-        "lightDirectionalColor": "#000000"
+        "lightDirectionalColor": "#433974"
       },
       "color": "#3388ff"
     },
@@ -375,8 +349,53 @@
       ],
       "properties": {},
       "color": "#0b6632"
+    },
+    {
+      "id": "poly_mp8cgp4ss14an1",
+      "name": "Rect 1",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": -44,
+          "y": -9
+        },
+        {
+          "x": 0,
+          "y": -9
+        },
+        {
+          "x": 0,
+          "y": 36
+        },
+        {
+          "x": -44,
+          "y": 36
+        }
+      ],
+      "properties": {
+        "grassEnabled": "true"
+      },
+      "color": "#3388ff"
     }
   ],
   "circles": [],
-  "entities": []
+  "entities": [
+    {
+      "id": "ent_mp8fau9818vnk4",
+      "name": "Point Light 1",
+      "type": "light_point",
+      "position": {
+        "x": 3,
+        "y": 26
+      },
+      "rotation": 0,
+      "properties": {
+        "color": "#ffd080",
+        "intensity": "20",
+        "range": "8",
+        "decay": "0.5",
+        "height": "2"
+      }
+    }
+  ]
 }

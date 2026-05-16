@@ -55,6 +55,10 @@ export function releaseAuraLight(light: THREE.PointLight | null): void {
   inUse.delete(light);
 }
 
+export function getActiveAuraLights(): readonly THREE.PointLight[] {
+  return Array.from(inUse);
+}
+
 /** Force-release every acquired light. Called when a level is reset. */
 export function resetAuraLightPool(): void {
   for (const light of pool) {

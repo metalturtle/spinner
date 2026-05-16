@@ -41,7 +41,7 @@ import {
   setPlayerControlLocked, setPlayerInvulnerable, isPlayerInvulnerable,
   addPlayerCapacity, computeSpinnerDuelLoss, refreshDuelHitCooldowns, tickDuelHitCooldowns,
   getPlayerImpactDamageMultiplier, setPlayerImpactDamageMultiplier,
-  playerMotionVisuals,
+  playerMotionVisuals, PLAYER_AURA_LIGHT_COLOR,
 } from './player';
 import {
   createNormalPickup, createHyperPickup, createComboUnlockPickup, createHeatUnlockPickup, createSpinningLaserUnlockPickup,
@@ -53,7 +53,7 @@ import { type LevelData, lvPos, lvZ } from './levelLoader';
 import levelActive from './levels/level-active.json';
 import { createTurret, updateTurret, applyDamageToTurret, destroyTurret, TURRET_TIER_1 } from './turret';
 import { createProjectile, updateProjectiles, releaseProjectileResources, prewarmProjectileMaterials, syncProjectileLightPoolToSetting, zeroAllProjectileLights, type Projectile } from './projectile';
-import { syncAuraLightPoolToSetting, refreshAuraLight, zeroAllAuraLights } from './auraLightPool';
+import { getActiveAuraLights, syncAuraLightPoolToSetting, refreshAuraLight, zeroAllAuraLights } from './auraLightPool';
 import { createExplosion, createRobotExplosion, updateExplosions, prewarmExplosionMaterials, type Explosion } from './explosion';
 import {
   createObstacle, syncObstacle, obstacleHpDamage, applyDamageToObstacle, destroyObstacle,
@@ -2764,7 +2764,7 @@ menuLightPoolSlider.addEventListener('change', () => {
   // If the pool was empty when the player's createTop() ran (slider at 0),
   // its auraLight is null. Now that the pool has grown, claim one for the
   // player so the slider's effect is visible.
-  if (playerMotionVisuals) refreshAuraLight(playerMotionVisuals, 0xe94560);
+  if (playerMotionVisuals) refreshAuraLight(playerMotionVisuals, PLAYER_AURA_LIGHT_COLOR);
   // Force the renderer to compile programs for the new light count so the
   // next render doesn't stall on first lit material.
   void renderer.compileAsync(scene, camera);
@@ -3094,7 +3094,7 @@ async function startSelectedLevel(options: { suppressLoadingOverlay?: boolean } 
     // The player's createTop runs at module load; if the pool was empty
     // back then (slider at 0), the aura-light reference is null. Now that
     // the pool has been resized for this run, give the player back its aura.
-    if (playerMotionVisuals) refreshAuraLight(playerMotionVisuals, 0xe94560);
+    if (playerMotionVisuals) refreshAuraLight(playerMotionVisuals, PLAYER_AURA_LIGHT_COLOR);
     // Spawn dummies for runtime-created effects (gibs, explosions). Their
     // materials are normally created on first kill, which causes a multi-
     // second compile stall. By having them in the scene during compileAsync,
@@ -5778,16 +5778,6 @@ function animate(): void {
     syncLightingZones();
   }
 
-  const grassInteractors = collectGrassInteractors();
-  for (const sprinkler of sprinklerZones) {
-    updateSprinklerZoneVisual(sprinkler, time);
-  }
-  for (const rays of windowLightZones) {
-    updateWindowLightZoneVisual(rays, time);
-  }
-  for (const grass of grassZones) {
-    updateGrassZoneVisual(grass, time, delta, grassInteractors);
-  }
   updateSpinnerRainSplash(delta);
 
   if (menuVisible) {
@@ -6165,6 +6155,17 @@ function animate(): void {
   // hidden chunks pay zero per-frame traversal + render cost.
   updateChunkVisibility(camera);
   updateGlobalLighting(delta);
+  for (const sprinkler of sprinklerZones) {
+    updateSprinklerZoneVisual(sprinkler, time);
+  }
+  for (const rays of windowLightZones) {
+    updateWindowLightZoneVisual(rays, time);
+  }
+  const grassInteractors = collectGrassInteractors();
+  const grassAuraLights = getActiveAuraLights();
+  for (const grass of grassZones) {
+    updateGrassZoneVisual(grass, time, delta, grassInteractors, grassAuraLights);
+  }
   profiler?.nextPhase('render');
   renderScene(scene, camera);
   finishProfilerFrame();

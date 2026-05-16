@@ -18,6 +18,7 @@ import { keys, shiftHeld } from './input';
 
 const HIT_FLASH_DUR = 0.15;
 const BODY_COLOR    = new THREE.Color(0xe94560);
+export const PLAYER_AURA_LIGHT_COLOR = 0xffd2a0;
 const PIT_FALL_DURATION = 1.0;
 
 function clamp(value: number, min: number, max: number): number {
@@ -132,7 +133,9 @@ export const playerProximity: ProximityBody = {
 
 // ─── Mesh ────────────────────────────────────────────────────────────────────
 
-const topResult = createTop();
+const topResult = createTop(BODY_COLOR.getHex(), {
+  auraColor: PLAYER_AURA_LIGHT_COLOR,
+});
 const { tiltGroup, spinGroup, bodyMat } = topResult;
 scene.add(tiltGroup);
 

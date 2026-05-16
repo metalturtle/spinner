@@ -50,13 +50,14 @@ void main() {
   vec3 sky = vec3(0.0);
 
   float stars = 0.0;
-  stars += starLayer(uv + vec2(0.0, 0.013), 132.0, 0.9898, 0.026);
-  stars += starLayer(uv * vec2(1.0, 0.985) + vec2(0.071, 0.02), 230.0, 0.9946, 0.017);
-  stars += starLayer(uv * vec2(1.0, 1.015) + vec2(0.19, -0.01), 360.0, 0.9974, 0.012);
-  stars += starLayer(uv + vec2(-0.14, 0.031), 72.0, 0.985, 0.036);
-  sky += vec3(0.9, 0.94, 1.0) * stars * 1.55;
+  stars += starLayer(uv + vec2(0.0, 0.013), 132.0, 0.9858, 0.026);
+  stars += starLayer(uv * vec2(1.0, 0.985) + vec2(0.071, 0.02), 230.0, 0.9918, 0.017);
+  stars += starLayer(uv * vec2(1.0, 1.015) + vec2(0.19, -0.01), 360.0, 0.9955, 0.012);
+  stars += starLayer(uv + vec2(-0.14, 0.031), 72.0, 0.979, 0.036);
+  stars += starLayer(uv * vec2(1.02, 0.99) + vec2(0.31, -0.05), 520.0, 0.9978, 0.01);
+  sky += vec3(0.9, 0.94, 1.0) * stars * 2.1;
 
-  vec3 moonDir = normalize(vec3(-0.03, 0.94, -0.34));
+  vec3 moonDir = normalize(vec3(0.08, 0.965, -0.19));
   vec3 moonRight = normalize(cross(vec3(0.0, 1.0, 0.0), moonDir));
   vec3 moonUp = normalize(cross(moonDir, moonRight));
   float moonRadius = 0.118;
