@@ -4,183 +4,25 @@
   "gridSize": 1,
   "polygons": [
     {
-      "id": "poly_mowbvg0391t7dz",
-      "name": "Polygon 2",
-      "layer": "floor",
-      "vertices": [
-        {
-          "x": -5,
-          "y": 24
-        },
-        {
-          "x": -3,
-          "y": 18
-        },
-        {
-          "x": 6,
-          "y": 9
-        },
-        {
-          "x": 17,
-          "y": 8
-        },
-        {
-          "x": 27,
-          "y": 4
-        },
-        {
-          "x": 42,
-          "y": -5
-        },
-        {
-          "x": 58,
-          "y": -9
-        },
-        {
-          "x": 79,
-          "y": 23
-        },
-        {
-          "x": 66,
-          "y": 41
-        },
-        {
-          "x": 22,
-          "y": 42
-        },
-        {
-          "x": -7,
-          "y": 30
-        }
-      ],
-      "properties": {},
-      "color": "#004d01"
-    },
-    {
-      "id": "poly_mowbxw47sml1o8",
-      "name": "Polygon 3",
-      "layer": "floor",
-      "vertices": [
-        {
-          "x": -7,
-          "y": 30
-        },
-        {
-          "x": -3,
-          "y": 18
-        },
-        {
-          "x": 6,
-          "y": 9
-        },
-        {
-          "x": 17,
-          "y": 8
-        },
-        {
-          "x": 27,
-          "y": 4
-        },
-        {
-          "x": 42,
-          "y": -5
-        },
-        {
-          "x": 58,
-          "y": -9
-        },
-        {
-          "x": 69,
-          "y": -17
-        },
-        {
-          "x": 47,
-          "y": -30
-        },
-        {
-          "x": -4,
-          "y": -12
-        },
-        {
-          "x": -17,
-          "y": 19
-        }
-      ],
-      "properties": {
-        "waterRippleEnabled": "true",
-        "waterRippleShader": "water2"
-      },
-      "color": "#33cc66",
-      "textureId": "rock_wall_16"
-    },
-    {
-      "id": "poly_mowcaoexbxqvfh",
-      "name": "Rect 4",
+      "id": "poly_mp8cgp4ss14an1",
+      "name": "Rect 1",
       "layer": "trigger",
       "vertices": [
         {
-          "x": -27,
-          "y": -24
+          "x": -44,
+          "y": -10
         },
         {
-          "x": 84,
-          "y": -24
+          "x": 0,
+          "y": -10
         },
         {
-          "x": 84,
-          "y": 49
+          "x": 0,
+          "y": 35
         },
         {
-          "x": -27,
-          "y": 49
-        }
-      ],
-      "properties": {
-        "sprinklerEnabled": "false",
-        "lightEnabled": "true"
-      },
-      "color": "#3388ff"
-    },
-    {
-      "id": "poly_mowbugmjgqbcd7",
-      "name": "Polygon 1",
-      "layer": "trigger",
-      "vertices": [
-        {
-          "x": -5,
-          "y": 24
-        },
-        {
-          "x": -3,
-          "y": 18
-        },
-        {
-          "x": 6,
-          "y": 9
-        },
-        {
-          "x": 17,
-          "y": 8
-        },
-        {
-          "x": 27,
-          "y": 4
-        },
-        {
-          "x": 42,
-          "y": -5
-        },
-        {
-          "x": 72,
-          "y": 19
-        },
-        {
-          "x": 46,
-          "y": 32
-        },
-        {
-          "x": 15,
-          "y": 33
+          "x": -44,
+          "y": 35
         }
       ],
       "properties": {
@@ -189,83 +31,352 @@
       "color": "#3388ff"
     },
     {
-      "id": "poly_moyb1ppmzp1djl",
-      "name": "Rect 5",
-      "layer": "wall",
+      "id": "poly_mp8cgs96pyt3p7",
+      "name": "Rect 2",
+      "layer": "trigger",
       "vertices": [
         {
-          "x": 14,
-          "y": 17
+          "x": 0,
+          "y": -10
         },
         {
-          "x": 25,
-          "y": 17
+          "x": 40,
+          "y": -10
         },
         {
-          "x": 25,
-          "y": 25
+          "x": 40,
+          "y": 0
         },
         {
-          "x": 14,
-          "y": 25
+          "x": 0,
+          "y": 0
         }
       ],
       "properties": {
-        "invisible": "true"
+        "grassEnabled": "true"
+      },
+      "color": "#ff5533"
+    },
+    {
+      "id": "poly_mp8cguzscvu5b8",
+      "name": "Rect 3",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 23,
+          "y": 0
+        },
+        {
+          "x": 40,
+          "y": 0
+        },
+        {
+          "x": 40,
+          "y": 35
+        },
+        {
+          "x": 23,
+          "y": 35
+        }
+      ],
+      "properties": {
+        "grassEnabled": "true"
+      },
+      "color": "#33cc66"
+    },
+    {
+      "id": "poly_mp8cgx0t0scqd5",
+      "name": "Rect 4",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 0,
+          "y": 24
+        },
+        {
+          "x": 23,
+          "y": 24
+        },
+        {
+          "x": 23,
+          "y": 35
+        },
+        {
+          "x": 0,
+          "y": 35
+        }
+      ],
+      "properties": {
+        "grassEnabled": "true"
+      },
+      "color": "#cc33ff"
+    },
+    {
+      "id": "poly_mp8chp0rsz6idd",
+      "name": "Polygon 5",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": 0,
+          "y": 24
+        },
+        {
+          "x": 4,
+          "y": 21
+        },
+        {
+          "x": 3,
+          "y": 19
+        },
+        {
+          "x": 3,
+          "y": 15
+        },
+        {
+          "x": 1,
+          "y": 9
+        },
+        {
+          "x": 3,
+          "y": 4
+        },
+        {
+          "x": 6,
+          "y": 3
+        },
+        {
+          "x": 16,
+          "y": 3
+        },
+        {
+          "x": 22,
+          "y": 6
+        },
+        {
+          "x": 23,
+          "y": 7
+        },
+        {
+          "x": 23,
+          "y": 0
+        },
+        {
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "properties": {
+        "grassEnabled": "true"
       },
       "color": "#3388ff"
     },
     {
-      "id": "poly_mozqgeinrhla2m",
-      "name": "Rect 6",
-      "layer": "wall",
+      "id": "poly_mp8ci1h2p6g5o1",
+      "name": "Polygon 6",
+      "layer": "trigger",
       "vertices": [
         {
-          "x": 27,
-          "y": 10
+          "x": 4,
+          "y": 21
         },
         {
-          "x": 37,
-          "y": 10
+          "x": 14,
+          "y": 20
         },
         {
-          "x": 37,
-          "y": 17
+          "x": 18,
+          "y": 19
         },
         {
-          "x": 27,
-          "y": 17
+          "x": 19,
+          "y": 15
+        },
+        {
+          "x": 21,
+          "y": 9
+        },
+        {
+          "x": 22,
+          "y": 6
+        },
+        {
+          "x": 23,
+          "y": 6
+        },
+        {
+          "x": 23,
+          "y": 24
+        },
+        {
+          "x": 1,
+          "y": 24
+        },
+        {
+          "x": 0,
+          "y": 24
         }
       ],
       "properties": {
-        "invisible": "true"
+        "grassEnabled": "true"
       },
       "color": "#ff5533"
+    },
+    {
+      "id": "poly_mp8ck54hjzszuq",
+      "name": "Polygon 7",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": 4,
+          "y": 21
+        },
+        {
+          "x": 3,
+          "y": 19
+        },
+        {
+          "x": 3,
+          "y": 15
+        },
+        {
+          "x": 1,
+          "y": 9
+        },
+        {
+          "x": 3,
+          "y": 4
+        },
+        {
+          "x": 6,
+          "y": 3
+        },
+        {
+          "x": 16,
+          "y": 3
+        },
+        {
+          "x": 22,
+          "y": 6
+        },
+        {
+          "x": 18,
+          "y": 19
+        },
+        {
+          "x": 14,
+          "y": 20
+        }
+      ],
+      "properties": {
+        "waterRippleEnabled": "true",
+        "waterRippleShader": "water1"
+      },
+      "color": "#ffffff"
+    },
+    {
+      "id": "poly_mp8cpedv7x1l13",
+      "name": "Rect 8",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": -44,
+          "y": -11
+        },
+        {
+          "x": 0,
+          "y": -11
+        },
+        {
+          "x": 0,
+          "y": 34
+        },
+        {
+          "x": -44,
+          "y": 34
+        }
+      ],
+      "properties": {},
+      "color": "#0b6632"
+    },
+    {
+      "id": "poly_mp8e2kx7snbbup",
+      "name": "Rect 9",
+      "layer": "trigger",
+      "vertices": [
+        {
+          "x": -35,
+          "y": 60
+        },
+        {
+          "x": 52,
+          "y": 60
+        },
+        {
+          "x": 52,
+          "y": 136
+        },
+        {
+          "x": -35,
+          "y": 136
+        }
+      ],
+      "properties": {
+        "lightEnabled": "true",
+        "lightDirectionalColor": "#000000"
+      },
+      "color": "#3388ff"
+    },
+    {
+      "id": "poly_mp8e8c1vsb441v",
+      "name": "Rect 10",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": 0,
+          "y": -11
+        },
+        {
+          "x": 40,
+          "y": -11
+        },
+        {
+          "x": 40,
+          "y": 0
+        },
+        {
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "properties": {},
+      "color": "#0b6632"
+    },
+    {
+      "id": "poly_mp8e9m74goxosn",
+      "name": "Rect 11",
+      "layer": "floor",
+      "vertices": [
+        {
+          "x": 23,
+          "y": 0
+        },
+        {
+          "x": 42,
+          "y": 0
+        },
+        {
+          "x": 42,
+          "y": 35
+        },
+        {
+          "x": 23,
+          "y": 35
+        }
+      ],
+      "properties": {},
+      "color": "#0b6632"
     }
   ],
   "circles": [],
-  "entities": [
-    {
-      "id": "ent_mowd615g7kxxjt",
-      "name": "Enemy Spinner T1 1",
-      "type": "enemy_spinner_excalibur",
-      "position": {
-        "x": 20,
-        "y": 21
-      },
-      "rotation": 0,
-      "properties": {}
-    },
-    {
-      "id": "ent_mozqfsintnwnrr",
-      "name": "Enemy Spinner T1 2",
-      "type": "enemy_spinner",
-      "position": {
-        "x": 30,
-        "y": 15
-      },
-      "rotation": 0,
-      "properties": {}
-    }
-  ]
+  "entities": []
 }

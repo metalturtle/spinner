@@ -1,12 +1,16 @@
 import * as THREE from 'three';
 import vertexShader from './water.vert.glsl?raw';
 import fragmentShader from './water2.frag.glsl?raw';
+import {
+  getSpaceBackgroundNightBlend,
+  getSpaceBackgroundReflectionTexture,
+} from './spaceBackground';
 
 type RipplePoint = { x: number; z: number };
 type WorldBounds = { minX: number; maxX: number; minZ: number; maxZ: number };
 
-const SIM_WIDTH = 256;
-const SIM_HEIGHT = 256;
+const SIM_WIDTH = 640;
+const SIM_HEIGHT = 640;
 const FIXED_STEP = 1 / 60;
 const SIM_TIME_SCALE = 0.08;
 const PROPAGATION = 0.42;
@@ -28,10 +32,6 @@ interface Water2Region {
 }
 
 const water2Regions: Water2Region[] = [];
-const textureLoader = new THREE.TextureLoader();
-const textureCache = new Map<string, THREE.Texture>();
-const texturePending = new Map<string, Promise<THREE.Texture>>();
-const reflectionTextureUrl = new URL('../../water/public/cloudy.jpeg', import.meta.url).href;
 
 const whiteTexture = new THREE.DataTexture(
   new Uint8Array([255, 255, 255, 255]),
@@ -49,8 +49,8 @@ let worldSize = new THREE.Vector2(40, 40);
 let prevState = new Float32Array(SIM_WIDTH * SIM_HEIGHT);
 let currState = new Float32Array(SIM_WIDTH * SIM_HEIGHT);
 let nextState = new Float32Array(SIM_WIDTH * SIM_HEIGHT);
-const rippleData = new Uint8Array(SIM_WIDTH * SIM_HEIGHT * 4);
-const rippleTexture = new THREE.DataTexture(rippleData, SIM_WIDTH, SIM_HEIGHT, THREE.RGBAFormat);
+const rippleData = new Float32Array(SIM_WIDTH * SIM_HEIGHT);
+const rippleTexture = new THREE.DataTexture(rippleData, SIM_WIDTH, SIM_HEIGHT, THREE.RedFormat, THREE.FloatType);
 rippleTexture.colorSpace = THREE.NoColorSpace;
 rippleTexture.wrapS = THREE.ClampToEdgeWrapping;
 rippleTexture.wrapT = THREE.ClampToEdgeWrapping;
@@ -58,54 +58,15 @@ rippleTexture.minFilter = THREE.LinearFilter;
 rippleTexture.magFilter = THREE.LinearFilter;
 rippleTexture.needsUpdate = true;
 
-function configureTexture(texture: THREE.Texture, isColor: boolean): THREE.Texture {
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = isColor ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-  texture.generateMipmaps = true;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.needsUpdate = true;
-  return texture;
-}
-
-function getTexture(url: string, isColor: boolean): THREE.Texture {
-  const key = `${isColor ? 'color' : 'data'}:${url}`;
-  const existing = textureCache.get(key);
-  if (existing) return existing;
-  const texture = configureTexture(textureLoader.load(url), isColor);
-  textureCache.set(key, texture);
-  return texture;
-}
-
-async function preloadTexture(url: string, isColor: boolean): Promise<THREE.Texture> {
-  const key = `${isColor ? 'color' : 'data'}:${url}`;
-  const existing = textureCache.get(key);
-  if (existing) return existing;
-  const pending = texturePending.get(key);
-  if (pending) return pending;
-  const promise = textureLoader.loadAsync(url).then((texture) => {
-    const configured = configureTexture(texture, isColor);
-    textureCache.set(key, configured);
-    texturePending.delete(key);
-    return configured;
-  }).catch((error) => {
-    texturePending.delete(key);
-    throw error;
-  });
-  texturePending.set(key, promise);
-  return promise;
-}
-
 function syncRippleTexture(blend = 1): void {
   const t = THREE.MathUtils.clamp(blend, 0, 1);
   for (let i = 0; i < currState.length; i += 1) {
     const displayHeight = THREE.MathUtils.lerp(prevState[i], currState[i], t);
-    const encoded = THREE.MathUtils.clamp(128 + displayHeight * WATER2_RIPPLE_CLICK_TEXTURE_SCALE, 0, 255) | 0;
-    const dataIndex = i * 4;
-    rippleData[dataIndex] = encoded;
-    rippleData[dataIndex + 1] = encoded;
-    rippleData[dataIndex + 2] = encoded;
-    rippleData[dataIndex + 3] = 255;
+    rippleData[i] = THREE.MathUtils.clamp(
+      (128 + displayHeight * WATER2_RIPPLE_CLICK_TEXTURE_SCALE) / 255,
+      0,
+      1,
+    );
   }
   rippleTexture.needsUpdate = true;
 }
@@ -193,7 +154,7 @@ function emitAmbientRipples(delta: number): void {
 }
 
 export async function preloadWater2Assets(): Promise<void> {
-  await preloadTexture(reflectionTextureUrl, true);
+  await Promise.resolve();
 }
 
 export function setWater2WorldBounds(bounds: WorldBounds): void {
@@ -220,13 +181,14 @@ export function createWater2Material(
   const uniforms = {
     iTime: { value: 0 },
     iChannel0: { value: baseMap ?? whiteTexture },
-    iChannel2: { value: getTexture(reflectionTextureUrl, true) },
+    iChannel2: { value: getSpaceBackgroundReflectionTexture() },
     uRippleState: { value: rippleTexture },
     uRippleTexel: { value: new THREE.Vector2(1 / SIM_WIDTH, 1 / SIM_HEIGHT) },
     uWorldMin: { value: worldMin.clone() },
     uWorldSize: { value: worldSize.clone() },
     uCameraPos: { value: new THREE.Vector3() },
     uTint: { value: effectiveTint },
+    uNightBlend: { value: getSpaceBackgroundNightBlend() },
   };
 
   const material = new THREE.ShaderMaterial({
@@ -283,9 +245,13 @@ export function emitMovementWater2Ripples(
 }
 
 export function updateWater2Surfaces(time: number, cameraPos: THREE.Vector3, delta = 0): void {
+  const reflectionTexture = getSpaceBackgroundReflectionTexture();
+  const nightBlend = getSpaceBackgroundNightBlend();
   for (const material of water2Materials) {
     material.uniforms.iTime.value = time;
     material.uniforms.uCameraPos.value.copy(cameraPos);
+    material.uniforms.iChannel2.value = reflectionTexture;
+    material.uniforms.uNightBlend.value = nightBlend;
   }
 
   emitAmbientRipples(delta);

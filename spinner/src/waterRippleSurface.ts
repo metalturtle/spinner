@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import vertexShader from './water.vert.glsl?raw';
 import fragmentShader from './water.frag.glsl?raw';
+import {
+  getSpaceBackgroundNightBlend,
+  getSpaceBackgroundReflectionTexture,
+} from './spaceBackground';
 
 type RipplePoint = { x: number; z: number };
 const WATER_RIPPLE_CLICK_COUNT = 64;
@@ -10,9 +14,6 @@ const AMBIENT_RIPPLE_BURST_CAP = 2;
 
 const waterRippleMaterials = new Set<THREE.ShaderMaterial>();
 const disposedWaterRippleMaterials = new WeakSet<THREE.Material>();
-const textureLoader = new THREE.TextureLoader();
-const waterRippleTextureCache = new Map<string, THREE.Texture>();
-const waterRipplePending = new Map<string, Promise<THREE.Texture>>();
 const movementRippleCarry = new Map<number, number>();
 let currentWaterRippleTime = 0;
 
@@ -27,8 +28,6 @@ interface WaterRippleRegion {
 
 const waterRippleRegions: WaterRippleRegion[] = [];
 
-const reflectionTextureUrl = new URL('../../water/public/goldensky.jpg', import.meta.url).href;
-
 const whiteTexture = new THREE.DataTexture(
   new Uint8Array([255, 255, 255, 255]),
   1,
@@ -37,44 +36,6 @@ const whiteTexture = new THREE.DataTexture(
 );
 whiteTexture.colorSpace = THREE.SRGBColorSpace;
 whiteTexture.needsUpdate = true;
-
-function configureWaterTexture(texture: THREE.Texture, isColor: boolean): THREE.Texture {
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = isColor ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-  texture.generateMipmaps = true;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.needsUpdate = true;
-  return texture;
-}
-
-function getWaterTexture(url: string, isColor: boolean): THREE.Texture {
-  const key = `${isColor ? 'color' : 'data'}:${url}`;
-  const existing = waterRippleTextureCache.get(key);
-  if (existing) return existing;
-  const texture = configureWaterTexture(textureLoader.load(url), isColor);
-  waterRippleTextureCache.set(key, texture);
-  return texture;
-}
-
-async function preloadWaterTexture(url: string, isColor: boolean): Promise<THREE.Texture> {
-  const key = `${isColor ? 'color' : 'data'}:${url}`;
-  const existing = waterRippleTextureCache.get(key);
-  if (existing) return existing;
-  const pending = waterRipplePending.get(key);
-  if (pending) return pending;
-  const promise = textureLoader.loadAsync(url).then((texture) => {
-    const configured = configureWaterTexture(texture, isColor);
-    waterRippleTextureCache.set(key, configured);
-    waterRipplePending.delete(key);
-    return configured;
-  }).catch((error) => {
-    waterRipplePending.delete(key);
-    throw error;
-  });
-  waterRipplePending.set(key, promise);
-  return promise;
-}
 
 // const vertexShader = `
 // varying vec2 vUv;
@@ -188,7 +149,7 @@ async function preloadWaterTexture(url: string, isColor: boolean): Promise<THREE
 // `;
 
 export async function preloadWaterRippleAssets(): Promise<void> {
-  await preloadWaterTexture(reflectionTextureUrl, true);
+  await Promise.resolve();
 }
 
 function pushRippleToMaterial(
@@ -239,11 +200,12 @@ export function createWaterRippleMaterial(
   const uniforms = {
     iTime: { value: 0 },
     iChannel0: { value: baseMap ?? whiteTexture },
-    iChannel2: { value: getWaterTexture(reflectionTextureUrl, true) },
+    iChannel2: { value: getSpaceBackgroundReflectionTexture() },
     uClicks: { value: clicks },
     uAspect: { value: 1 },
     uCameraPos: { value: new THREE.Vector3() },
     uTint: { value: effectiveTint },
+    uNightBlend: { value: getSpaceBackgroundNightBlend() },
   };
 
   const material = new THREE.ShaderMaterial({
@@ -278,9 +240,13 @@ function emitAmbientWaterRipples(delta: number): void {
 
 export function updateWaterRippleSurfaces(time: number, cameraPos: THREE.Vector3, delta = 0): void {
   currentWaterRippleTime = time;
+  const reflectionTexture = getSpaceBackgroundReflectionTexture();
+  const nightBlend = getSpaceBackgroundNightBlend();
   for (const material of waterRippleMaterials) {
     material.uniforms.iTime.value = time;
     material.uniforms.uCameraPos.value.copy(cameraPos);
+    material.uniforms.iChannel2.value = reflectionTexture;
+    material.uniforms.uNightBlend.value = nightBlend;
   }
   emitAmbientWaterRipples(delta);
 }

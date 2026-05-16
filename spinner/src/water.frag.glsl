@@ -6,6 +6,7 @@ uniform float iTime;
 uniform float uAspect;
 uniform vec3 uCameraPos;
 uniform vec3 uTint;
+uniform float uNightBlend;
 
 #define MAX_CLICKS 64
 uniform vec3 uClicks[MAX_CLICKS]; // xy = shader-uv position, z = spawn time
@@ -35,7 +36,7 @@ float computeRippleHeight(vec2 uv, float time) {
     vec3 ck = uClicks[i];
     float age = time - ck.z;
     if (age < 0.0 || age > 12.0) continue;
-    vec2 v2 = uv - ck.xy;
+    vec2 v2 = (uv - ck.xy) * 0.42;
     float d2 = pow(dot(v2, v2), 0.7);
     float life2 = 8.0;
     float n2 = age * 5.0 + 0.3;
@@ -67,7 +68,7 @@ void main() {
 
   // tangent-space normal — same recipe as the original `vec3(dFdx(h), 17., dFdy(h))`
   // but driven by analytical gradients so it stays stable across viewing angles
-  float k = 1.0 / 1080.0;
+  float k = 1.0 / 720.0;
   vec3 n = normalize(vec3(grad.x * k, 17.0, grad.y * k));
 
   // for a horizontal plane (rotateX -PI/2) lying in xz, the tangent-space basis aligns
@@ -75,23 +76,25 @@ void main() {
   vec3 nWorld = n;
 
   vec3 E = normalize(uCameraPos - vWorldPos);
-  vec3 rv = reflect(-E, nWorld);
-  vec3 reflect_color = degamma(texture2D(iChannel2, dirToEquirect(rv)).xyz);
+  vec3 reflectDir = reflect(-E, nWorld);
+  vec2 reflectUv = dirToEquirect(reflectDir);
+  float reflectLod = mix(0.0, 0.8, uNightBlend) + clamp(length(grad) * 0.02, 0.0, 1.2);
+  vec3 reflect_color = degamma(texture2D(iChannel2, reflectUv, reflectLod).xyz);
 
   vec3 fn = refract(vec3(0.0, 1.0, 0.0), n, 2.5);
   vec2 sampleUv = uv + fn.xz * 0.1 + vec2(0.66, 0.0);
   float lod = length(fn.xz) * 10.0;
 
   vec3 c = vec3(0.0);
-  c += degamma(texture2D(iChannel0, sampleUv, lod).xyz);
+  c += degamma(texture2D(iChannel0, sampleUv, lod).xyz) * mix(1.0, 0.0, uNightBlend);
   c *= 1.0 - h * 0.0125;
-  c += reflect_color * 0.3;
+  c += reflect_color * mix(0.3, 1.08, uNightBlend);
   c *= uTint;
-  c *= 1.18;
+  c *= mix(1.18, 1.0, uNightBlend);
 
   vec3 L = normalize(vec3(1.0, 1.0, 1.0));
   float dl = max(dot(nWorld, L), 0.0) * 0.7 + 0.3;
-  c *= dl;
+  c *= mix(dl, dl * 0.82, uNightBlend);
 
   c = gammaEnc(c);
   gl_FragColor = vec4(c, 1.0);
