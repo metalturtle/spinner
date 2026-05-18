@@ -10,6 +10,43 @@ import {
 
 const LAYERS: PolygonLayer[] = ['floor', 'wall', 'trigger', 'decoration'];
 
+const FIREFLY_TRIGGER_PRESET: Record<string, string> = {
+  fireflyEnabled: 'true',
+  fireflyDensity: '1.65',
+  fireflyWakeRadius: '2.7',
+  fireflyChainRadius: '3.4',
+  fireflyIdleColor: '#efe18f',
+  fireflyActiveColor: '#2f8fff',
+  fireflyHoldTime: '5.2',
+  fireflyActivationSpeed: '9.5',
+  fireflyDecaySpeed: '1.4',
+  fireflyWaveSpeed: '12.5',
+  fireflyFlareStrength: '1.15',
+  fireflyFlareDecay: '8.5',
+  fireflySize: '0.08',
+  fireflyActiveSize: '0.24',
+  fireflyGlowColor: '#7fd8ff',
+  fireflyGlowScale: '3.2',
+  fireflyGlowOpacity: '0.32',
+  fireflyHeightMin: '0.35',
+  fireflyHeightMax: '0.95',
+  fireflyMoveRadius: '0.75',
+  fireflySpeedMin: '0.28',
+  fireflySpeedMax: '0.58',
+  fireflyLightThreshold: '6',
+  fireflyLightPlayerRadius: '5.5',
+  fireflyLightRadius: '5.4',
+  fireflyLightIntensity: '7.4',
+  fireflyGrassLightColor: '#7fd8ff',
+  fireflyGrassLightRadius: '10.0',
+  fireflyGrassLightIntensity: '6.8',
+  fireflyGrassLightFalloff: '2.25',
+  fireflyGrassLightCore: '5.0',
+  fireflyLightCount: '2',
+  fireflyLightSmoothing: '8.5',
+  fireflyGrassLightBoost: '1.35',
+};
+
 export class PropertiesPanel {
   private editor: Editor;
   private container: HTMLElement;
@@ -100,6 +137,7 @@ export class PropertiesPanel {
 
       this.wireInputs('polygon', sel.id);
       this.wireKV('polygon', sel.id);
+      if (poly.layer === 'trigger') this.wireTriggerPresets('polygon', sel.id);
     } else if (sel.type === 'circle') {
       const circle = this.editor.levelData.getCircle(sel.id);
       if (!circle) { this.container.innerHTML = ''; return; }
@@ -141,6 +179,7 @@ export class PropertiesPanel {
 
       this.wireInputs('circle', sel.id);
       this.wireKV('circle', sel.id);
+      if (circle.layer === 'trigger') this.wireTriggerPresets('circle', sel.id);
     } else if (sel.type === 'entity') {
       const entity = this.editor.levelData.getEntity(sel.id);
       if (!entity) { this.container.innerHTML = ''; return; }
@@ -277,6 +316,7 @@ export class PropertiesPanel {
     const sprinklerEnabled = properties.sprinklerEnabled === 'true';
     const windowRaysEnabled = properties.windowRaysEnabled === 'true';
     const grassEnabled = properties.grassEnabled === 'true';
+    const fireflyEnabled = properties.fireflyEnabled === 'true';
     return `
       <div class="prop-section">
         <h4>Trigger</h4>
@@ -393,7 +433,7 @@ export class PropertiesPanel {
         </div>
         <div class="prop-row">
           <label>Density</label>
-          <input type="number" data-field="sprinklerDensity" value="${this.esc(properties.sprinklerDensity ?? '2.4')}" step="0.1" min="0.1" />
+          <input type="number" data-field="sprinklerDensity" value="${this.esc(properties.sprinklerDensity ?? '2.4')}" step="0.05" min="0" />
         </div>
         <div class="prop-row">
           <label>Center Falloff</label>
@@ -406,6 +446,146 @@ export class PropertiesPanel {
         <div class="prop-row">
           <label>Drop Speed</label>
           <input type="number" data-field="sprinklerDropSpeed" value="${this.esc(properties.sprinklerDropSpeed ?? '1.9')}" step="0.1" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Fireflies</label>
+          <input type="checkbox" data-field="fireflyEnabled"${fireflyEnabled ? ' checked' : ''} />
+        </div>
+        <div class="prop-row">
+          <label>Preset</label>
+          <button type="button" class="btn-add-prop" id="btn-apply-firefly-preset">Apply Firefly Preset</button>
+        </div>
+        <div class="prop-row">
+          <label>Density</label>
+          <input type="number" data-field="fireflyDensity" value="${this.esc(properties.fireflyDensity ?? '1.65')}" step="0.05" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Wake Radius</label>
+          <input type="number" data-field="fireflyWakeRadius" value="${this.esc(properties.fireflyWakeRadius ?? '2.7')}" step="0.1" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Chain Radius</label>
+          <input type="number" data-field="fireflyChainRadius" value="${this.esc(properties.fireflyChainRadius ?? '3.4')}" step="0.1" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Idle Color</label>
+          <input type="color" data-field="fireflyIdleColor" value="${this.esc(properties.fireflyIdleColor ?? '#efe18f')}" />
+        </div>
+        <div class="prop-row">
+          <label>Active Color</label>
+          <input type="color" data-field="fireflyActiveColor" value="${this.esc(properties.fireflyActiveColor ?? '#2f8fff')}" />
+        </div>
+        <div class="prop-row">
+          <label>Hold Time</label>
+          <input type="number" data-field="fireflyHoldTime" value="${this.esc(properties.fireflyHoldTime ?? '5.2')}" step="0.1" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Grow Speed</label>
+          <input type="number" data-field="fireflyActivationSpeed" value="${this.esc(properties.fireflyActivationSpeed ?? '9.5')}" step="0.1" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Fade Speed</label>
+          <input type="number" data-field="fireflyDecaySpeed" value="${this.esc(properties.fireflyDecaySpeed ?? '1.4')}" step="0.05" min="0.01" />
+        </div>
+        <div class="prop-row">
+          <label>Wave Speed</label>
+          <input type="number" data-field="fireflyWaveSpeed" value="${this.esc(properties.fireflyWaveSpeed ?? '12.5')}" step="0.1" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Burst Strength</label>
+          <input type="number" data-field="fireflyFlareStrength" value="${this.esc(properties.fireflyFlareStrength ?? '1.15')}" step="0.05" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Burst Fade</label>
+          <input type="number" data-field="fireflyFlareDecay" value="${this.esc(properties.fireflyFlareDecay ?? '8.5')}" step="0.1" min="0.05" />
+        </div>
+        <div class="prop-row">
+          <label>Base Size</label>
+          <input type="number" data-field="fireflySize" value="${this.esc(properties.fireflySize ?? '0.08')}" step="0.01" min="0.01" />
+        </div>
+        <div class="prop-row">
+          <label>Active Size</label>
+          <input type="number" data-field="fireflyActiveSize" value="${this.esc(properties.fireflyActiveSize ?? '0.24')}" step="0.01" min="0.01" />
+        </div>
+        <div class="prop-row">
+          <label>Glow Color</label>
+          <input type="color" data-field="fireflyGlowColor" value="${this.esc(properties.fireflyGlowColor ?? '#7fd8ff')}" />
+        </div>
+        <div class="prop-row">
+          <label>Glow Scale</label>
+          <input type="number" data-field="fireflyGlowScale" value="${this.esc(properties.fireflyGlowScale ?? '3.2')}" step="0.1" min="1" />
+        </div>
+        <div class="prop-row">
+          <label>Glow Opacity</label>
+          <input type="number" data-field="fireflyGlowOpacity" value="${this.esc(properties.fireflyGlowOpacity ?? '0.32')}" step="0.02" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Height Min</label>
+          <input type="number" data-field="fireflyHeightMin" value="${this.esc(properties.fireflyHeightMin ?? '0.35')}" step="0.05" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Height Max</label>
+          <input type="number" data-field="fireflyHeightMax" value="${this.esc(properties.fireflyHeightMax ?? '0.95')}" step="0.05" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Move Radius</label>
+          <input type="number" data-field="fireflyMoveRadius" value="${this.esc(properties.fireflyMoveRadius ?? '0.75')}" step="0.05" min="0.01" />
+        </div>
+        <div class="prop-row">
+          <label>Speed Min</label>
+          <input type="number" data-field="fireflySpeedMin" value="${this.esc(properties.fireflySpeedMin ?? '0.28')}" step="0.01" min="0.01" />
+        </div>
+        <div class="prop-row">
+          <label>Speed Max</label>
+          <input type="number" data-field="fireflySpeedMax" value="${this.esc(properties.fireflySpeedMax ?? '0.58')}" step="0.01" min="0.01" />
+        </div>
+        <div class="prop-row">
+          <label>Light Threshold</label>
+          <input type="number" data-field="fireflyLightThreshold" value="${this.esc(properties.fireflyLightThreshold ?? '6')}" step="1" min="1" />
+        </div>
+        <div class="prop-row">
+          <label>Light Sample Rad</label>
+          <input type="number" data-field="fireflyLightPlayerRadius" value="${this.esc(properties.fireflyLightPlayerRadius ?? '5.5')}" step="0.1" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Light Radius</label>
+          <input type="number" data-field="fireflyLightRadius" value="${this.esc(properties.fireflyLightRadius ?? '5.4')}" step="0.1" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Light Intensity</label>
+          <input type="number" data-field="fireflyLightIntensity" value="${this.esc(properties.fireflyLightIntensity ?? '7.4')}" step="0.1" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Grass Light Col</label>
+          <input type="color" data-field="fireflyGrassLightColor" value="${this.esc(properties.fireflyGrassLightColor ?? '#7fd8ff')}" />
+        </div>
+        <div class="prop-row">
+          <label>Grass Light Rad</label>
+          <input type="number" data-field="fireflyGrassLightRadius" value="${this.esc(properties.fireflyGrassLightRadius ?? '10.0')}" step="0.1" min="0.1" />
+        </div>
+        <div class="prop-row">
+          <label>Grass Light Int</label>
+          <input type="number" data-field="fireflyGrassLightIntensity" value="${this.esc(properties.fireflyGrassLightIntensity ?? '6.8')}" step="0.1" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Grass Falloff</label>
+          <input type="number" data-field="fireflyGrassLightFalloff" value="${this.esc(properties.fireflyGrassLightFalloff ?? '2.25')}" step="0.05" min="0.05" />
+        </div>
+        <div class="prop-row">
+          <label>Grass Core</label>
+          <input type="number" data-field="fireflyGrassLightCore" value="${this.esc(properties.fireflyGrassLightCore ?? '5.0')}" step="0.05" min="0.05" />
+        </div>
+        <div class="prop-row">
+          <label>Grass Glow</label>
+          <input type="number" data-field="fireflyGrassLightBoost" value="${this.esc(properties.fireflyGrassLightBoost ?? '1.35')}" step="0.05" min="0" />
+        </div>
+        <div class="prop-row">
+          <label>Light Count</label>
+          <input type="number" data-field="fireflyLightCount" value="${this.esc(properties.fireflyLightCount ?? '2')}" step="1" min="1" />
+        </div>
+        <div class="prop-row">
+          <label>Light Smooth</label>
+          <input type="number" data-field="fireflyLightSmoothing" value="${this.esc(properties.fireflyLightSmoothing ?? '8.5')}" step="0.1" min="0.1" />
         </div>
       </div>
     `;
@@ -620,6 +800,28 @@ export class PropertiesPanel {
         this.refresh();
       });
     }
+  }
+
+  private wireTriggerPresets(type: 'polygon' | 'circle', id: string): void {
+    const applyFireflyPresetBtn = this.container.querySelector<HTMLButtonElement>('#btn-apply-firefly-preset');
+    if (!applyFireflyPresetBtn) return;
+
+    applyFireflyPresetBtn.addEventListener('click', () => {
+      for (const [field, value] of Object.entries(FIREFLY_TRIGGER_PRESET)) {
+        let oldValue = '';
+        if (type === 'polygon') {
+          const poly = this.editor.levelData.getPolygon(id);
+          if (!poly) return;
+          oldValue = String(poly.properties[field] ?? '');
+        } else {
+          const circle = this.editor.levelData.getCircle(id);
+          if (!circle) return;
+          oldValue = String(circle.properties[field] ?? '');
+        }
+        const cmd = new EditPropertyCmd(this.editor.levelData, type, id, field, oldValue, value);
+        this.editor.commandHistory.execute(cmd);
+      }
+    });
   }
 
   private esc(s: string): string {

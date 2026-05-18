@@ -7,10 +7,10 @@ const STORAGE_KEY = 'spinner.settings.v1';
 
 interface Settings {
   /**
-   * Maximum size for each runtime light pool (aura + projectile). Each pool
-   * adds this many `THREE.PointLight`s to the scene, even when idle. Every
-   * lit fragment runs `for (i = 0; i < NUM_POINT_LIGHTS; i++)` per pixel —
-   * smaller pools = cheaper shader = higher framerate on weaker GPUs.
+   * Maximum size for each runtime light pool. Aura and projectile pools use
+   * the full value, while smaller helper pools derive a capped size from it.
+   * Every pooled entry adds a persistent `THREE.PointLight` to the scene even
+   * when idle, so smaller pools still mean cheaper lighting shaders.
    *
    * 0 disables the pools entirely (no aura on the player, no glow on
    * enemy projectiles).

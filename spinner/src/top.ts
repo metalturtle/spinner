@@ -350,7 +350,7 @@ export function createReflectionPreviewSphere(pos: { x: number; y?: number; z: n
     material,
   );
   sphere.castShadow = true;
-  root.add(sphere);
+  // root.add(sphere);
 
   const keyLight = new THREE.PointLight(0xffffff, 18, 14, 2);
   keyLight.position.set(2.4, 2.8, 2.2);

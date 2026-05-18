@@ -127,10 +127,11 @@ export function emitSpinnerRainSplash(
   color: THREE.Color,
   delta: number,
   spinSign = 1,
+  densityMultiplier = 1,
 ): void {
   if (!mesh || strength <= 0.01 || delta <= 0) return;
 
-  const spawnRate = (28 + radius * 8.5) * Math.min(2.2, strength);
+  const spawnRate = (28 + radius * 8.5) * Math.min(2.2, strength) * Math.max(0.05, densityMultiplier);
   const carry = Math.min(16, (carries.get(emitterId) ?? 0) + spawnRate * delta);
   let count = Math.floor(carry);
   carries.set(emitterId, carry - count);

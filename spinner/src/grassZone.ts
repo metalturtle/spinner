@@ -146,6 +146,7 @@ const GRASS_FRAGMENT_SHADER = `
   uniform int uLocalLightCount;
   uniform vec4 uLocalLights[MAX_LOCAL_LIGHTS];
   uniform vec4 uLocalLightColor[MAX_LOCAL_LIGHTS];
+  uniform vec4 uLocalLightParams[MAX_LOCAL_LIGHTS];
 
   varying vec2 vUv;
   varying vec2 vCloudUv;
@@ -178,18 +179,18 @@ const GRASS_FRAGMENT_SHADER = `
       if (i >= uLocalLightCount) break;
       vec4 localLight = uLocalLights[i];
       vec4 localLightColor = uLocalLightColor[i];
+      vec4 localLightParams = uLocalLightParams[i];
       vec3 toLight = localLight.xyz - vWorldPos;
       float distanceToLight = length(toLight);
-      // float radius = max(localLight.w * 0.38, 0.001);
       float radius = localLight.w;
       if (distanceToLight >= radius) continue;
 
       float radial = 1.0 - (distanceToLight / radius);
-      float attenuation = pow(radial, 3.8);
-      float coreGlow = pow(radial, 8.0);
+      float attenuation = pow(radial, max(localLightParams.x, 0.05));
+      float coreGlow = pow(radial, max(localLightParams.y, 0.05));
       float diffuse = 0.45 + 0.55 * grassDiffuse(normal, toLight);
-      vec3 softenedLightColor = mix(vec3(1.0, 0.98, 0.92), localLightColor.rgb, 0.12);
-      vec3 glowColor = mix(vec3(1.0, 0.9, 0.82), localLightColor.rgb, 0.18);
+      vec3 softenedLightColor = mix(vec3(1.0, 0.98, 0.92), localLightColor.rgb, localLightParams.z);
+      vec3 glowColor = mix(vec3(1.0, 0.9, 0.82), localLightColor.rgb, localLightParams.w);
       float energy = localLightColor.w / 8.5;
       lighting += softenedLightColor * energy * attenuation * diffuse;
       auraGlow += glowColor * energy * coreGlow * 0.12;
@@ -214,6 +215,7 @@ interface ZoneShape {
   center: { x: number; z: number };
   area: number;
   radius: number;
+  contains: (point: { x: number; z: number }) => boolean;
   samplePoint: () => { x: number; z: number };
   uvForPoint: (point: { x: number; z: number }) => [number, number];
   createFloorGeometry: () => THREE.BufferGeometry;
@@ -240,12 +242,24 @@ export interface GrassZoneVisual {
     uLocalLightCount: { value: number };
     uLocalLights: { value: THREE.Vector4[] };
     uLocalLightColor: { value: THREE.Vector4[] };
+    uLocalLightParams: { value: THREE.Vector4[] };
   };
   unregisterCull: () => void;
 }
 
+export interface GrassLocalLight {
+  position: THREE.Vector3;
+  color: THREE.Color;
+  intensity: number;
+  distance: number;
+  falloffExponent?: number;
+  coreExponent?: number;
+  softenMix?: number;
+  glowMix?: number;
+}
+
 interface RankedLocalLight {
-  light: THREE.PointLight;
+  light: GrassLocalLight;
   weight: number;
 }
 
@@ -324,8 +338,12 @@ function hasGrassZoneProperties(props: Record<string, unknown> | undefined): boo
     || props?.grassWind !== undefined;
 }
 
+function supportsGrassLayer(layer: LevelPolygon['layer'] | LevelCircle['layer']): boolean {
+  return layer === 'trigger' || layer === 'floor' || layer === 'decoration';
+}
+
 function buildPolygonShape(poly: LevelPolygon): ZoneShape | null {
-  if (poly.layer !== 'trigger' || poly.vertices.length < 3) return null;
+  if (!supportsGrassLayer(poly.layer) || poly.vertices.length < 3) return null;
   if (!hasGrassZoneProperties(poly.properties)) return null;
 
   const outer = poly.vertices.map((vertex) => ({ x: vertex.x, z: lvZ(vertex.y) }));
@@ -361,15 +379,16 @@ function buildPolygonShape(poly: LevelPolygon): ZoneShape | null {
     center,
     area,
     radius,
+    contains,
     samplePoint() {
-      for (let attempt = 0; attempt < 48; attempt += 1) {
+      for (let attempt = 0; attempt < 192; attempt += 1) {
         const point = {
           x: THREE.MathUtils.lerp(minX, maxX, Math.random()),
           z: THREE.MathUtils.lerp(minZ, maxZ, Math.random()),
         };
         if (contains(point)) return point;
       }
-      return center;
+      return contains(center) ? center : outer[0];
     },
     uvForPoint(point) {
       return [
@@ -387,7 +406,7 @@ function buildPolygonShape(poly: LevelPolygon): ZoneShape | null {
 }
 
 function buildCircleShape(circle: LevelCircle): ZoneShape | null {
-  if (circle.layer !== 'trigger' || circle.radius <= 0) return null;
+  if (!supportsGrassLayer(circle.layer) || circle.radius <= 0) return null;
   if (!hasGrassZoneProperties(circle.properties)) return null;
 
   const center = { x: circle.center.x, z: lvZ(circle.center.y) };
@@ -395,6 +414,11 @@ function buildCircleShape(circle: LevelCircle): ZoneShape | null {
     center,
     area: Math.PI * circle.radius * circle.radius,
     radius: circle.radius,
+    contains(point) {
+      const dx = point.x - center.x;
+      const dz = point.z - center.z;
+      return dx * dx + dz * dz <= circle.radius * circle.radius;
+    },
     samplePoint() {
       const angle = Math.random() * TAU;
       const distance = Math.sqrt(Math.random()) * circle.radius;
@@ -538,10 +562,11 @@ function createZoneVisual(
     const point = shape.samplePoint();
     const jitterAngle = Math.random() * TAU;
     const jitterRadius = Math.random() * 0.16;
-    const jittered = {
+    const candidate = {
       x: point.x + Math.cos(jitterAngle) * jitterRadius,
       z: point.z + Math.sin(jitterAngle) * jitterRadius,
     };
+    const jittered = shape.contains(candidate) ? candidate : point;
     const local = new THREE.Vector3(jittered.x - shape.center.x, FLOOR_Y - 0.006, jittered.z - shape.center.z);
     const uv = shape.uvForPoint(jittered);
     const blade = generateBlade(
@@ -576,6 +601,7 @@ function createZoneVisual(
   const interactorFlowUniforms = Array.from({ length: MAX_INTERACTORS }, () => new THREE.Vector4(0, 0, 0, 0));
   const localLightUniforms = Array.from({ length: MAX_LOCAL_LIGHTS }, () => new THREE.Vector4(0, 0, 0, 0));
   const localLightColorUniforms = Array.from({ length: MAX_LOCAL_LIGHTS }, () => new THREE.Vector4(0, 0, 0, 0));
+  const localLightParamUniforms = Array.from({ length: MAX_LOCAL_LIGHTS }, () => new THREE.Vector4(3.8, 8.0, 0.12, 0.18));
   const floorGeometry = shape.createFloorGeometry();
   const floorMaterial = new THREE.MeshStandardMaterial({
     color: color.clone().multiplyScalar(0.4),
@@ -598,6 +624,7 @@ function createZoneVisual(
     uLocalLightCount: { value: 0 },
     uLocalLights: { value: localLightUniforms },
     uLocalLightColor: { value: localLightColorUniforms },
+    uLocalLightParams: { value: localLightParamUniforms },
   };
 
   const material = new THREE.ShaderMaterial({
@@ -643,6 +670,7 @@ function createZoneVisual(
       uLocalLightCount: uniforms.uLocalLightCount,
       uLocalLights: uniforms.uLocalLights,
       uLocalLightColor: uniforms.uLocalLightColor,
+      uLocalLightParams: uniforms.uLocalLightParams,
     },
     unregisterCull,
   };
@@ -671,7 +699,7 @@ export function updateGrassZoneVisual(
   time: number,
   _delta: number,
   interactors: readonly GrassInteractor[],
-  auraLights: readonly THREE.PointLight[],
+  auraLights: readonly GrassLocalLight[],
 ): void {
   zone.uniforms.uTime.value = time * zone.windSpeed;
 
@@ -725,10 +753,12 @@ export function updateGrassZoneVisual(
   for (let i = 0; i < MAX_LOCAL_LIGHTS; i += 1) {
     const lightTarget = zone.uniforms.uLocalLights.value[i];
     const colorTarget = zone.uniforms.uLocalLightColor.value[i];
+    const paramsTarget = zone.uniforms.uLocalLightParams.value[i];
     const ranked = i < localLightCount ? rankedLights[i] : null;
     if (!ranked) {
       lightTarget.set(0, 0, 0, 0);
       colorTarget.set(0, 0, 0, 0);
+      paramsTarget.set(3.8, 8.0, 0.12, 0.18);
       continue;
     }
 
@@ -743,6 +773,12 @@ export function updateGrassZoneVisual(
       ranked.light.color.g,
       ranked.light.color.b,
       ranked.light.intensity,
+    );
+    paramsTarget.set(
+      ranked.light.falloffExponent ?? 3.8,
+      ranked.light.coreExponent ?? 8.0,
+      ranked.light.softenMix ?? 0.12,
+      ranked.light.glowMix ?? 0.18,
     );
   }
 }

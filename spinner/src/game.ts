@@ -54,6 +54,7 @@ import levelActive from './levels/level-active.json';
 import { createTurret, updateTurret, applyDamageToTurret, destroyTurret, TURRET_TIER_1 } from './turret';
 import { createProjectile, updateProjectiles, releaseProjectileResources, prewarmProjectileMaterials, syncProjectileLightPoolToSetting, zeroAllProjectileLights, type Projectile } from './projectile';
 import { getActiveAuraLights, syncAuraLightPoolToSetting, refreshAuraLight, zeroAllAuraLights } from './auraLightPool';
+import { syncFireflyLightPoolToSetting, zeroAllFireflyLights } from './fireflyLightPool';
 import { createExplosion, createRobotExplosion, updateExplosions, prewarmExplosionMaterials, type Explosion } from './explosion';
 import {
   createObstacle, syncObstacle, obstacleHpDamage, applyDamageToObstacle, destroyObstacle,
@@ -206,7 +207,14 @@ import {
   updateGrassZoneVisual,
   type GrassZoneVisual,
   type GrassInteractor,
+  type GrassLocalLight,
 } from './grassZone';
+import {
+  createFireflyZoneVisuals,
+  destroyFireflyZoneVisual,
+  updateFireflyZoneVisual,
+  type FireflyZoneVisual,
+} from './fireflyZone';
 import {
   emitSpinnerRainSplash,
   initSpinnerRainSplash,
@@ -829,6 +837,7 @@ const dynamicLevelLightRoots: THREE.Object3D[] = [];
 const sprinklerZones: SprinklerZoneVisual[] = [];
 const windowLightZones: WindowLightZoneVisual[] = [];
 const grassZones: GrassZoneVisual[] = [];
+const fireflyZones: FireflyZoneVisual[] = [];
 let reflectionPreviewSphere: ReflectionPreviewSphere | null = null;
 const pendingTriggeredEntities = new Map<string, LevelEntity[]>();
 const SPIDER_MOTION_DEBUG = false;
@@ -1843,6 +1852,12 @@ function clearGrassZones(): void {
   }
 }
 
+function clearFireflyZones(): void {
+  while (fireflyZones.length > 0) {
+    destroyFireflyZoneVisual(scene, fireflyZones.pop()!);
+  }
+}
+
 function clearReflectionPreviewSphere(): void {
   reflectionPreviewSphere?.dispose();
   reflectionPreviewSphere = null;
@@ -1914,20 +1929,23 @@ function emitSprinklerFanSpray(
   if (!activeZone || bestInfluence <= 0.01) return;
 
   const densityBoost = 0.78 + Math.min(0.6, activeZone.density * 0.14);
+  const densityMultiplier = THREE.MathUtils.clamp(activeZone.density / 2.4, 0.2, 3.5);
   const sprayStrength = bestInfluence
     * densityBoost
     * (0.7 + rpmFrac * 0.42)
     * (0.85 + speedFrac * 0.28) + 3;
 
-  emitSpinnerRainSplash(
-    emitterId,
-    { x: pos.x, y: 0.64 + radius * 0.12, z: pos.z },
-    vel,
-    radius,
-    sprayStrength,
-    activeZone.dropColor,
-    delta,
-  );
+  // emitSpinnerRainSplash(
+  //   emitterId,
+  //   { x: pos.x, y: 0.64 + radius * 0.12, z: pos.z },
+  //   vel,
+  //   radius,
+  //   sprayStrength,
+  //   activeZone.dropColor,
+  //   delta,
+  //   1,
+  //   densityMultiplier,
+  // );
 }
 
 function removeCollidableFromGameplay(collidable: Collidable): void {
@@ -2741,6 +2759,7 @@ menuDisableLightsCheckbox.addEventListener('change', () => {
   setLightsDisabled(disabled);
   if (disabled) {
     zeroAllAuraLights();
+    zeroAllFireflyLights();
     zeroAllProjectileLights();
   }
   refreshLevelLightIntensities();
@@ -2760,6 +2779,7 @@ menuLightPoolSlider.addEventListener('input', () => {
 // it means the next Start Game already sees the right pool.
 menuLightPoolSlider.addEventListener('change', () => {
   syncAuraLightPoolToSetting();
+  syncFireflyLightPoolToSetting();
   syncProjectileLightPoolToSetting();
   // If the pool was empty when the player's createTop() ran (slider at 0),
   // its auraLight is null. Now that the pool has grown, claim one for the
@@ -3040,12 +3060,14 @@ function resetGame(): void {
   clearCheckpoints();
   clearLevelLights(scene);
   clearGrassZones();
+  clearFireflyZones();
   clearReflectionPreviewSphere();
   clearWindowLightZones();
   clearSprinklerZones();
   sprinklerZones.push(...createSprinklerZoneVisuals(scene, currentLevel));
   windowLightZones.push(...createWindowLightZoneVisuals(scene, currentLevel));
   grassZones.push(...createGrassZoneVisuals(scene, currentLevel));
+  fireflyZones.push(...createFireflyZoneVisuals(scene, currentLevel));
   setupLevelLights(scene, currentLevel);
   spawnAll(currentLevel);
   reflectionPreviewSphere = createReflectionPreviewSphere({
@@ -3090,6 +3112,7 @@ async function startSelectedLevel(options: { suppressLoadingOverlay?: boolean } 
     // recompile. Doing it here folds the cost into the loading screen
     // instead of stuttering the first gameplay frame.
     syncAuraLightPoolToSetting();
+    syncFireflyLightPoolToSetting();
     syncProjectileLightPoolToSetting();
     // The player's createTop runs at module load; if the pool was empty
     // back then (slider at 0), the aura-light reference is null. Now that
@@ -6161,10 +6184,23 @@ function animate(): void {
   for (const rays of windowLightZones) {
     updateWindowLightZoneVisual(rays, time);
   }
+  for (const fireflyZone of fireflyZones) {
+    updateFireflyZoneVisual(fireflyZone, time, delta, playerBody.pos);
+  }
   const grassInteractors = collectGrassInteractors();
   const grassAuraLights = getActiveAuraLights();
+  const fireflyGrassLights: GrassLocalLight[] = [];
+  for (const zone of fireflyZones) {
+    for (const light of zone.grassLights) {
+      if (light.intensity <= 0.001 || light.distance <= 0.001) continue;
+      fireflyGrassLights.push(light);
+    }
+  }
+  const grassLocalLights = fireflyGrassLights.length > 0
+    ? [...grassAuraLights, ...fireflyGrassLights]
+    : grassAuraLights;
   for (const grass of grassZones) {
-    updateGrassZoneVisual(grass, time, delta, grassInteractors, grassAuraLights);
+    updateGrassZoneVisual(grass, time, delta, grassInteractors, grassLocalLights);
   }
   profiler?.nextPhase('render');
   renderScene(scene, camera);

@@ -10,8 +10,8 @@ const FLOOR_Y = 0.03;
 const DROP_BASE_THICKNESS = 0.04;
 const DROP_STREAK_LENGTH = 0.24;
 const SPLASH_THICKNESS = 0.012;
-const MIN_DROPS = 18;
-const MAX_DROPS = 60;
+const MIN_DROPS = 1;
+const MAX_DROPS = 220;
 
 const tempPosition = new THREE.Vector3();
 const tempScale = new THREE.Vector3();
@@ -50,6 +50,7 @@ export interface SprinklerZoneVisual {
   drops: SprinklerDrop[];
   ceilingHeight: number;
   density: number;
+  dropBrightnessScale: number;
   splashOpacity: number;
   unregisterCull: () => void;
   dropColor: THREE.Color;
@@ -219,8 +220,13 @@ function createZoneVisual(
   props: Record<string, unknown> | undefined,
   shape: ZoneShape,
 ): SprinklerZoneVisual {
-  const density = parseNumber(props?.sprinklerDensity, 2.4, 0.15);
-  const count = Math.max(MIN_DROPS, Math.min(MAX_DROPS, Math.round(shape.area * density)));
+  const density = parseNumber(props?.sprinklerDensity, 2.4, 0);
+  const count = density <= 0
+    ? 1
+    : Math.max(MIN_DROPS, Math.min(MAX_DROPS, Math.round(shape.area * density)));
+  const densityVisualScale = density <= 0
+    ? 0
+    : THREE.MathUtils.clamp(0.18 + (density / 2.4) * 0.82, 0, 1.75);
   const mode = readSprinklerMode(props?.sprinklerMode);
   const falloffStrength = parseNumber(props?.sprinklerFalloff, 1.6, 0.2);
   const ceilingHeight = parseNumber(props?.sprinklerCeilingHeight, 3.4, 0.75);
@@ -262,7 +268,7 @@ function createZoneVisual(
   const dropMaterial = new THREE.MeshBasicMaterial({
     color: dropColor,
     transparent: true,
-    opacity: 0.5,
+    opacity: 0.5 * Math.min(1.1, densityVisualScale),
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
@@ -275,7 +281,7 @@ function createZoneVisual(
   const splashMaterial = new THREE.MeshBasicMaterial({
     color: splashColor,
     transparent: true,
-    opacity: 0.42,
+    opacity: 0.42 * Math.min(1.1, densityVisualScale),
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
@@ -304,7 +310,7 @@ function createZoneVisual(
     respawnDrop(drop);
     drops.push(drop);
 
-    tempColor.copy(dropColor).multiplyScalar(0.82 + drop.brightness * 0.3);
+    tempColor.copy(dropColor).multiplyScalar((0.82 + drop.brightness * 0.3) * densityVisualScale);
     dropsMesh.setColorAt(i, tempColor);
     splashesMesh.setColorAt(i, new THREE.Color(0x000000));
   }
@@ -321,7 +327,8 @@ function createZoneVisual(
     drops,
     ceilingHeight,
     density,
-    splashOpacity: 1,
+    dropBrightnessScale: densityVisualScale,
+    splashOpacity: densityVisualScale,
     unregisterCull,
     dropColor,
     splashColor,
@@ -364,7 +371,7 @@ export function updateSprinklerZoneVisual(zone: SprinklerZoneVisual, time: numbe
     if (cycle !== drop.currentCycle) {
       drop.currentCycle = cycle;
       zone.respawnDrop(drop);
-      tempColor.copy(zone.dropColor).multiplyScalar(0.82 + drop.brightness * 0.3);
+      tempColor.copy(zone.dropColor).multiplyScalar((0.82 + drop.brightness * 0.3) * zone.dropBrightnessScale);
       zone.dropsMesh.setColorAt(i, tempColor);
     }
     const phase = phaseValue - cycle;
